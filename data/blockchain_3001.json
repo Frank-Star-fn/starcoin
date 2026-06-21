@@ -5,9 +5,6 @@
       "timestamp": "2025-01-01T00:00:00.000Z",
       "previousHash": "0",
       "nonce": 0,
-      "data": {
-        "data": "创世区块：StarCoin诞生！"
-      },
       "transactions": [
         {
           "id": "77c7ae6e81995edba6d6e809df4a1aec6974ef071098f8fd2a3a37b6caa6fe91",
@@ -89,8 +86,37 @@
         }
       ],
       "hash": "00c21cf4437a396493a940708b892d9e89f690653aacde9f988e3daa4f5c2ec9"
+    },
+    {
+      "index": 3,
+      "timestamp": "2026-06-21T12:59:00.477Z",
+      "previousHash": "00c21cf4437a396493a940708b892d9e89f690653aacde9f988e3daa4f5c2ec9",
+      "nonce": 104,
+      "transactions": [
+        {
+          "id": "7f85f3311490c78487360b44ab528bdb4d5be5552d53c9452311a3ba191f5345",
+          "from": "SYSTEM",
+          "to": "bob",
+          "amount": 50,
+          "fee": 0,
+          "note": "Miner Reward",
+          "timestamp": "2026-06-21T12:59:00.477Z",
+          "signature": ""
+        },
+        {
+          "id": "7c8567023516a58dde19cfc6d9f48ef2cebe8eb27664896e24e1871fd0f8f239",
+          "from": "bob",
+          "to": "bob2",
+          "amount": 1,
+          "fee": 0,
+          "note": "",
+          "timestamp": "2026-06-21T12:58:59.675Z",
+          "signature": "SIGNED_BY_bob"
+        }
+      ],
+      "hash": "003ccddad6854eefea61728bdddeaf269ac2f28af60e030b5bd5588d01b5e83f"
     }
   ],
-  "savedAt": "2026-06-21T12:34:19.522Z",
+  "savedAt": "2026-06-21T13:12:55.735Z",
   "version": "1.0"
 }

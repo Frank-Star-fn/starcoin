@@ -133,7 +133,7 @@ class Blockchain {
         this.miningReward = 50;          // 挖矿奖励
         this.miningAddress = 'MINER_' + (portOverride || PORT);
         this.chain = [this.createGenesisBlock()]; // 先初始化创世区块
-        this.dataFile = path.join(__dirname, `blockchain_${portOverride || PORT}.json`);
+        this.dataFile = path.join(__dirname, 'data', `blockchain_${portOverride || PORT}.json`);
         this.loadFromFile();
     }
 
@@ -361,8 +361,12 @@ class Blockchain {
             return false;
         }
 
+        // 如果是验证外来链，确保其创世块 hash 与本地一致（不同的创世块 = 不同的链）
         if (chain) {
-            if (JSON.stringify(targetChain[0]) !== JSON.stringify(this.chain[0])) {
+            const incomingGenesisHash = targetChain[0].hash;
+            const localGenesisHash = this.chain[0].hash;
+            if (incomingGenesisHash !== localGenesisHash) {
+                console.error(`❌ [isChainValid] 创世块 hash 不一致: 收到=${incomingGenesisHash}, 本地=${localGenesisHash}`);
                 return false;
             }
         }
@@ -386,11 +390,18 @@ class Blockchain {
                 previousBlock.hash = b.hash;
             }
 
-            if (currentBlock.hash !== currentBlock.calculateHash()) {
+            const computedHash = currentBlock.calculateHash();
+            if (currentBlock.hash !== computedHash) {
+                if (chain) {
+                    console.error(`❌ [isChainValid] 区块 #${currentBlock.index} hash 不一致: 原hash=${currentBlock.hash.substring(0, 16)}..., 计算hash=${computedHash.substring(0, 16)}...`);
+                }
                 return false;
             }
 
             if (currentBlock.previousHash !== previousBlock.hash) {
+                if (chain) {
+                    console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 的 previousHash 与前一区块 hash 不匹配`);
+                }
                 return false;
             }
         }
@@ -399,19 +410,92 @@ class Blockchain {
 
     // 替换为更长的链
     replaceChain(newChain) {
-        if (newChain.length > this.chain.length && this.isChainValid(newChain)) {
-            this.chain = newChain.map((b) => {
-                if (b instanceof Block) return b;
-                const txSrc = b.transactions || (b.data ? b.data : []);
-                const block = new Block(b.index, b.timestamp, txSrc, b.previousHash);
-                block.nonce = b.nonce;
-                block.hash = b.hash;
-                return block;
-            });
-            this.saveToFile();
-            return true;
+        if (newChain.length <= this.chain.length) {
+            console.log('⚠️  新链不更长，拒绝替换');
+            return false;
         }
-        return false;
+        if (!this.isChainValid(newChain)) {
+            console.log('❌ 新链验证失败，拒绝替换');
+            return false;
+        }
+
+        // ---------------------------------------------------------
+        // 分叉回滚：将旧链中"不在新链里"的用户交易放回交易池
+        // ---------------------------------------------------------
+        // 1. 收集新链中所有交易 id（用于判断哪些交易已经被别人打包了）
+        const txIdsInNewChain = new Set();
+        for (const block of newChain) {
+            if (block.transactions && Array.isArray(block.transactions)) {
+                for (const tx of block.transactions) {
+                    if (tx.id) txIdsInNewChain.add(tx.id);
+                }
+            }
+        }
+
+        // 2. 扫描旧链，收集"用户真实交易"回滚到交易池
+        //    - 排除挖矿奖励交易（from === 'SYSTEM'）→ 不放回交易池（否则会重复发放奖励）
+        //      但会统计金额，因为链被整体替换后这些奖励"已自动作废"（余额是动态计算的）
+        //    - 排除备注/创世交易（from === '' 或 !from）→ 不是用户交易
+        //    - 排除新链中已有的交易（即已被别人打包的）→ 无需重复放入
+        //    - 排除当前 pendingTransactions 中已有的交易 → 防重复
+        const existingPendingIds = new Set(this.pendingTransactions.map(t => t.id));
+        const rollbackTx = [];
+
+        // 用于日志确认：显式统计被回滚掉的矿工奖励总额
+        let rollbackRewardCount = 0;
+        let rollbackRewardAmount = 0;
+
+        for (const block of this.chain) {
+            if (!block.transactions || !Array.isArray(block.transactions)) continue;
+            for (const tx of block.transactions) {
+                // 挖矿奖励：统计但不放回交易池（链被替换后奖励自动作废）
+                if (tx.from === 'SYSTEM') {
+                    if (!txIdsInNewChain.has(tx.id)) {
+                        rollbackRewardCount++;
+                        rollbackRewardAmount += Number(tx.amount) || 0;
+                    }
+                    continue;
+                }
+                if (!tx.from || tx.from === '') continue;
+                if (txIdsInNewChain.has(tx.id)) continue;
+                if (existingPendingIds.has(tx.id)) continue;
+                // 构造一个干净的 Transaction 对象放回交易池
+                rollbackTx.push({
+                    id: tx.id,
+                    from: tx.from,
+                    to: tx.to,
+                    amount: Number(tx.amount),
+                    fee: Number(tx.fee) || 0,
+                    note: tx.note || '',
+                    timestamp: tx.timestamp,
+                    signature: tx.signature
+                });
+            }
+        }
+
+        if (rollbackTx.length > 0) {
+            // 加到 pendingTransactions 头部，让回滚交易优先被重新打包
+            this.pendingTransactions = rollbackTx.concat(this.pendingTransactions);
+            console.log(`🔄 分叉回滚：已将 ${rollbackTx.length} 笔用户交易放回交易池`);
+        }
+        if (rollbackRewardCount > 0) {
+            console.log(`⛏️  分叉回滚：旧链上 ${rollbackRewardCount} 个区块的矿工奖励已作废（共 ${rollbackRewardAmount} 币，因链被替换自动回滚）`);
+        }
+
+        // ---------------------------------------------------------
+        // 正式替换链
+        // ---------------------------------------------------------
+        this.chain = newChain.map((b) => {
+            if (b instanceof Block) return b;
+            const txSrc = b.transactions || (b.data ? b.data : []);
+            const block = new Block(b.index, b.timestamp, txSrc, b.previousHash);
+            block.nonce = b.nonce;
+            block.hash = b.hash;
+            return block;
+        });
+        this.saveToFile();
+        console.log(`✅ 链已替换，新长度: ${this.chain.length}（回滚了 ${rollbackTx.length} 笔交易到交易池）`);
+        return true;
     }
 }
 

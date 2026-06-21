@@ -29,7 +29,19 @@ const MESSAGE_TYPES = {
     QUERY_LATEST: 'QUERY_LATEST',
     QUERY_ALL: 'QUERY_ALL',
     NODE_INFO: 'NODE_INFO',
-    NODE_LIST: 'NODE_LIST'
+    NODE_LIST: 'NODE_LIST',
+    CHAIN_LENGTH: 'CHAIN_LENGTH',
+    SYNC_REQUEST: 'SYNC_REQUEST'
+};
+
+// 同步状态
+const syncState = {
+    isSyncing: false,
+    lastSyncAt: null,
+    candidates: [], // 从各节点收到的候选链
+    syncCount: 0,
+    expectedCount: 0,
+    resolved: false
 };
 
 // 节点信息
@@ -97,7 +109,7 @@ function handleMessage(ws, message, connectionId) {
             });
             break;
         case MESSAGE_TYPES.CHAIN:
-            handleChainResponse(message.chain);
+            handleChainResponse(message.chain, message.fromNode);
             break;
         case MESSAGE_TYPES.BLOCK:
             handleBlockResponse(message.block);
@@ -112,17 +124,60 @@ function handleMessage(ws, message, connectionId) {
                 currentNode: nodeInfo
             });
             break;
+        case MESSAGE_TYPES.CHAIN_LENGTH:
+            // 回复自己的链长度，供对方做快速对比
+            sendMessage(ws, {
+                type: MESSAGE_TYPES.CHAIN_LENGTH,
+                length: starCoin.chain.length,
+                latestHash: starCoin.getLatestBlock().hash,
+                fromNode: nodeInfo.url
+            });
+            break;
+        case MESSAGE_TYPES.SYNC_REQUEST:
+            // 对方请求与我们同步：把我们的整条链发过去
+            console.log(`🔄 收到来自 ${message.fromNode || '某节点'} 的同步请求，发送完整链`);
+            sendMessage(ws, {
+                type: MESSAGE_TYPES.CHAIN,
+                chain: starCoin.chain,
+                fromNode: nodeInfo.url
+            });
+            break;
     }
 }
 
 // 处理收到的完整链
-function handleChainResponse(chain) {
+// 如果处于同步状态（fromNode 附带），先汇总到 candidates，等所有节点返回后统一选最长
+function handleChainResponse(chain, fromNode) {
+    if (!chain || !Array.isArray(chain) || chain.length === 0) {
+        console.log('📥 收到空链，忽略');
+        return;
+    }
+
+    // ------ 同步汇聚模式 ------
+    if (syncState.isSyncing && fromNode) {
+        console.log(`📥 [同步] 收到节点 ${fromNode} 的链，长度 ${chain.length}`);
+        syncState.candidates.push({
+            fromNode: fromNode,
+            chain: chain,
+            length: chain.length,
+            valid: starCoin.isChainValid(chain)
+        });
+        syncState.syncCount++;
+
+        // 等所有预期节点都返回（或超时），再统一选最长
+        if (syncState.syncCount >= syncState.expectedCount) {
+            resolveSyncCandidates();
+        }
+        return;
+    }
+
+    // ------ 常规被动接收模式 ------
     const latestBlockReceived = chain[chain.length - 1];
     const latestBlockHeld = starCoin.getLatestBlock();
 
     if (latestBlockReceived.index > latestBlockHeld.index) {
         console.log(`📥 收到更长的链，长度: ${chain.length}，当前链长度: ${starCoin.chain.length}`);
-        
+
         if (latestBlockHeld.hash === latestBlockReceived.previousHash) {
             // 可以直接添加区块
             if (starCoin.addBlock(latestBlockReceived)) {
@@ -133,15 +188,20 @@ function handleChainResponse(chain) {
             // 只有创世区块，不需要处理
             console.log('📥 收到创世区块');
         } else {
-            // 需要替换整个链
-            console.log('🔄 需要替换整个链');
+            // 需要替换整个链，先验证整条链是否有效
+            console.log('🔄 需要替换整个链，正在验证...');
+            if (!starCoin.isChainValid(chain)) {
+                console.log('❌ 收到的链无效，拒绝替换');
+                return;
+            }
             if (starCoin.replaceChain(chain)) {
+                console.log('✅ 已替换为更长的链，新长度: ' + starCoin.chain.length);
                 broadcastLatest();
                 updateNodeInfo();
             }
         }
     } else {
-        console.log('📥 收到的链不更长，忽略');
+        console.log(`📥 收到的链不更长（${chain.length} vs ${starCoin.chain.length}），忽略`);
     }
 }
 
@@ -173,6 +233,143 @@ function handleNodeInfo(node) {
         nodes.add(node.url);
         console.log(`📝 发现新节点: ${node.url}`);
     }
+}
+
+// 从收集到的候选链中选出"最长且有效"的那条进行替换
+function resolveSyncCandidates() {
+    if (syncState.resolved) return;
+    syncState.resolved = true;
+    syncState.isSyncing = false;
+
+    const currentLength = starCoin.chain.length;
+    const candidates = syncState.candidates;
+    console.log(`🔄 [同步] 汇总完成，共 ${candidates.length} 个候选链（当前链长度: ${currentLength}）`);
+
+    if (candidates.length === 0) {
+        console.log('ℹ️  没有其他节点返回链，保持当前链');
+        syncState.lastSyncAt = new Date().toISOString();
+        return;
+    }
+
+    // 排除无效链
+    const validCandidates = candidates.filter(c => c.valid);
+    if (validCandidates.length === 0) {
+        console.log('❌ [同步] 所有候选链都无效，拒绝同步');
+        syncState.lastSyncAt = new Date().toISOString();
+        return;
+    }
+
+    // 按长度排序，取最长的
+    validCandidates.sort((a, b) => b.length - a.length);
+    const best = validCandidates[0];
+
+    console.log(`🏆 [同步] 最佳候选: 节点 ${best.fromNode}，长度 ${best.length}`);
+
+    // 与当前链比较
+    if (best.length <= currentLength) {
+        console.log('ℹ️  当前链已是最长，无需替换');
+        syncState.lastSyncAt = new Date().toISOString();
+        return;
+    }
+
+    // 如果最长链的最后一个区块 previousHash 等于当前链末尾（说明只是分叉追加）
+    const myLatest = starCoin.getLatestBlock();
+    const theirLatest = best.chain[best.chain.length - 1];
+    if (myLatest.hash === theirLatest.previousHash) {
+        // 安全：直接追加
+        console.log('🔄 [同步] 最佳链与当前链尾部连续，直接追加');
+        best.chain.slice(currentLength).forEach(b => starCoin.addBlock(b));
+    } else {
+        // 分叉/冲突：直接替换整条链
+        console.log('🔄 [同步] 发生分叉，用最长有效链替换整条链');
+        if (!starCoin.replaceChain(best.chain)) {
+            console.log('❌ [同步] 替换失败');
+            syncState.lastSyncAt = new Date().toISOString();
+            return;
+        }
+    }
+
+    updateNodeInfo();
+    broadcastLatest();
+    syncState.lastSyncAt = new Date().toISOString();
+    console.log(`✅ [同步] 完成，当前链长度: ${starCoin.chain.length}`);
+}
+
+// 主动与所有已连接节点同步
+// 1. 向所有连接节点发起 SYNC_REQUEST
+// 2. 收集它们返回的链（CHAIN）到 candidates
+// 3. 调用 resolveSyncCandidates 选出最长有效链替换
+function syncWithPeers() {
+    const connectedCount = nodeConnections.size +
+        (Array.from(wss.clients).filter(c => c.readyState === 1).length);
+
+    if (connectedCount === 0) {
+        console.log('⚠️  [同步] 当前没有连接的对等节点，无法同步');
+        return {
+            success: false,
+            message: '没有可连接的对等节点',
+            currentLength: starCoin.chain.length
+        };
+    }
+
+    // 重置同步状态
+    syncState.isSyncing = true;
+    syncState.resolved = false;
+    syncState.candidates = [];
+    syncState.syncCount = 0;
+    syncState.expectedCount = nodeConnections.size;
+
+    console.log(`🔄 [同步] 开始与 ${syncState.expectedCount} 个节点同步...`);
+
+    // 广播同步请求（只发给我们主动建立的出站连接，避免重复风暴）
+    let sent = 0;
+    nodeConnections.forEach((conn) => {
+        if (conn.ws && conn.ws.readyState === 1) {
+            sendMessage(conn.ws, {
+                type: MESSAGE_TYPES.SYNC_REQUEST,
+                fromNode: nodeInfo.url
+            });
+            sent++;
+        }
+    });
+
+    // 广播到入站连接（由对方主动连过来的）
+    wss.clients.forEach((client) => {
+        if (client.readyState === 1) {
+            sendMessage(client, {
+                type: MESSAGE_TYPES.SYNC_REQUEST,
+                fromNode: nodeInfo.url
+            });
+            sent++;
+        }
+    });
+
+    syncState.expectedCount = sent;
+    console.log(`📡 [同步] 已向 ${sent} 个节点发送同步请求`);
+
+    if (sent === 0) {
+        syncState.isSyncing = false;
+        return {
+            success: false,
+            message: '无法向节点发送同步请求',
+            currentLength: starCoin.chain.length
+        };
+    }
+
+    // 设置超时兜底（10秒后无论是否收齐都解析一次）
+    setTimeout(() => {
+        if (!syncState.resolved) {
+            console.log('⏱️  [同步] 超时，用已收到的候选进行解析');
+            resolveSyncCandidates();
+        }
+    }, 10000);
+
+    return {
+        success: true,
+        message: '同步请求已广播，正在等待节点返回...',
+        requestedNodes: sent,
+        currentLength: starCoin.chain.length
+    };
 }
 
 // 更新节点信息
@@ -524,6 +721,46 @@ app.get('/api/validate', (req, res) => {
     });
 });
 
+// ============ 节点同步 API ============
+
+// 主动与所有已连接节点同步，选用最长有效链
+app.post('/api/sync', (req, res) => {
+    const result = syncWithPeers();
+    res.json({
+        ...result,
+        valid: starCoin.isChainValid(),
+        syncState: {
+            isSyncing: syncState.isSyncing,
+            lastSyncAt: syncState.lastSyncAt,
+            candidateCount: syncState.candidates.length
+        }
+    });
+});
+
+// 查询同步状态
+app.get('/api/sync/status', (req, res) => {
+    // 收集每个连接节点的链长度信息
+    const peerSummary = syncState.candidates.map(c => ({
+        node: c.fromNode,
+        length: c.length,
+        valid: c.valid
+    }));
+
+    res.json({
+        success: true,
+        isSyncing: syncState.isSyncing,
+        lastSyncAt: syncState.lastSyncAt,
+        selfChain: {
+            length: starCoin.chain.length,
+            latestHash: starCoin.getLatestBlock().hash,
+            valid: starCoin.isChainValid()
+        },
+        connectedNodes: nodes.size,
+        peerChains: peerSummary,
+        candidates: syncState.candidates.length
+    });
+});
+
 // ============ 数据持久化 API ============
 
 // 获取数据持久化状态
@@ -683,13 +920,34 @@ server.listen(PORT, () => {
     console.log(`🚀 StarCoin 服务器运行在 http://localhost:${PORT}`);
     console.log(`📊 初始区块链已创建，包含 ${starCoin.chain.length} 个区块`);
     console.log(`🆔 节点ID: ${nodeId}`);
-    
+
     // 自动连接到对等节点（如果是第二个节点）
     if (PORT !== 3000) {
         setTimeout(() => {
             connectToPeer(`ws://localhost:3000`);
+            // 连接后 3 秒发起一次初始同步
+            setTimeout(() => {
+                console.log('🔄 启动后首次同步...');
+                syncWithPeers();
+            }, 3000);
         }, 1000);
+    } else {
+        // 主节点也尝试在 5 秒后向已连入的节点进行一次同步
+        setTimeout(() => {
+            if (nodeConnections.size > 0) {
+                console.log('🔄 主节点启动后同步检查...');
+                syncWithPeers();
+            }
+        }, 5000);
     }
+
+    // 每 60 秒自动同步一次（防止因网络抖动导致不同步）
+    setInterval(() => {
+        if (nodeConnections.size > 0) {
+            console.log('⏰ 定期自动同步...');
+            syncWithPeers();
+        }
+    }, 60000);
 });
 
 // 导出用于测试
