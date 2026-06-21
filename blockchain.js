@@ -3,7 +3,52 @@ const path = require('path');
 const fs = require('fs');
 
 // ============================================================
-// Transaction 类 - 结构化交易对象
+// ECDSA 工具函数 - 使用 secp256k1 椭圆曲线
+// ============================================================
+const EC_CURVE = 'secp256k1';
+
+// 从私钥 PEM 字符串提取公钥 DER（十六进制）
+function getPublicKeyFromPrivateKeyPem(privateKeyPem) {
+    const key = crypto.createPrivateKey({ key: privateKeyPem, format: 'pem', type: 'pkcs8' });
+    return key.export({ format: 'der', type: 'spki' }).toString('hex');
+}
+
+// 从公钥 DER 十六进制派生出地址
+function publicKeyToAddress(publicKeyHex) {
+    return crypto.createHash('sha256').update(publicKeyHex, 'hex').digest('hex').substring(0, 32);
+}
+
+// 验证公钥是否匹配地址
+function verifyPublicKeyMatchesAddress(publicKeyHex, address) {
+    return publicKeyToAddress(publicKeyHex) === address;
+}
+
+// 用 ECDSA 签名数据
+function signWithECDSA(dataHex, privateKeyPem) {
+    const sign = crypto.createSign('SHA256');
+    sign.update(dataHex);
+    return sign.sign({ key: privateKeyPem, format: 'pem', type: 'pkcs8' }, 'hex');
+}
+
+// 用 ECDSA 验证签名
+function verifyWithECDSA(dataHex, signatureHex, publicKeyHex) {
+    try {
+        const publicKeyPem = crypto.createPublicKey({
+            key: Buffer.from(publicKeyHex, 'hex'),
+            format: 'der',
+            type: 'spki'
+        }).export({ format: 'pem', type: 'spki' });
+
+        const verify = crypto.createVerify('SHA256');
+        verify.update(dataHex);
+        return verify.verify(publicKeyPem, signatureHex, 'hex');
+    } catch (err) {
+        return false;
+    }
+}
+
+// ============================================================
+// Transaction 类 - 结构化交易对象（带 ECDSA 签名）
 // ============================================================
 class Transaction {
     constructor(from, to, amount, fee = 0, note = '') {
@@ -16,9 +61,11 @@ class Transaction {
         this.fee = Number(fee) || 0;
         this.note = note || '';
         this.timestamp = new Date().toISOString();
-        this.signature = '';
+        this.publicKey = '';   // 签名者的公钥（DER 十六进制），用于验证签名
+        this.signature = '';   // ECDSA 签名（十六进制）
     }
 
+    // 计算用于签名的哈希（不含 signature 和 publicKey 字段）
     calculateHash() {
         return crypto.createHash('sha256').update(
             this.id + this.from + this.to + this.amount +
@@ -26,34 +73,76 @@ class Transaction {
         ).digest('hex');
     }
 
-    // 用私钥签名交易（简单演示，非真实椭圆曲线）
-    signTransaction(privateKey) {
-        if (!privateKey) return;
+    // 用私钥签名交易（真正的 ECDSA 签名）
+    // privateKeyPem: 由 generateWallet() 返回的 PEM 格式私钥
+    // publicKeyHex: 由 generateWallet() 返回的公钥 DER 十六进制
+    signTransaction(privateKeyPem, publicKeyHex) {
+        // 挖矿奖励 / 创世交易 / 备注交易：不需要签名
+        if (!this.from || this.from === '' || this.from === 'SYSTEM') {
+            return;
+        }
+
+        if (!privateKeyPem || !publicKeyHex) {
+            throw new Error('签名交易必须提供私钥和公钥');
+        }
+
+        // 验证公钥是否与 from 地址匹配（防止用别人的公钥签名自己的交易）
+        if (!verifyPublicKeyMatchesAddress(publicKeyHex, this.from)) {
+            throw new Error('公钥与 from 地址不匹配，无法签名');
+        }
+
+        // 用 ECDSA 签名交易哈希
         const hash = this.calculateHash();
-        this.signature = crypto
-            .createHmac('sha256', privateKey)
-            .update(hash)
-            .digest('hex');
+        this.publicKey = publicKeyHex;
+        this.signature = signWithECDSA(hash, privateKeyPem);
     }
 
-    // 验证交易签名（用公钥/地址验证）
+    // 验证交易签名
     isValid() {
-        // 创世交易或挖矿奖励交易：from 为空，直接有效
-        if (this.from === '' || this.from === 'SYSTEM' || !this.from) {
-            return this.amount > 0;
+        // 挖矿奖励交易 / 创世交易 / 备注交易：from 为空或 SYSTEM，直接有效
+        if (!this.from || this.from === '' || this.from === 'SYSTEM') {
+            return this.amount >= 0;
         }
-        // 普通交易：必须有签名
-        return this.signature && this.signature.length > 0;
+
+        // 普通交易：必须有签名和公钥
+        if (!this.signature || this.signature.length === 0) {
+            return false;
+        }
+        if (!this.publicKey || this.publicKey.length === 0) {
+            return false;
+        }
+
+        // 1. 验证公钥哈希是否等于 from 地址
+        if (!verifyPublicKeyMatchesAddress(this.publicKey, this.from)) {
+            return false;
+        }
+
+        // 2. 用公钥验证 ECDSA 签名
+        const hash = this.calculateHash();
+        return verifyWithECDSA(hash, this.signature, this.publicKey);
     }
 }
 
 // ============================================================
-// Wallet 工具 - 生成简单的地址/密钥对
+// Wallet 工具 - 生成真正的 ECDSA 地址/密钥对
 // ============================================================
 function generateWallet() {
-    const privateKey = crypto.randomBytes(32).toString('hex');
-    const publicKey = crypto.createHash('sha256').update(privateKey).digest('hex');
-    const address = publicKey.substring(0, 32);
+    // 使用 secp256k1 曲线生成 ECDSA 密钥对
+    const keyPair = crypto.generateKeyPairSync('ec', {
+        namedCurve: EC_CURVE,
+        publicKeyEncoding: { type: 'spki', format: 'der' },
+        privateKeyEncoding: { type: 'pkcs8', format: 'pem' }
+    });
+
+    // 私钥：PEM 格式字符串（用于签名）
+    const privateKey = keyPair.privateKey;
+
+    // 公钥：DER 编码的十六进制字符串（用于验证签名 + 派生出地址）
+    const publicKey = keyPair.publicKey.toString('hex');
+
+    // 地址：SHA256(公钥) 的前 32 个十六进制字符
+    const address = publicKeyToAddress(publicKey);
+
     return { privateKey, publicKey, address };
 }
 
@@ -159,12 +248,24 @@ class Blockchain {
         if (senderBalance < tx.amount + tx.fee) {
             throw new Error(`余额不足！当前余额: ${senderBalance}, 转账所需: ${tx.amount + tx.fee}`);
         }
-        // 签名验证（简单演示：如果有签名则认为合法）
-        // if (!tx.signature) throw new Error('交易未签名');
 
-        // 生成交易对象（如果传入的是普通对象）
-        const transaction = (tx instanceof Transaction) ? tx :
-            new Transaction(tx.from, tx.to, tx.amount, tx.fee || 0, tx.note || '');
+        // 构建完整的 Transaction 对象（如果传入的是普通 JSON 对象）
+        let transaction;
+        if (tx instanceof Transaction) {
+            transaction = tx;
+        } else {
+            transaction = new Transaction(tx.from, tx.to, tx.amount, tx.fee || 0, tx.note || '');
+            // 如果传入对象包含签名和公钥，复制过来
+            if (tx.signature) transaction.signature = tx.signature;
+            if (tx.publicKey) transaction.publicKey = tx.publicKey;
+            if (tx.timestamp) transaction.timestamp = tx.timestamp;
+            if (tx.id) transaction.id = tx.id;
+        }
+
+        // ECDSA 签名验证（核心安全检查）
+        if (!transaction.isValid()) {
+            throw new Error('交易签名验证失败！可能是未签名、签名被篡改，或公钥与地址不匹配');
+        }
 
         this.pendingTransactions.push(transaction);
         return transaction;
@@ -178,9 +279,8 @@ class Blockchain {
         if (blockDataText && blockDataText.trim()) {
             txsToInclude.push(new Transaction('', 'NOTE', 0, 0, blockDataText.trim()));
         }
-        if (txsToInclude.length === 0) {
-            throw new Error('没有可打包的交易，请先发起一笔转账');
-        }
+        // ⚠️ 注意：即使 txsToInclude 为空数组也允许挖矿
+        // 因为挖矿奖励交易（rewardTx）会被添加，区块至少包含一笔奖励交易
         // 添加挖矿奖励交易（系统发给矿工）
         const rewardTx = new Transaction(
             'SYSTEM',
@@ -273,24 +373,41 @@ class Blockchain {
                 const saved = JSON.parse(raw);
                 if (saved && saved.chain && saved.chain.length > 0) {
                     // 从保存数据重建区块对象 (支持 data 旧格式和 transactions 新格式)
+                    // 注意：从 JSON 读取的 transactions 是普通对象，保留它们供签名验证使用
                     const rebuiltChain = saved.chain.map(b => {
-                        const txSource = b.transactions || (b.data ? b.data : []);
-                        const block = new Block(b.index, b.timestamp, txSource, b.previousHash);
+                        const block = new Block(b.index, b.timestamp, [], b.previousHash);
                         block.nonce = b.nonce;
                         block.hash = b.hash;
+                        // 保留原始 transactions 数组（包含 signature/publicKey 等字段）
+                        if (b.transactions && Array.isArray(b.transactions)) {
+                            block.transactions = b.transactions;
+                        } else if (b.data) {
+                            // 旧格式 data 字段：Block 构造函数已经帮我们派生 transactions
+                            const blockWithData = new Block(b.index, b.timestamp, b.data, b.previousHash);
+                            block.transactions = blockWithData.transactions;
+                        }
                         return block;
                     });
-                    // 验证重建后的链是否有效（使用自身链进行哈希验证）
                     const tempChain = this.chain;
                     this.chain = rebuiltChain;
-                    if (this.isChainValid()) {
+
+                    // 第一级：严格验证（区块 hash + 交易签名）
+                    if (this.isChainValid(undefined, true)) {
+                        console.log(`📂 已从本地文件加载区块链: ${this.dataFile} (${rebuiltChain.length} 个区块) ✓`);
+                        return true;
+                    }
+
+                    // 第二级：降级验证（仅区块 hash，兼容旧数据格式）
+                    if (this.isChainValid(undefined, false)) {
+                        console.log(`⚠️  [兼容模式] 本地链使用旧签名格式（非 ECDSA），区块结构有效但签名未验证`);
                         console.log(`📂 已从本地文件加载区块链: ${this.dataFile} (${rebuiltChain.length} 个区块)`);
                         return true;
-                    } else {
-                        console.log('⚠️  本地文件中的区块链无效，恢复为创世区块');
-                        this.chain = tempChain;
-                        return false;
                     }
+
+                    // 两级验证都失败
+                    console.log('❌  本地文件中的区块链无效，恢复为创世区块');
+                    this.chain = tempChain;
+                    return false;
                 } else {
                     console.log('⚠️  本地文件格式无效，已重置为创世区块');
                     return false;
@@ -354,7 +471,23 @@ class Blockchain {
         return block;
     }
 
-    isChainValid(chain) {
+    // 辅助：把普通 JSON 对象转换为 Transaction 实例（用于签名验证）
+    _toTransactionInstance(txObj) {
+        if (!txObj) return null;
+        // 如果已经是 Transaction 实例，直接返回
+        if (txObj instanceof Transaction) return txObj;
+        // 从普通对象还原
+        const tx = new Transaction(txObj.from, txObj.to, txObj.amount, txObj.fee || 0, txObj.note || '');
+        if (txObj.id) tx.id = txObj.id;
+        if (txObj.timestamp) tx.timestamp = txObj.timestamp;
+        if (txObj.signature) tx.signature = txObj.signature;
+        if (txObj.publicKey) tx.publicKey = txObj.publicKey;
+        return tx;
+    }
+
+    // chain: 要验证的链（不传则验证自身）
+    // validateSignatures: 是否验证每笔交易的 ECDSA 签名（默认 true；旧数据可设为 false 兼容）
+    isChainValid(chain, validateSignatures = true) {
         const targetChain = chain || this.chain;
 
         if (!targetChain || targetChain.length === 0) {
@@ -375,12 +508,17 @@ class Blockchain {
             let currentBlock = targetChain[i];
             let previousBlock = targetChain[i - 1];
 
+            // 重建 Block 实例（处理从 JSON 反序列化的情况）
             if (!(currentBlock instanceof Block)) {
                 const b = currentBlock;
                 const txSrc = b.transactions || (b.data ? b.data : []);
                 currentBlock = new Block(b.index, b.timestamp, txSrc, b.previousHash);
                 currentBlock.nonce = b.nonce;
                 currentBlock.hash = b.hash;
+                // 同时把原始 transactions 复制过来用于签名验证
+                if (b.transactions && Array.isArray(b.transactions)) {
+                    currentBlock.transactions = b.transactions;
+                }
             }
             if (!(previousBlock instanceof Block)) {
                 const b = previousBlock;
@@ -388,8 +526,12 @@ class Blockchain {
                 previousBlock = new Block(b.index, b.timestamp, txSrc, b.previousHash);
                 previousBlock.nonce = b.nonce;
                 previousBlock.hash = b.hash;
+                if (b.transactions && Array.isArray(b.transactions)) {
+                    previousBlock.transactions = b.transactions;
+                }
             }
 
+            // 验证区块自身 hash
             const computedHash = currentBlock.calculateHash();
             if (currentBlock.hash !== computedHash) {
                 if (chain) {
@@ -403,6 +545,23 @@ class Blockchain {
                     console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 的 previousHash 与前一区块 hash 不匹配`);
                 }
                 return false;
+            }
+
+            // ============================================
+            // 验证区块中每笔交易的 ECDSA 签名
+            // ============================================
+            if (validateSignatures && currentBlock.transactions && Array.isArray(currentBlock.transactions)) {
+                for (const tx of currentBlock.transactions) {
+                    const txInstance = this._toTransactionInstance(tx);
+                    if (txInstance && !txInstance.isValid()) {
+                        if (chain) {
+                            console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 中一笔交易签名验证失败: tx=${txInstance.id.substring(0, 12)}... from=${txInstance.from.substring(0, 12)}...`);
+                        } else {
+                            console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 中一笔交易签名验证失败`);
+                        }
+                        return false;
+                    }
+                }
             }
         }
         return true;

@@ -1,1343 +1,834 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>StarCoin 区块链可视化</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            color: #333;
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-
-        header {
-            text-align: center;
-            margin-bottom: 30px;
-            color: white;
-        }
-
-        h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .subtitle {
-            font-size: 1.1rem;
-            opacity: 0.9;
-        }
-
-        .section-title {
-            color: white;
-            font-size: 1.4rem;
-            margin: 25px 0 15px 0;
-            padding-bottom: 8px;
-            border-bottom: 2px solid rgba(255,255,255,0.3);
-        }
-
-        .node-info-bar {
-            background: white;
-            padding: 15px 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            text-align: center;
-            margin-bottom: 20px;
-            font-weight: 600;
-            color: #667eea;
-        }
-
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .stat-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            text-align: center;
-            transition: transform 0.3s ease;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-5px);
-        }
-
-        .stat-value {
-            font-size: 2rem;
-            font-weight: bold;
-            color: #667eea;
-            margin-bottom: 5px;
-        }
-
-        .stat-label {
-            color: #666;
-            font-size: 0.9rem;
-        }
-
-        .nodes-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .node-card {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            overflow: hidden;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .node-card:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-        }
-
-        .node-card.self {
-            border: 2px solid #667eea;
-        }
-
-        .node-card.connected {
-            border-left: 4px solid #28a745;
-        }
-
-        .node-card.disconnected {
-            border-left: 4px solid #dc3545;
-            opacity: 0.7;
-        }
-
-        .node-header {
-            padding: 15px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: #f8f9fa;
-            border-bottom: 1px solid #e0e0e0;
-        }
-
-        .node-card.self .node-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        .node-name {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-weight: 600;
-            font-size: 1.1rem;
-        }
-
-        .node-badge {
-            font-size: 0.75rem;
-            padding: 3px 8px;
-            border-radius: 12px;
-            background: #667eea;
-            color: white;
-            margin-left: 6px;
-        }
-
-        .node-card.self .node-badge {
-            background: rgba(255,255,255,0.3);
-        }
-
-        .node-status {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 0.85rem;
-        }
-
-        .status-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            display: inline-block;
-        }
-
-        .status-dot.online {
-            background: #28a745;
-            box-shadow: 0 0 6px rgba(40,167,69,0.5);
-        }
-
-        .status-dot.offline {
-            background: #dc3545;
-            box-shadow: 0 0 6px rgba(220,53,69,0.5);
-        }
-
-        .node-body {
-            padding: 20px;
-        }
-
-        .node-info-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-        }
-
-        .node-info-item {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .node-info-label {
-            font-size: 0.78rem;
-            color: #888;
-            margin-bottom: 3px;
-        }
-
-        .node-info-value {
-            font-size: 0.9rem;
-            color: #333;
-            font-weight: 500;
-        }
-
-        .node-info-value.hash {
-            font-family: 'Courier New', monospace;
-            font-size: 0.8rem;
-            color: #667eea;
-        }
-
-        .node-link {
-            color: #667eea;
-            text-decoration: none;
-            font-size: 0.85rem;
-        }
-
-        .node-link:hover {
-            text-decoration: underline;
-        }
-
-        .controls {
-            background: white;
-            padding: 25px;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            margin-bottom: 30px;
-        }
-
-        .control-group {
-            margin-bottom: 20px;
-        }
-
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 600;
-            color: #555;
-        }
-
-        input[type="text"] {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 5px;
-            font-size: 1rem;
-            transition: border-color 0.3s ease;
-        }
-
-        input[type="text"]:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-
-        .btn-group {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        button {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 5px;
-            font-size: 1rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn-success {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
-        }
-
-        .btn-success:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
-        }
-
-        .btn-warning {
-            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-            color: white;
-        }
-
-        .btn-warning:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(79, 172, 254, 0.4);
-        }
-
-        .btn-info {
-            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
-            color: white;
-        }
-
-        .btn-info:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(67, 233, 123, 0.4);
-        }
-
-        .btn-danger {
-            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
-            color: white;
-        }
-
-        .btn-danger:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(238, 90, 111, 0.4);
-        }
-
-        .btn-small {
-            padding: 8px 14px;
-            font-size: 0.85rem;
-        }
-
-        .blocks-container {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        .block {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            overflow: hidden;
-            transition: transform 0.3s ease;
-        }
-
-        .block:hover {
-            transform: translateX(5px);
-        }
-
-        .block-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 15px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .block-genesis .block-header {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        }
-
-        .block-number {
-            font-size: 1.2rem;
-            font-weight: bold;
-        }
-
-        .block-type {
-            font-size: 0.9rem;
-            opacity: 0.9;
-        }
-
-        .block-content {
-            padding: 20px;
-        }
-
-        .block-info {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-
-        .info-item {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .info-label {
-            font-size: 0.8rem;
-            color: #666;
-            margin-bottom: 5px;
-        }
-
-        .info-value {
-            font-family: 'Courier New', monospace;
-            font-size: 0.9rem;
-            color: #333;
-            word-break: break-all;
-        }
-
-        .hash-value {
-            font-family: 'Courier New', monospace;
-            font-size: 0.85rem;
-            color: #667eea;
-            word-break: break-all;
-        }
-
-        .chain-link {
-            text-align: center;
-            color: #999;
-            font-size: 2rem;
-            margin: -10px 0;
-        }
-
-        .status {
-            text-align: center;
-            padding: 15px;
-            border-radius: 5px;
-            margin-bottom: 20px;
-            font-weight: 600;
-        }
-
-        .status.valid {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
-        }
-
-        .status.invalid {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: white;
-            font-size: 1.2rem;
-        }
-
-        .notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 15px 20px;
-            border-radius: 5px;
-            color: white;
-            font-weight: 600;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-            z-index: 1000;
-            animation: slideIn 0.3s ease;
-        }
-
-        .notification.success {
-            background: #28a745;
-        }
-
-        .notification.error {
-            background: #dc3545;
-        }
-
-        .notification.info {
-            background: #17a2b8;
-        }
-
-        .no-nodes {
-            text-align: center;
-            padding: 20px;
-            color: rgba(255,255,255,0.7);
-            font-size: 1rem;
-        }
-
-        .storage-card {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            padding: 20px;
-            margin-bottom: 30px;
-        }
-
-        .storage-info {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 15px;
-        }
-
-        .storage-info-item {
-            display: flex;
-            flex-direction: column;
-            padding: 10px;
-            background: #f8f9fa;
-            border-radius: 5px;
-        }
-
-        .storage-info-label {
-            font-size: 0.78rem;
-            color: #888;
-            margin-bottom: 5px;
-        }
-
-        .storage-info-value {
-            font-size: 0.9rem;
-            color: #333;
-            font-weight: 500;
-            font-family: 'Courier New', monospace;
-            word-break: break-all;
-        }
-
-        .storage-info-value.active {
-            color: #28a745;
-        }
-
-        .storage-info-value.inactive {
-            color: #dc3545;
-        }
-
-        .storage-controls {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            padding-top: 15px;
-            border-top: 2px dashed #e0e0e0;
-        }
-
-        .storage-controls .control-group {
-            margin-bottom: 0;
-            flex: 1;
-        }
-
-        .file-input-label {
-            display: inline-block;
-            padding: 12px 24px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 5px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            font-size: 1rem;
-        }
-
-        .file-input-label:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-
-        .file-input {
-            display: none;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        .syncing {
-            animation: pulse 1.5s infinite;
-        }
-
-        @media (max-width: 768px) {
-            h1 {
-                font-size: 2rem;
-            }
-            
-            .btn-group {
-                flex-direction: column;
-            }
-            
-            button {
-                width: 100%;
-            }
-
-            .nodes-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .node-info-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StarCoin — 可视化区块链</title>
+<style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+        color: #e8e8e8;
+        min-height: 100vh;
+        padding: 20px;
+    }
+    .container { max-width: 1400px; margin: 0 auto; }
+
+    /* 顶部状态条 */
+    .header {
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+    .logo {
+        font-size: 28px;
+        font-weight: bold;
+        background: linear-gradient(45deg, #ffd700, #ffb700);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    .stats {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+    }
+    .stat-box {
+        background: rgba(255,255,255,0.08);
+        border-radius: 8px;
+        padding: 10px 16px;
+        min-width: 110px;
+        text-align: center;
+    }
+    .stat-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-value { font-size: 20px; font-weight: bold; margin-top: 4px; }
+    .stat-value.valid { color: #4ade80; }
+    .stat-value.invalid { color: #f87171; }
+
+    /* 主布局：三栏 */
+    .main-layout {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 20px;
+    }
+    @media (max-width: 1000px) { .main-layout { grid-template-columns: 1fr; } }
+
+    .panel {
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 20px;
+    }
+    .panel h2 {
+        font-size: 16px;
+        margin-bottom: 15px;
+        color: #ffd700;
+        border-bottom: 1px solid rgba(255,215,0,0.2);
+        padding-bottom: 8px;
+    }
+
+    /* 钱包列表 */
+    .wallet-item {
+        background: rgba(255,255,255,0.04);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 10px;
+        border: 2px solid transparent;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .wallet-item:hover { background: rgba(255,255,255,0.08); }
+    .wallet-item.selected {
+        border-color: #ffd700;
+        background: rgba(255,215,0,0.08);
+    }
+    .wallet-label { font-weight: bold; color: #ffd700; margin-bottom: 4px; }
+    .wallet-address {
+        font-family: monospace;
+        font-size: 11px;
+        color: #888;
+        word-break: break-all;
+        margin-bottom: 6px;
+    }
+    .wallet-balance { font-size: 18px; font-weight: bold; color: #4ade80; }
+    .wallet-actions { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+
+    /* 按钮 */
+    button {
+        background: linear-gradient(135deg, #ffd700, #ffb700);
+        color: #1a1a2e;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-weight: bold;
+        cursor: pointer;
+        font-size: 13px;
+        transition: transform 0.1s, box-shadow 0.2s;
+    }
+    button:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(255,215,0,0.3); }
+    button:active { transform: translateY(0); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    button.secondary {
+        background: rgba(255,255,255,0.1);
+        color: #e8e8e8;
+    }
+    button.danger {
+        background: linear-gradient(135deg, #f87171, #dc2626);
+        color: white;
+    }
+    button.small { padding: 6px 10px; font-size: 11px; }
+
+    /* 表单 */
+    label { display: block; font-size: 12px; color: #aaa; margin: 10px 0 5px; }
+    input, textarea {
+        width: 100%;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 6px;
+        padding: 8px 12px;
+        color: #e8e8e8;
+        font-size: 13px;
+        font-family: inherit;
+    }
+    input:focus, textarea:focus { outline: none; border-color: #ffd700; }
+
+    /* 发送者选择 */
+    .wallet-dropdown {
+        width: 100%;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 6px;
+        padding: 10px;
+        color: #e8e8e8;
+        font-size: 13px;
+    }
+
+    /* 消息提示 */
+    .message {
+        padding: 10px 14px;
+        border-radius: 6px;
+        margin: 10px 0;
+        font-size: 13px;
+        display: none;
+    }
+    .message.success { background: rgba(74, 222, 128, 0.15); border: 1px solid #4ade80; color: #4ade80; display: block; }
+    .message.error { background: rgba(248, 113, 113, 0.15); border: 1px solid #f87171; color: #f87171; display: block; }
+    .message.info { background: rgba(96, 165, 250, 0.15); border: 1px solid #60a5fa; color: #60a5fa; display: block; }
+
+    /* 挖矿动画 */
+    @keyframes mining-glow {
+        0%, 100% { box-shadow: 0 0 20px rgba(255,215,0,0.3); }
+        50% { box-shadow: 0 0 40px rgba(255,215,0,0.6); }
+    }
+    .mining-active { animation: mining-glow 1s infinite; }
+
+    /* 底部区块 */
+    .wide-panel { grid-column: 1 / -1; }
+
+    /* 交易池 */
+    .mempool-item {
+        background: rgba(96,165,250,0.1);
+        border-left: 3px solid #60a5fa;
+        padding: 8px 12px;
+        margin: 6px 0;
+        border-radius: 4px;
+        font-size: 12px;
+    }
+    .mempool-empty { color: #666; font-style: italic; padding: 10px; text-align: center; }
+
+    /* 区块链可视化 */
+    .chain-visual {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        padding: 15px;
+        background: rgba(0,0,0,0.2);
+        border-radius: 8px;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    .block-card {
+        background: linear-gradient(135deg, rgba(255,215,0,0.1), rgba(255,183,0,0.05));
+        border: 1px solid rgba(255,215,0,0.3);
+        border-radius: 8px;
+        padding: 12px;
+        width: 240px;
+        flex-shrink: 0;
+        font-size: 11px;
+    }
+    .block-card.genesis { border-color: #4ade80; background: linear-gradient(135deg, rgba(74,222,128,0.1), rgba(34,197,94,0.05)); }
+    .block-height { font-size: 14px; font-weight: bold; color: #ffd700; margin-bottom: 6px; }
+    .block-hash { font-family: monospace; font-size: 10px; color: #888; word-break: break-all; margin: 4px 0; }
+    .block-tx {
+        background: rgba(255,255,255,0.04);
+        border-radius: 4px;
+        padding: 4px 6px;
+        margin: 3px 0;
+        font-size: 10px;
+    }
+    .block-tx.reward { color: #4ade80; border-left: 2px solid #4ade80; padding-left: 6px; }
+    .block-tx.signed { color: #60a5fa; border-left: 2px solid #60a5fa; padding-left: 6px; }
+    .block-tx.unsigned { color: #fbbf24; border-left: 2px solid #fbbf24; padding-left: 6px; }
+
+    /* 地址排行榜 */
+    .address-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 10px;
+        margin: 4px 0;
+        background: rgba(255,255,255,0.04);
+        border-radius: 6px;
+        font-size: 12px;
+    }
+    .address-row .addr { font-family: monospace; color: #888; font-size: 11px; }
+    .address-row .bal { font-weight: bold; color: #4ade80; }
+
+    /* 滚动条 */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,215,0,0.3); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,215,0,0.5); }
+
+    /* 提示文字 */
+    .hint { font-size: 11px; color: #888; margin-top: 4px; }
+    .code-box {
+        background: rgba(0,0,0,0.3);
+        border-radius: 4px;
+        padding: 8px;
+        font-family: monospace;
+        font-size: 11px;
+        word-break: break-all;
+        margin: 6px 0;
+        max-height: 80px;
+        overflow-y: auto;
+    }
+
+    /* 分段 */
+    .section-divider {
+        border: none;
+        border-top: 1px dashed rgba(255,255,255,0.1);
+        margin: 15px 0;
+    }
+</style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🎇 StarCoin 区块链可视化</h1>
-            <p class="subtitle">多节点网络实时监控 — 查看所有节点状态与区块链数据</p>
-        </header>
+<div class="container">
 
-        <div class="node-info-bar" id="nodeInfo">节点信息加载中...</div>
-
-        <div class="stats" id="stats">
-            <div class="loading">加载中...</div>
-        </div>
-
-        <div class="status" id="status">检查区块链状态...</div>
-
-        <!-- 数据持久化管理面板 -->
-        <h2 class="section-title">💾 本地数据持久化</h2>
-        <div class="storage-card">
-            <div class="storage-info" id="storageInfo">
-                <div class="storage-info-item">
-                    <div class="storage-info-label">📂 本地存储</div>
-                    <div class="storage-info-value" id="storageEnabled">检查中...</div>
-                </div>
-                <div class="storage-info-item">
-                    <div class="storage-info-label">📦 区块总数</div>
-                    <div class="storage-info-value" id="storageBlocks">—</div>
-                </div>
-                <div class="storage-info-item">
-                    <div class="storage-info-label">📏 文件大小</div>
-                    <div class="storage-info-value" id="storageSize">—</div>
-                </div>
-                <div class="storage-info-item">
-                    <div class="storage-info-label">🕐 最后修改</div>
-                    <div class="storage-info-value" id="storageTime">—</div>
-                </div>
-                <div class="storage-info-item" style="grid-column: 1 / -1;">
-                    <div class="storage-info-label">📄 文件路径</div>
-                    <div class="storage-info-value" id="storageFile">—</div>
-                </div>
+    <!-- 顶部状态 -->
+    <div class="header">
+        <div class="logo">⭐ StarCoin</div>
+        <div class="stats" id="headerStats">
+            <div class="stat-box">
+                <div class="stat-label">区块数量</div>
+                <div class="stat-value" id="statBlocks">--</div>
             </div>
-            <div class="storage-controls">
-                <label class="file-input-label">
-                    📥 导入区块链
-                    <input type="file" class="file-input" id="importFile" accept=".json" onchange="importChain(event)">
-                </label>
-                <button class="btn-info" onclick="exportChain()">📤 导出区块链</button>
-                <button class="btn-success" onclick="saveStorage()">💾 立即保存</button>
-                <button class="btn-warning" onclick="reloadStorage()">🔄 从文件重新加载</button>
-                <button class="btn-danger" onclick="resetStorage()">🗑️  重置（清空数据）</button>
+            <div class="stat-box">
+                <div class="stat-label">链状态</div>
+                <div class="stat-value" id="statValid">--</div>
             </div>
-        </div>
-
-        <!-- 所有节点信息面板 -->
-        <h2 class="section-title">🌐 网络节点总览</h2>
-        <div class="nodes-grid" id="nodesGrid">
-            <div class="loading">加载节点信息...</div>
-        </div>
-
-        <!-- 钱包与转账控制 -->
-        <div class="controls">
-            <div class="control-group">
-                <label>💰 我的钱包</label>
-                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-                    <input type="text" id="myAddress" placeholder="点击 [生成钱包] 或粘贴地址" style="flex:1; font-family: 'Courier New';">
-                    <button class="btn-info" onclick="newWallet()">🆕 生成钱包</button>
-                    <button class="btn-success" onclick="checkBalance()">🔍 查余额</button>
-                </div>
-                <div id="walletInfo" style="margin-top:8px; font-size:0.85rem; color:#555;"></div>
+            <div class="stat-box">
+                <div class="stat-label">交易池</div>
+                <div class="stat-value" id="statMempool">--</div>
             </div>
-
-            <div class="control-group">
-                <label>💸 创建转账交易</label>
-                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px;">
-                    <input type="text" id="txTo" placeholder="接收方地址 (例如: Bob)">
-                    <input type="number" id="txAmount" placeholder="金额" min="0" step="0.01">
-                    <input type="number" id="txFee" placeholder="手续费(可选)" min="0" step="0.01" value="0">
-                </div>
-                <input type="text" id="txNote" placeholder="备注(可选)" style="margin-top:8px;">
+            <div class="stat-box">
+                <div class="stat-label">节点端口</div>
+                <div class="stat-value" id="statPort">--</div>
             </div>
-
-            <div class="control-group">
-                <label>🔗 节点连接 (ws://host:port)</label>
-                <input type="text" id="peerUrl" placeholder="ws://localhost:3001" value="ws://localhost:3001">
-            </div>
-
-            <div class="control-group">
-                <label>📝 备注文本 (可选，挖矿时写入区块)</label>
-                <input type="text" id="transactionInput" placeholder="例如: 支付订单 #12345">
-            </div>
-
-            <div class="btn-group">
-                <button class="btn-primary" onclick="submitTransaction()">💸 发起转账(进入交易池)</button>
-                <button class="btn-success" onclick="mineBlock()">⛏️ 挖矿(打包交易到区块)</button>
-                <button class="btn-info" onclick="showMempool()">📋 查看交易池</button>
-                <button class="btn-info" onclick="validateChain()">✅ 验证区块链</button>
-                <button class="btn-info" onclick="connectToPeer()">🔗 连接到节点</button>
-                <button class="btn-danger" onclick="disconnectFromPeer()">🚫 断开节点</button>
-                <button class="btn-warning" onclick="refreshAll()">🔄 刷新全部</button>
-            </div>
-        </div>
-
-        <!-- 地址排行榜 -->
-        <div id="addressRanking" style="display:none;" class="storage-card">
-            <h3 style="color:#667eea; margin-bottom:10px;">🏆 地址余额排行榜</h3>
-            <div id="addressList"></div>
-        </div>
-
-        <!-- 交易池显示 -->
-        <div id="mempoolPanel" style="display:none;" class="storage-card">
-            <h3 style="color:#667eea; margin-bottom:10px;">📋 待打包交易池 (Mempool)</h3>
-            <div id="mempoolList"></div>
-        </div>
-
-        <h2 class="section-title">📦 当前节点区块链</h2>
-        <div class="blocks-container" id="blocksContainer">
-            <div class="loading">加载区块链数据...</div>
         </div>
     </div>
 
-    <script>
-        let blockchainData = null;
-        let currentPort = 3000;
-        let allNodes = [];
+    <!-- 三栏布局 -->
+    <div class="main-layout">
 
-        // 初始化
-        document.addEventListener('DOMContentLoaded', () => {
-            refreshAll();
-            setInterval(refreshAll, 10000); // 每10秒自动刷新
+        <!-- 第一栏：钱包管理 -->
+        <div class="panel">
+            <h2>💼 我的钱包</h2>
+            <button onclick="generateWallet()">＋ 生成新钱包</button>
+            <hr class="section-divider">
+            <div id="walletList"></div>
+            <div id="selectedWalletInfo" style="display:none; margin-top:15px; padding-top:15px; border-top:1px dashed rgba(255,255,255,0.1);">
+                <div style="font-size:12px; color:#ffd700; margin-bottom:6px;">📌 当前选中钱包</div>
+                <div class="code-box" id="selectedWalletAddress"></div>
+                <div style="font-size:11px; color:#888; margin-top:6px;">
+                    余额: <span id="selectedWalletBalance" style="color:#4ade80; font-weight:bold;">--</span>
+                </div>
+                <button class="secondary small" style="margin-top:8px;" onclick="copySelectedAddress()">复制地址</button>
+                <div style="margin-top:12px;">
+                    <div style="font-size:11px; color:#aaa; margin-bottom:4px;">交易历史</div>
+                    <div id="selectedWalletHistory" style="max-height:150px; overflow-y:auto;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 第二栏：转账 -->
+        <div class="panel">
+            <h2>💰 发起转账（ECDSA 签名）</h2>
+
+            <label>① 发送方（选择一个已有钱包）</label>
+            <select class="wallet-dropdown" id="fromWallet">
+                <option value="">-- 请选择钱包 --</option>
+            </select>
+            <div class="hint" id="fromBalanceHint"></div>
+
+            <label>② 接收方地址（粘贴目标地址）</label>
+            <input type="text" id="toAddress" placeholder="粘贴接收方地址，或点击右侧钱包的"设为接收方"">
+
+            <label>③ 转账金额</label>
+            <input type="number" id="amount" value="10" min="1" step="1">
+
+            <label>④ 矿工费（可选，越高越优先打包）</label>
+            <input type="number" id="fee" value="1" min="0" step="1">
+
+            <label>⑤ 备注（可选）</label>
+            <input type="text" id="note" placeholder="例如：午餐费用">
+
+            <div class="message info" id="signInfo" style="display:none;">
+                🔑 将使用发送方的私钥做 ECDSA 签名（仅在本地签名，私钥不会广播）
+            </div>
+
+            <div class="message" id="txMessage"></div>
+
+            <button onclick="submitTransaction()" style="width:100%; margin-top:15px; padding:12px; font-size:15px;">
+                ✍️ 签名并提交交易
+            </button>
+
+            <hr class="section-divider">
+
+            <h2 style="margin-top:5px;">⛏️ 挖矿打包</h2>
+            <label>矿工奖励接收地址（默认使用当前选中钱包）</label>
+            <input type="text" id="minerAddress" placeholder="自动填入当前选中钱包的地址">
+            <button onclick="mineBlock()" id="mineBtn" style="width:100%; margin-top:10px; padding:12px; font-size:15px;">
+                ⛏️ 开始挖矿并打包交易
+            </button>
+
+            <div class="hint" style="margin-top:10px;">
+                💡 流程：先生成钱包 → 挖矿获得初始币 → 用私钥签名发起转账 → 再次挖矿把交易打包进区块
+            </div>
+        </div>
+
+        <!-- 第三栏：交易池 + 地址榜 -->
+        <div class="panel">
+            <h2>📝 交易池（待打包）</h2>
+            <div id="mempool"></div>
+
+            <hr class="section-divider">
+
+            <h2>🏆 地址排行榜</h2>
+            <div id="addressRank"></div>
+
+            <hr class="section-divider">
+
+            <button class="secondary small" onclick="refreshAll()" style="width:100%; margin-top:5px;">🔄 刷新全部数据</button>
+        </div>
+
+    </div>
+
+    <!-- 区块链可视化（底部通栏） -->
+    <div class="panel wide-panel">
+        <h2>🔗 区块链 — 点击区块查看详情</h2>
+        <div class="chain-visual" id="chainVisual"></div>
+    </div>
+
+</div>
+
+<script>
+/* ============================================================
+   状态管理
+   ============================================================ */
+const state = {
+    wallets: [],      // [{label, privateKey, publicKey, address}]
+    selectedWallet: -1
+};
+
+/* ============================================================
+   工具函数
+   ============================================================ */
+async function api(path, method = 'GET', body = null) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(path, opts);
+    return await res.json();
+}
+
+function shortAddr(addr, len = 12) {
+    if (!addr) return '';
+    return addr.length > len ? addr.substring(0, len) + '...' : addr;
+}
+
+function escapeHtml(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function showMessage(id, text, type = 'info', timeoutMs = 3500) {
+    const el = document.getElementById(id);
+    el.className = 'message ' + type;
+    el.textContent = text;
+    if (timeoutMs > 0) {
+        clearTimeout(el._timer);
+        el._timer = setTimeout(() => { el.className = 'message'; el.textContent = ''; }, timeoutMs);
+    }
+}
+
+function clearMessage(id) {
+    const el = document.getElementById(id);
+    el.className = 'message';
+    el.textContent = '';
+}
+
+/* ============================================================
+   钱包：生成 + 选择
+   ============================================================ */
+async function generateWallet() {
+    try {
+        const data = await api('/api/wallet/new', 'POST');
+        if (!data.wallet) throw new Error('生成失败');
+        const w = {
+            label: '钱包 #' + (state.wallets.length + 1),
+            privateKey: data.wallet.privateKey,
+            publicKey: data.wallet.publicKey,
+            address: data.wallet.address
+        };
+        state.wallets.push(w);
+        state.selectedWallet = state.wallets.length - 1; // 自动选中新钱包
+        renderWallets();
+        renderTransfer();
+        showMessage('txMessage', '✅ 新钱包已生成：' + shortAddr(w.address, 16), 'success');
+        saveWallets();
+        await refreshAll();
+    } catch (err) {
+        showMessage('txMessage', '❌ 生成钱包失败：' + err.message, 'error');
+    }
+}
+
+function selectWallet(index) {
+    state.selectedWallet = index;
+    renderWallets();
+    renderTransfer();
+    refreshSelectedWalletDetails();
+    saveWallets();
+}
+
+function setAsReceiver(index) {
+    const w = state.wallets[index];
+    if (!w) return;
+    document.getElementById('toAddress').value = w.address;
+    showMessage('txMessage', '📋 已将 ' + w.label + ' 设为接收方', 'info', 2000);
+}
+
+function removeWallet(index) {
+    if (!confirm('确定删除 ' + state.wallets[index].label + '？私钥将无法恢复！')) return;
+    state.wallets.splice(index, 1);
+    if (state.selectedWallet >= state.wallets.length) state.selectedWallet = state.wallets.length - 1;
+    renderWallets();
+    renderTransfer();
+    saveWallets();
+}
+
+function copySelectedAddress() {
+    const w = state.wallets[state.selectedWallet];
+    if (!w) return;
+    navigator.clipboard.writeText(w.address).then(() => {
+        showMessage('txMessage', '📋 地址已复制到剪贴板', 'success', 2000);
+    });
+}
+
+/* 本地持久化 */
+function saveWallets() {
+    try {
+        localStorage.setItem('starcoin_wallets', JSON.stringify(state.wallets));
+        localStorage.setItem('starcoin_selected', String(state.selectedWallet));
+    } catch (e) {}
+}
+function loadWallets() {
+    try {
+        const saved = localStorage.getItem('starcoin_wallets');
+        if (saved) state.wallets = JSON.parse(saved);
+        const sel = localStorage.getItem('starcoin_selected');
+        if (sel !== null) state.selectedWallet = Math.min(parseInt(sel), state.wallets.length - 1);
+    } catch (e) {}
+}
+
+/* ============================================================
+   渲染：钱包列表
+   ============================================================ */
+async function renderWallets() {
+    const list = document.getElementById('walletList');
+
+    if (state.wallets.length === 0) {
+        list.innerHTML = '<div style="color:#888; font-size:13px; padding:20px 0; text-align:center;">还没有钱包<br>点击上方 "＋ 生成新钱包" 开始</div>';
+        document.getElementById('selectedWalletInfo').style.display = 'none';
+    } else {
+        list.innerHTML = state.wallets.map((w, i) => `
+            <div class="wallet-item ${i === state.selectedWallet ? 'selected' : ''}" onclick="selectWallet(${i})">
+                <div class="wallet-label">${w.label}</div>
+                <div class="wallet-address">${escapeHtml(shortAddr(w.address, 40))}</div>
+                <div class="wallet-balance" id="wallet-balance-${i}">余额: --</div>
+                <div class="wallet-actions">
+                    <button class="secondary small" onclick="event.stopPropagation(); copyWalletAddress(${i})">复制地址</button>
+                    <button class="secondary small" onclick="event.stopPropagation(); setAsReceiver(${i})">设为接收方</button>
+                    <button class="danger small" onclick="event.stopPropagation(); removeWallet(${i})">删除</button>
+                </div>
+            </div>
+        `).join('');
+
+        // 异步查询每个钱包余额
+        for (let i = 0; i < state.wallets.length; i++) {
+            try {
+                const data = await api('/api/balance/' + state.wallets[i].address);
+                const el = document.getElementById('wallet-balance-' + i);
+                if (el) el.textContent = '余额: ' + (data.balance || 0) + ' STC';
+            } catch (e) {}
+        }
+
+        if (state.selectedWallet >= 0) {
+            document.getElementById('selectedWalletInfo').style.display = 'block';
+        }
+    }
+    renderTransfer();
+}
+
+function copyWalletAddress(i) {
+    const w = state.wallets[i];
+    if (!w) return;
+    navigator.clipboard.writeText(w.address).then(() => {
+        showMessage('txMessage', '📋 地址已复制', 'success', 1500);
+    });
+}
+
+async function refreshSelectedWalletDetails() {
+    const w = state.wallets[state.selectedWallet];
+    if (!w) { document.getElementById('selectedWalletInfo').style.display = 'none'; return; }
+    document.getElementById('selectedWalletInfo').style.display = 'block';
+    document.getElementById('selectedWalletAddress').textContent = w.address;
+
+    try {
+        const data = await api('/api/balance/' + w.address);
+        document.getElementById('selectedWalletBalance').textContent = (data.balance || 0) + ' STC';
+    } catch (e) {
+        document.getElementById('selectedWalletBalance').textContent = '查询失败';
+    }
+
+    // 交易历史
+    try {
+        const history = await api('/api/transactions/' + w.address);
+        const hist = document.getElementById('selectedWalletHistory');
+        if (!history.transactions || history.transactions.length === 0) {
+            hist.innerHTML = '<div style="color:#666; font-size:11px; padding:10px; text-align:center;">暂无交易记录</div>';
+        } else {
+            hist.innerHTML = history.transactions.slice(0, 10).map(tx => `
+                <div style="background:rgba(255,255,255,0.04); padding:6px 8px; border-radius:4px; margin:4px 0; font-size:11px;">
+                    <div style="color:${tx.from === w.address ? '#f87171' : '#4ade80'}; font-weight:bold;">
+                        ${tx.from === w.address ? '→ 转出' : '← 收到'}: ${tx.amount} STC
+                    </div>
+                    <div style="color:#666; font-size:10px; margin-top:2px;">
+                        Block #${tx.blockIndex} | ${new Date(tx.timestamp).toLocaleString()}
+                    </div>
+                </div>
+            `).join('');
+        }
+    } catch (e) {
+        document.getElementById('selectedWalletHistory').textContent = '查询失败';
+    }
+}
+
+/* ============================================================
+   渲染：转账表单
+   ============================================================ */
+function renderTransfer() {
+    // 更新发送方下拉
+    const fromSel = document.getElementById('fromWallet');
+    const currentVal = fromSel.value;
+    fromSel.innerHTML = '<option value="">-- 请选择钱包 --</option>' +
+        state.wallets.map((w, i) => `<option value="${i}">${w.label} (${shortAddr(w.address, 16)})</option>`).join('');
+    // 保持选中
+    if (currentVal !== '' && state.wallets[parseInt(currentVal)]) fromSel.value = currentVal;
+    else if (state.selectedWallet >= 0) fromSel.value = String(state.selectedWallet);
+
+    // 矿工地址自动填充
+    const minerInput = document.getElementById('minerAddress');
+    if (state.selectedWallet >= 0 && !minerInput.dataset.manual) {
+        minerInput.value = state.wallets[state.selectedWallet].address;
+    }
+
+    // 更新签名提示
+    const fromIdx = parseInt(document.getElementById('fromWallet').value);
+    if (fromIdx >= 0 && state.wallets[fromIdx]) {
+        document.getElementById('signInfo').style.display = 'block';
+    } else {
+        document.getElementById('signInfo').style.display = 'none';
+    }
+
+    // 显示发送方余额
+    updateFromBalanceHint();
+}
+
+document.getElementById('fromWallet').addEventListener('change', renderTransfer);
+document.getElementById('minerAddress').addEventListener('input', () => {
+    document.getElementById('minerAddress').dataset.manual = '1';
+});
+
+async function updateFromBalanceHint() {
+    const fromIdx = parseInt(document.getElementById('fromWallet').value);
+    if (fromIdx >= 0 && state.wallets[fromIdx]) {
+        try {
+            const data = await api('/api/balance/' + state.wallets[fromIdx].address);
+            document.getElementById('fromBalanceHint').textContent = '可用余额: ' + (data.balance || 0) + ' STC（未包含交易池中待确认的 ' + (data.pendingTransactions || 0) + ' 笔）';
+        } catch (e) {
+            document.getElementById('fromBalanceHint').textContent = '';
+        }
+    } else {
+        document.getElementById('fromBalanceHint').textContent = '';
+    }
+}
+
+/* ============================================================
+   操作：发起交易 + 挖矿
+   ============================================================ */
+async function submitTransaction() {
+    const fromIdx = parseInt(document.getElementById('fromWallet').value);
+    const to = document.getElementById('toAddress').value.trim();
+    const amount = parseFloat(document.getElementById('amount').value);
+    const fee = parseFloat(document.getElementById('fee').value) || 0;
+    const note = document.getElementById('note').value.trim();
+
+    if (fromIdx < 0 || !state.wallets[fromIdx]) { showMessage('txMessage', '❌ 请选择发送方钱包', 'error'); return; }
+    if (!to) { showMessage('txMessage', '❌ 请填写接收方地址', 'error'); return; }
+    if (!amount || amount <= 0) { showMessage('txMessage', '❌ 金额必须大于 0', 'error'); return; }
+
+    const fromWallet = state.wallets[fromIdx];
+    clearMessage('txMessage');
+    showMessage('txMessage', '🔑 使用 ' + fromWallet.label + ' 的私钥进行 ECDSA 签名...', 'info', 0);
+
+    try {
+        const result = await api('/api/transaction', 'POST', {
+            from: fromWallet.address,
+            to: to,
+            amount: amount,
+            fee: fee,
+            note: note,
+            privateKey: fromWallet.privateKey,  // 关键：私钥只在服务器本地做签名
+            publicKey: fromWallet.publicKey
         });
 
-        async function fetchData() {
-            try {
-                const response = await fetch('/api/blockchain');
-                const data = await response.json();
-                return data;
-            } catch (error) {
-                showNotification('获取区块链数据失败: ' + error.message, 'error');
-                return null;
-            }
-        }
-
-        async function fetchAllNodes() {
-            try {
-                const response = await fetch('/api/all-nodes');
-                const data = await response.json();
-                return data.nodes;
-            } catch (error) {
-                showNotification('获取节点列表失败: ' + error.message, 'error');
-                return [];
-            }
-        }
-
-        async function refreshAll() {
-            const data = await fetchData();
-            if (data) {
-                blockchainData = data;
-                currentPort = data.port;
-                renderNodeInfo(data);
-                renderStats(data.stats);
-                renderStatus(data.isValid);
-                renderBlocks(data.chain);
-            }
-
-            const nodes = await fetchAllNodes();
-            if (nodes) {
-                allNodes = nodes;
-                renderAllNodes(nodes);
-            }
-
-            fetchStorageStatus();
-        }
-
-        async function fetchStorageStatus() {
-            try {
-                const response = await fetch('/api/storage/status');
-                const data = await response.json();
-                renderStorageStatus(data);
-            } catch (error) {
-                // 静默失败，不打扰用户
-            }
-        }
-
-        function renderStorageStatus(data) {
-            const enabledEl = document.getElementById('storageEnabled');
-            if (enabledEl) {
-                enabledEl.textContent = data.enabled ? '✅ 已启用' : '❌ 未启用';
-                enabledEl.className = 'storage-info-value ' + (data.enabled ? 'active' : 'inactive');
-            }
-
-            const blocksEl = document.getElementById('storageBlocks');
-            if (blocksEl) blocksEl.textContent = data.totalBlocks + ' 个区块';
-
-            const sizeEl = document.getElementById('storageSize');
-            if (sizeEl) sizeEl.textContent = data.exists ? data.sizeKB + ' KB' : '未创建';
-
-            const timeEl = document.getElementById('storageTime');
-            if (timeEl) timeEl.textContent = data.lastModified ? new Date(data.lastModified).toLocaleString('zh-CN') : '—';
-
-            const fileEl = document.getElementById('storageFile');
-            if (fileEl) fileEl.textContent = data.file || '—';
-        }
-
-        async function saveStorage() {
-            try {
-                const response = await fetch('/api/storage/save', { method: 'POST' });
-                const result = await response.json();
-                showNotification(result.message, result.success ? 'success' : 'error');
-                if (result.success) {
-                    setTimeout(fetchStorageStatus, 500);
-                    setTimeout(refreshAll, 1000);
-                }
-            } catch (error) {
-                showNotification('保存失败: ' + error.message, 'error');
-            }
-        }
-
-        async function reloadStorage() {
-            if (!confirm('确定要从本地文件重新加载区块链吗？当前未保存的内存数据将丢失。')) {
-                return;
-            }
-            try {
-                const response = await fetch('/api/storage/reload', { method: 'POST' });
-                const result = await response.json();
-                showNotification(result.message, result.success ? 'success' : 'info');
-                setTimeout(fetchStorageStatus, 500);
-                setTimeout(refreshAll, 1000);
-            } catch (error) {
-                showNotification('加载失败: ' + error.message, 'error');
-            }
-        }
-
-        async function resetStorage() {
-            if (!confirm('⚠️ 警告：此操作将删除本地文件并将区块链重置为创世区块状态！\n\n建议先导出区块链备份。\n\n确定继续吗？')) {
-                return;
-            }
-            if (!confirm('请再次确认：所有本地保存的区块数据将被永久删除！')) {
-                return;
-            }
-            try {
-                const response = await fetch('/api/storage/reset', { method: 'POST' });
-                const result = await response.json();
-                showNotification(result.message, result.success ? 'success' : 'error');
-                if (result.success) {
-                    setTimeout(fetchStorageStatus, 500);
-                    setTimeout(refreshAll, 1000);
-                    setTimeout(() => {
-                        showNotification('🔄 区块链已重置为创世区块状态', 'info');
-                    }, 1200);
-                }
-            } catch (error) {
-                showNotification('重置失败: ' + error.message, 'error');
-            }
-        }
-
-        function exportChain() {
-            try {
-                window.open('/api/storage/export', '_blank');
-                showNotification('📤 正在导出区块链...', 'info');
-            } catch (error) {
-                showNotification('导出失败: ' + error.message, 'error');
-            }
-        }
-
-        async function importChain(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            if (!confirm(`确定要导入文件 "${file.name}" 吗？当前区块链将被替换。`)) {
-                event.target.value = '';
-                return;
-            }
-
-            try {
-                const text = await file.text();
-                const data = JSON.parse(text);
-
-                if (!data.chain || !Array.isArray(data.chain)) {
-                    throw new Error('无效的区块链文件格式');
-                }
-
-                const response = await fetch('/api/storage/import', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ chain: data.chain })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    showNotification('🎉 ' + result.message, 'success');
-                    setTimeout(fetchStorageStatus, 500);
-                    setTimeout(refreshAll, 1000);
-                } else {
-                    showNotification('导入失败: ' + result.error, 'error');
-                }
-            } catch (error) {
-                showNotification('导入失败: ' + error.message, 'error');
-            }
-
-            event.target.value = '';
-        }
-
-        async function refreshData() {
+        if (result.success) {
+            showMessage('txMessage', '✅ 交易已提交到交易池！（txid: ' + (result.transaction && result.transaction.id ? shortAddr(result.transaction.id, 16) : '') + '）下一步点击"挖矿"来打包这笔交易', 'success', 6000);
+            document.getElementById('amount').value = 10;
+            document.getElementById('note').value = '';
             await refreshAll();
+        } else {
+            showMessage('txMessage', '❌ ' + (result.error || '提交失败'), 'error');
         }
+    } catch (err) {
+        showMessage('txMessage', '❌ 网络错误：' + err.message, 'error');
+    }
+}
 
-        function renderNodeInfo(data) {
-            const nodeInfoElement = document.getElementById('nodeInfo');
-            nodeInfoElement.textContent = `当前节点端口: ${data.port} | 已连接节点数: ${data.stats.connectedNodes}`;
+async function mineBlock() {
+    const btn = document.getElementById('mineBtn');
+    const minerAddr = document.getElementById('minerAddress').value.trim();
+
+    if (!minerAddr) { showMessage('txMessage', '❌ 请先选择或填写矿工奖励地址', 'error'); return; }
+
+    btn.disabled = true;
+    btn.classList.add('mining-active');
+    btn.textContent = '⛏️ 正在挖矿...（寻找 nonce）';
+    clearMessage('txMessage');
+    showMessage('txMessage', '⛏️ 正在进行工作量证明，请稍候...', 'info', 0);
+
+    try {
+        const result = await api('/api/mine', 'POST', { minerAddress: minerAddr });
+        if (result.success) {
+            showMessage('txMessage', '🎉 挖矿成功！区块 #' + (result.block ? result.block.index : '?') + ' 已生成，奖励 50 STC', 'success', 5000);
+        } else {
+            showMessage('txMessage', '❌ ' + (result.error || '挖矿失败'), 'error');
         }
+    } catch (err) {
+        showMessage('txMessage', '❌ 挖矿错误：' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.classList.remove('mining-active');
+        btn.textContent = '⛏️ 开始挖矿并打包交易';
+        await refreshAll();
+    }
+}
 
-        function renderStats(stats) {
-            const statsContainer = document.getElementById('stats');
-            statsContainer.innerHTML = `
-                <div class="stat-card">
-                    <div class="stat-value">${stats.totalBlocks}</div>
-                    <div class="stat-label">🧱 区块总数</div>
+/* ============================================================
+   渲染：交易池 + 地址榜 + 区块链
+   ============================================================ */
+async function refreshMempool() {
+    try {
+        const data = await api('/api/mempool');
+        const el = document.getElementById('mempool');
+        document.getElementById('statMempool').textContent = data.count || 0;
+
+        if (!data.count || data.count === 0) {
+            el.innerHTML = '<div class="mempool-empty">交易池为空，提交一笔转账后会出现在这里</div>';
+        } else {
+            el.innerHTML = data.transactions.map(tx => `
+                <div class="mempool-item">
+                    <div style="font-weight:bold; color:#60a5fa;">
+                        ${shortAddr(tx.from, 10)} → ${shortAddr(tx.to, 10)}: <b>${tx.amount} STC</b>
+                        ${tx.fee ? '(+ 费 ' + tx.fee + ')' : ''}
+                    </div>
+                    ${tx.note ? '<div style="color:#888; font-size:11px; margin-top:3px;">备注: ' + escapeHtml(tx.note) + '</div>' : ''}
+                    <div style="color:#666; font-size:10px; margin-top:3px; font-family:monospace;">txid: ${shortAddr(tx.id, 20)}</div>
+                    ${tx.signature ? '<div style="color:#4ade80; font-size:10px; margin-top:2px;">✅ 已 ECDSA 签名</div>' : ''}
                 </div>
-                <div class="stat-card">
-                    <div class="stat-value">${stats.difficulty}</div>
-                    <div class="stat-label">🎇 挖矿难度</div>
+            `).join('');
+        }
+    } catch (e) {
+        document.getElementById('mempool').textContent = '查询失败';
+    }
+}
+
+async function refreshAddressRank() {
+    try {
+        const data = await api('/api/addresses');
+        const el = document.getElementById('addressRank');
+        const list = (data.addresses || []).slice(0, 8);
+        if (list.length === 0) {
+            el.innerHTML = '<div class="mempool-empty">暂无数据</div>';
+        } else {
+            el.innerHTML = list.map(a => `
+                <div class="address-row">
+                    <span class="addr">${shortAddr(a.address, 18)} <span style="color:#666;">(${a.txCount}笔)</span></span>
+                    <span class="bal">${a.balance} STC</span>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-value">${stats.connectedNodes}</div>
-                    <div class="stat-label">🔗 连接节点数</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-value">${stats.genesisBlock}</div>
-                    <div class="stat-label">🔑 创世区块</div>
+            `).join('');
+        }
+    } catch (e) {
+        document.getElementById('addressRank').textContent = '查询失败';
+    }
+}
+
+async function refreshChain() {
+    try {
+        const data = await api('/api/blockchain');
+        document.getElementById('statBlocks').textContent = data.stats && data.stats.totalBlocks || 0;
+        const validStat = document.getElementById('statValid');
+        validStat.textContent = data.isValid ? '✓ 有效' : '✗ 无效';
+        validStat.className = 'stat-value ' + (data.isValid ? 'valid' : 'invalid');
+        document.getElementById('statPort').textContent = data.port || '--';
+
+        const el = document.getElementById('chainVisual');
+        const chain = data.chain || [];
+        if (chain.length === 0) {
+            el.innerHTML = '<div class="mempool-empty">暂无区块</div>';
+            return;
+        }
+        el.innerHTML = chain.slice().reverse().map(b => {
+            const isGenesis = b.index === 0;
+            const txList = (b.transactions || []).map(tx => {
+                let cls = 'block-tx ';
+                let prefix = '';
+                if (tx.from === 'SYSTEM' || !tx.from) { cls += 'reward'; prefix = '🎁 '; }
+                else if (tx.signature) { cls += 'signed'; prefix = '✍️ '; }
+                else { cls += 'unsigned'; prefix = '⚠ '; }
+
+                if (tx.from === 'SYSTEM') {
+                    return `<div class="${cls}">${prefix}奖励 → ${shortAddr(tx.to, 10)}: ${tx.amount} STC</div>`;
+                }
+                if (!tx.from) {
+                    return `<div class="${cls}">${prefix}备注: ${escapeHtml(tx.note || tx.to || '')}</div>`;
+                }
+                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${tx.amount} STC${tx.fee ? '(费'+tx.fee+')':''}</div>`;
+            }).join('');
+
+            return `
+                <div class="block-card ${isGenesis ? 'genesis' : ''}" title="区块 #${b.index}">
+                    <div class="block-height">${isGenesis ? '🌱 创世区块' : '📦 区块 #' + b.index}</div>
+                    <div class="block-hash">本块: ${shortAddr(b.hash, 24)}</div>
+                    <div class="block-hash">前驱: ${shortAddr(b.previousHash, 24)}</div>
+                    <div style="color:#888; font-size:10px; margin-top:4px;">Nonce: ${b.nonce} · ${new Date(b.timestamp).toLocaleString()}</div>
+                    <div style="margin-top:6px; border-top:1px dashed rgba(255,255,255,0.1); padding-top:6px;">
+                        <div style="color:#ffd700; font-size:11px; margin-bottom:4px;">包含交易:</div>
+                        ${txList || '<div style="color:#666;font-size:10px;">无交易</div>'}
+                    </div>
                 </div>
             `;
-        }
+        }).join('');
+    } catch (e) {
+        document.getElementById('chainVisual').textContent = '查询失败';
+    }
+}
 
-        function renderAllNodes(nodes) {
-            const grid = document.getElementById('nodesGrid');
-            
-            if (nodes.length === 0) {
-                grid.innerHTML = '<div class="no-nodes">当前没有其他节点连接，请先启动另一个节点</div>';
-                return;
-            }
+/* ============================================================
+   整体刷新
+   ============================================================ */
+async function refreshAll() {
+    updateFromBalanceHint();
+    refreshSelectedWalletDetails();
+    renderWallets(); // 重绘以刷新余额
+    refreshMempool();
+    refreshAddressRank();
+    refreshChain();
+}
 
-            grid.innerHTML = nodes.map((node, index) => {
-                const isSelf = node.isSelf;
-                const isConnected = node.connected;
-                const cardClass = isSelf ? 'self' : (isConnected ? 'connected' : 'disconnected');
-                const statusText = isConnected ? '在线' : '离线';
-                const statusClass = isConnected ? 'online' : 'offline';
-                const validText = node.chainValid === true ? '✅ 有效' : (node.chainValid === false ? '⚠️ 无效' : '❓ 未知');
-                const chainLen = node.chainLength !== null ? node.chainLength : '—';
-                const port = node.port || '—';
-                const httpUrl = node.httpUrl || '—';
-                const wsUrl = node.url || node.httpUrl ? node.httpUrl.replace('http://', 'ws://') : '—';
-                const startedAt = node.startedAt ? new Date(node.startedAt).toLocaleString() : '—';
+/* ============================================================
+   初始化
+   ============================================================ */
+loadWallets();
+renderWallets();
+renderTransfer();
+refreshAll();
 
-                const peerUrl = node.url || (node.httpUrl ? node.httpUrl.replace('http://', 'ws://') : null);
-                const disconnectBtn = (!isSelf && peerUrl) ? `
-                    <div class="node-info-item" style="grid-column: 1 / -1; margin-top: 8px;">
-                        <button class="btn-danger btn-small" style="width:100%;" onclick="disconnectNode('${peerUrl}')">🚫 断开连接</button>
-                    </div>
-                ` : '';
+// 每 15 秒自动刷新一次（轻量刷新：不重绘钱包列表，只刷新动态数据）
+setInterval(() => {
+    refreshMempool();
+    refreshChain();
+    refreshAddressRank();
+}, 15000);
+</script>
 
-                return `
-                    <div class="node-card ${cardClass}">
-                        <div class="node-header">
-                            <div class="node-name">
-                                ${isSelf ? '🖥️' : '🌐'} 节点 ${port}
-                                ${isSelf ? '<span class="node-badge">当前</span>' : ''}
-                                ${isConnected ? '<span class="node-badge" style="background:#28a745;">已连接</span>' : '<span class="node-badge" style="background:#dc3545;">断开</span>'}
-                            </div>
-                            <div class="node-status">
-                                <span class="status-dot ${statusClass}"></span>
-                                ${statusText}
-                            </div>
-                        </div>
-                        <div class="node-body">
-                            <div class="node-info-grid">
-                                <div class="node-info-item">
-                                    <div class="node-info-label">端口</div>
-                                    <div class="node-info-value">${port}</div>
-                                </div>
-                                <div class="node-info-item">
-                                    <div class="node-info-label">区块数</div>
-                                    <div class="node-info-value">${chainLen}</div>
-                                </div>
-                                <div class="node-info-item">
-                                    <div class="node-info-label">链状态</div>
-                                    <div class="node-info-value">${validText}</div>
-                                </div>
-                                <div class="node-info-item">
-                                    <div class="node-info-label">启动时间</div>
-                                    <div class="node-info-value">${startedAt}</div>
-                                </div>
-                                <div class="node-info-item" style="grid-column: 1 / -1;">
-                                    <div class="node-info-label">HTTP 地址</div>
-                                    <a class="node-link" href="${httpUrl}" target="_blank">${httpUrl}</a>
-                                </div>
-                                ${disconnectBtn}
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-
-        function renderStatus(isValid) {
-            const statusElement = document.getElementById('status');
-            statusElement.className = `status ${isValid ? 'valid' : 'invalid'}`;
-            statusElement.textContent = isValid ? '✅ 区块链有效且完整' : '⚠️ 区块链已被篡改或损坏';
-        }
-
-        function renderBlocks(chain) {
-            const container = document.getElementById('blocksContainer');
-            container.innerHTML = '';
-
-            chain.forEach((block, index) => {
-                const isGenesis = index === 0;
-                const blockElement = document.createElement('div');
-                blockElement.className = `block ${isGenesis ? 'block-genesis' : ''}`;
-
-                const timestamp = new Date(block.timestamp).toLocaleString('zh-CN');
-                const shortHash = block.hash.substring(0, 20) + '...';
-                const shortPrevHash = block.previousHash.substring(0, 20) + '...';
-
-                // 兼容两种格式：新的 transactions 数组 或 旧的 data.data 字符串
-                const txList = block.transactions || (block.data ? [{ from: '', to: '', amount: '', note: block.data.data }] : []);
-
-                // 渲染交易列表
-                const txHtml = txList.map(tx => {
-                    const isReward = tx.from === 'SYSTEM' || tx.from === '';
-                    const isNoteOnly = tx.to === 'NOTE';
-                    const txTime = tx.timestamp ? new Date(tx.timestamp).toLocaleString('zh-CN') : '';
-                    if (isNoteOnly) {
-                        return `<div style="padding:6px 10px; background:#f0f4ff; border-left:3px solid #667eea; margin:4px 0; border-radius:4px;">
-                            <span style="color:#667eea; font-weight:600;">📝 备注:</span> ${tx.note || ''}
-                        </div>`;
-                    }
-                    if (isReward) {
-                        return `<div style="padding:8px 10px; background:linear-gradient(90deg,#fff0e6,#fff8dc); border-left:3px solid #f59e0b; margin:4px 0; border-radius:4px;">
-                            <span style="color:#d97706; font-weight:700;">⛏️ 矿工奖励</span>
-                            <span style="font-family:'Courier New';">+${tx.amount}</span> → 
-                            <span style="font-family:'Courier New';">${tx.to}</span>
-                        </div>`;
-                    }
-                    return `<div style="padding:8px 10px; background:#f8faff; border-left:3px solid #3b82f6; margin:4px 0; border-radius:4px; font-size:0.9rem;">
-                        <div><span style="font-family:'Courier New'; color:#2563eb;">${tx.from}</span> → 
-                        <span style="font-family:'Courier New'; color:#059669;">${tx.to}</span>
-                        <span style="color:#dc2626; font-weight:700;">${tx.amount}</span> ${tx.fee ? `(手续费:${tx.fee})` : ''}
-                        ${tx.note ? `<div style="font-size:0.8rem; color:#666; margin-top:3px;">📝 ${tx.note}</div>` : ''}
-                        ${txTime ? `<div style="font-size:0.75rem; color:#888; margin-top:3px;">🕐 ${txTime}</div>` : ''}
-                        </div>
-                    </div>`;
-                }).join('');
-
-                blockElement.innerHTML = `
-                    <div class="block-header">
-                        <div class="block-number">#${block.index}</div>
-                        <div class="block-type">${isGenesis ? '🌱 创世区块' : '📦 ' + txList.length + ' 笔交易'}</div>
-                    </div>
-                    <div class="block-content">
-                        <div class="block-info">
-                            <div class="info-item">
-                                <div class="info-label">🕐 时间戳</div>
-                                <div class="info-value">${timestamp}</div>
-                            </div>
-                            <div class="info-item">
-                                <div class="info-label">⚙️ Nonce值</div>
-                                <div class="info-value">${block.nonce}</div>
-                            </div>
-                        </div>
-                        <div style="margin:10px 0;">
-                            <div style="font-size:0.85rem; color:#667eea; font-weight:600; margin-bottom:5px;">📄 区块内交易:</div>
-                            ${txHtml}
-                        </div>
-                        <div class="block-info">
-                            <div class="info-item">
-                                <div class="info-label">🔗 前区块哈希</div>
-                                <div class="info-value hash-value">${shortPrevHash}</div>
-                            </div>
-                            <div class="info-item">
-                                <div class="info-label">🔒 当前区块哈希</div>
-                                <div class="info-value hash-value">${shortHash}</div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-
-                container.appendChild(blockElement);
-
-                if (index < chain.length - 1) {
-                    const linkElement = document.createElement('div');
-                    linkElement.className = 'chain-link';
-                    linkElement.textContent = '↓';
-                    container.appendChild(linkElement);
-                }
-            });
-        }
-
-        // =============== 新功能：钱包与转账 ===============
-
-        let localWallet = null;
-
-        async function newWallet() {
-            try {
-                const response = await fetch('/api/wallet/new', { method: 'POST' });
-                const result = await response.json();
-                if (result.success) {
-                    localWallet = result.wallet;
-                    document.getElementById('myAddress').value = localWallet.address;
-                    document.getElementById('walletInfo').innerHTML =
-                        `<span style="color:#059669;">✅ 已生成新钱包</span><br>` +
-                        `<span style="font-family:'Courier New';">私钥: ${localWallet.privateKey.substring(0,20)}...</span>`;
-                    showNotification('🎉 钱包已生成！请从 GENESIS_WALLET 转账给它一些初始币', 'success');
-                }
-            } catch (error) {
-                showNotification('生成钱包失败: ' + error.message, 'error');
-            }
-        }
-
-        async function checkBalance() {
-            const addr = document.getElementById('myAddress').value.trim();
-            if (!addr) {
-                showNotification('请先填写或生成一个地址', 'error');
-                return;
-            }
-            try {
-                const response = await fetch(`/api/balance/${encodeURIComponent(addr)}`);
-                const result = await response.json();
-                if (result.success) {
-                    document.getElementById('walletInfo').innerHTML =
-                        `<span style="color:#059669; font-weight:700; font-size:1rem;">💰 余额: ${result.balance}</span><br>` +
-                        `<span style="color:#666;">📊 已打包交易: ${result.historyCount} 笔, 待打包: ${result.pendingTransactions} 笔</span>`;
-                    showNotification(`💰 ${addr.substring(0,15)}... 余额: ${result.balance}`, 'success');
-                }
-                // 顺便获取地址排行榜
-                const addrResp = await fetch('/api/addresses');
-                const addrResult = await addrResp.json();
-                if (addrResult.success && addrResult.addresses.length > 0) {
-                    const panel = document.getElementById('addressRanking');
-                    const list = document.getElementById('addressList');
-                    list.innerHTML = addrResult.addresses.map((a, i) =>
-                        `<div style="padding:8px 12px; background:${i===0?'#fff7ed':'#f8fafc'}; border-radius:6px; margin:4px 0; display:flex; justify-content:space-between; align-items:center;">
-                            <span><span style="font-weight:700;">#${i+1}</span> <span style="font-family:'Courier New';">${a.address}</span></span>
-                            <span style="color:#dc2626; font-weight:700;">${a.balance}</span>
-                            <span style="font-size:0.8rem; color:#888;">${a.txCount} 笔</span>
-                        </div>`
-                    ).join('');
-                    panel.style.display = 'block';
-                }
-            } catch (error) {
-                showNotification('查询失败: ' + error.message, 'error');
-            }
-        }
-
-        async function submitTransaction() {
-            const from = document.getElementById('myAddress').value.trim();
-            const to = document.getElementById('txTo').value.trim();
-            const amount = parseFloat(document.getElementById('txAmount').value);
-            const fee = parseFloat(document.getElementById('txFee').value) || 0;
-            const note = document.getElementById('txNote').value.trim();
-
-            if (!from || !to || !amount || amount <= 0) {
-                showNotification('请完善转账信息（发送方地址、接收方地址、金额）', 'error');
-                return;
-            }
-            if (from === to) {
-                showNotification('发送方和接收方不能相同', 'error');
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/transaction', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ from, to, amount, fee, note })
-                });
-                const result = await response.json();
-                if (result.success) {
-                    showNotification(`✅ 交易已进入交易池！当前交易池内共 ${result.poolCount} 笔`, 'success');
-                    document.getElementById('txTo').value = '';
-                    document.getElementById('txAmount').value = '';
-                    document.getElementById('txNote').value = '';
-                    showMempool();
-                } else {
-                    showNotification('❌ ' + result.error, 'error');
-                }
-            } catch (error) {
-                showNotification('提交交易失败: ' + error.message, 'error');
-            }
-        }
-
-        async function mineBlock() {
-            const myAddress = document.getElementById('myAddress').value.trim();
-            const note = document.getElementById('transactionInput').value.trim();
-
-            try {
-                const response = await fetch('/api/mine', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        minerAddress: myAddress || undefined,
-                        data: note || undefined
-                    })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    showNotification(`🎉 挖矿成功！打包 ${result.transactionCount} 笔交易, 奖励 ${result.reward}, 耗时 ${result.miningTime}`, 'success');
-                    document.getElementById('transactionInput').value = '';
-                    await refreshAll();
-                    showMempool();
-                    setTimeout(() => {
-                        showNotification('🔄 新区块已广播到所有连接的节点', 'info');
-                    }, 1000);
-                } else {
-                    showNotification('挖矿失败: ' + result.error, 'error');
-                }
-            } catch (error) {
-                showNotification('挖矿请求失败: ' + error.message, 'error');
-            }
-        }
-
-        async function showMempool() {
-            try {
-                const response = await fetch('/api/mempool');
-                const result = await response.json();
-                const panel = document.getElementById('mempoolPanel');
-                const list = document.getElementById('mempoolList');
-                if (result.count === 0) {
-                    list.innerHTML = '<div style="color:#888; padding:10px;">📭 交易池为空，还没有待打包的交易</div>';
-                } else {
-                    list.innerHTML = `<div style="color:#667eea; font-weight:600; margin-bottom:8px;">共 ${result.count} 笔待打包</div>` +
-                        result.transactions.map(tx =>
-                            `<div style="padding:8px 10px; background:#fff8e1; border-left:3px solid #f59e0b; margin:4px 0; border-radius:4px; font-size:0.85rem;">
-                                <span style="font-family:'Courier New'; color:#2563eb;">${tx.from}</span> →
-                                <span style="font-family:'Courier New'; color:#059669;">${tx.to}</span>
-                                <span style="color:#dc2626; font-weight:700;">${tx.amount}</span>
-                                ${tx.fee ? `(手续费:${tx.fee})` : ''}
-                                ${tx.note ? `<div style="color:#666; margin-top:3px;">📝 ${tx.note}</div>` : ''}
-                            </div>`
-                        ).join('');
-                }
-                panel.style.display = 'block';
-            } catch (error) {
-                showNotification('获取交易池失败: ' + error.message, 'error');
-            }
-        }
-
-        async function validateChain() {
-            try {
-                const response = await fetch('/api/validate');
-                const result = await response.json();
-                renderStatus(result.isValid);
-                showNotification(result.isValid ? '✅ 区块链验证通过' : '⚠️ 区块链验证失败', result.isValid ? 'success' : 'error');
-            } catch (error) {
-                showNotification('验证请求失败: ' + error.message, 'error');
-            }
-        }
-
-        async function connectToPeer() {
-            const peerUrlInput = document.getElementById('peerUrl');
-            const peerUrl = peerUrlInput.value.trim();
-
-            if (!peerUrl) {
-                showNotification('请输入节点URL', 'error');
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/connect', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ peerUrl })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    showNotification(result.message, 'success');
-                    setTimeout(refreshAll, 2000);
-                } else {
-                    showNotification('连接失败: ' + result.error, 'error');
-                }
-            } catch (error) {
-                showNotification('连接请求失败: ' + error.message, 'error');
-            }
-        }
-
-        async function disconnectFromPeer() {
-            const peerUrlInput = document.getElementById('peerUrl');
-            const peerUrl = peerUrlInput.value.trim();
-
-            if (!peerUrl) {
-                showNotification('请输入节点URL', 'error');
-                return;
-            }
-
-            await disconnectNode(peerUrl);
-        }
-
-        async function disconnectNode(peerUrl) {
-            try {
-                const response = await fetch('/api/disconnect', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ peerUrl })
-                });
-
-                const result = await response.json();
-                if (result.success) {
-                    showNotification('🔌 ' + result.message, 'success');
-                    setTimeout(refreshAll, 1000);
-                } else {
-                    showNotification('断开失败: ' + result.message, 'error');
-                }
-            } catch (error) {
-                showNotification('断开请求失败: ' + error.message, 'error');
-            }
-        }
-
-        function showNotification(message, type = 'success') {
-            const notification = document.createElement('div');
-            notification.className = `notification ${type}`;
-            notification.textContent = message;
-            
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                notification.remove();
-            }, 3000);
-        }
-
-        // 键盘快捷键
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && document.activeElement.id === 'transactionInput') {
-                mineBlock();
-            }
-            if (e.key === 'Enter' && document.activeElement.id === 'peerUrl') {
-                connectToPeer();
-            }
-        });
-    </script>
 </body>
 </html>
