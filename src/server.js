@@ -17,7 +17,7 @@ const server = http.createServer(app);
 const p2p = createP2P(server, starCoin, PORT);
 
 // 静态文件服务
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use(express.json());
 
 // API 路由
@@ -353,7 +353,7 @@ app.get('/api/all-nodes', async (req, res) => {
 
 // 主页路由
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
 // 启动服务器

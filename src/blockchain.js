@@ -10,7 +10,7 @@ class Blockchain {
         this.miningReward = 50;          // 挖矿奖励
         this.miningAddress = 'MINER_' + (portOverride || PORT);
         this.chain = [this.createGenesisBlock()]; // 先初始化创世区块
-        this.dataFile = path.join(__dirname, 'data', `blockchain_${portOverride || PORT}.json`);
+        this.dataFile = path.join(__dirname, '..', 'data', `blockchain_${portOverride || PORT}.json`);
         this.loadFromFile();
     }
 

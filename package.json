@@ -1,12 +1,12 @@
 {
   "name": "starcoin",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "src/server.js",
   "scripts": {
-    "start": "node server.js",
-    "start:node1": "set PORT=3000 && node server.js",
-    "start:node2": "set PORT=3001 && node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node src/server.js",
+    "start:node1": "set PORT=3000 && node src/server.js",
+    "start:node2": "set PORT=3001 && node src/server.js",
+    "test": "node src/test_ecdsa.js"
   },
   "keywords": [],
   "author": "",

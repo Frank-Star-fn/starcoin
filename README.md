@@ -24,3 +24,8 @@ cd c:\myfile\program\btc\starcoin ; $env:PORT="3001" ; node server.js
 - 动态难度调整	blockchain.js Blockchain	⭐ 算力变化后出块速度失控
 - 区块包含 Merkle 根 + 交易存在性证明	blockchain.js Block	⭐ 无法支持轻节点
 - POST /api/mine (改进)	挖矿节点从交易池选取交易打包，而不是手动写交易文本
+
+## Q＆A
+
+- Q: 两个节点的链一样长，但是交易内容不一样，这种情况下，以哪个交易为准？
+- A: 等长时不更新，不同长时以最长的为准。
