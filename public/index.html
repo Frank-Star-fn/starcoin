@@ -635,17 +635,28 @@ async function updateFromBalanceHint() {
    操作：发起交易 + 挖矿
    ============================================================ */
 async function submitTransaction() {
+    const btn = document.querySelector('button[onclick="submitTransaction()"]');
     const fromIdx = parseInt(document.getElementById('fromWallet').value);
     const to = document.getElementById('toAddress').value.trim();
     const amount = parseFloat(document.getElementById('amount').value);
     const fee = parseFloat(document.getElementById('fee').value) || 0;
     const note = document.getElementById('note').value.trim();
 
+    if (btn && btn.disabled) return;
+
     if (fromIdx < 0 || !state.wallets[fromIdx]) { showMessage('txMessage', '❌ 请选择发送方钱包', 'error'); return; }
     if (!to) { showMessage('txMessage', '❌ 请填写接收方地址', 'error'); return; }
     if (!amount || amount <= 0) { showMessage('txMessage', '❌ 金额必须大于 0', 'error'); return; }
 
     const fromWallet = state.wallets[fromIdx];
+
+    if (btn) {
+        btn.disabled = true;
+        const originalText = btn.textContent;
+        btn.dataset.origText = originalText;
+        btn.textContent = '⏳ 提交中...';
+    }
+
     clearMessage('txMessage');
     showMessage('txMessage', '🔑 使用 ' + fromWallet.label + ' 的私钥进行 ECDSA 签名...', 'info', 0);
 
@@ -656,7 +667,7 @@ async function submitTransaction() {
             amount: amount,
             fee: fee,
             note: note,
-            privateKey: fromWallet.privateKey,  // 关键：私钥只在服务器本地做签名
+            privateKey: fromWallet.privateKey,
             publicKey: fromWallet.publicKey
         });
 
@@ -670,6 +681,11 @@ async function submitTransaction() {
         }
     } catch (err) {
         showMessage('txMessage', '❌ 网络错误：' + err.message, 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = btn.dataset.origText || '✍️ 签名并提交交易';
+        }
     }
 }
 

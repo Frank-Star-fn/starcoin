@@ -6,8 +6,8 @@
 ## 启动节点
 
 ```sh
-cd c:\myfile\program\btc\starcoin ; $env:PORT="3000" ; node server.js
-cd c:\myfile\program\btc\starcoin ; $env:PORT="3001" ; node server.js
+cd c:\myfile\program\btc\starcoin ; $env:PORT="3000" ; node src/server.js
+cd c:\myfile\program\btc\starcoin ; $env:PORT="3001" ; node src/server.js
 ```
 
 ## 已完成功能
@@ -19,10 +19,11 @@ cd c:\myfile\program\btc\starcoin ; $env:PORT="3001" ; node server.js
 
 ## 待增加功能
 
-- 交易池跨节点广播（新增 TRANSACTION 消息）	server.js	⭐ 不广播=单机币
-- 节点自动发现 + 重连机制	server.js	⭐ 节点网络无法自维持
-- 动态难度调整	blockchain.js Blockchain	⭐ 算力变化后出块速度失控
-- 区块包含 Merkle 根 + 交易存在性证明	blockchain.js Block	⭐ 无法支持轻节点
+- 增加矿工奖励锁定期，100个区块后才能使用。
+- 交易池跨节点广播（新增 TRANSACTION 消息）	server.js	
+- 节点自动发现 + 重连机制	server.js	
+- 动态难度调整	blockchain.js Blockchain 避免算力变化后出块速度失控
+- 区块包含 Merkle 根 + 交易存在性证明	blockchain.js Block 支持轻节点
 - POST /api/mine (改进)	挖矿节点从交易池选取交易打包，而不是手动写交易文本
 
 ## Q＆A

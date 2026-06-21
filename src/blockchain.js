@@ -31,11 +31,6 @@ class Blockchain {
         if (tx.from === tx.to) {
             throw new Error('不能给自己转账');
         }
-        // 检查余额
-        const senderBalance = this.getBalance(tx.from);
-        if (senderBalance < tx.amount + tx.fee) {
-            throw new Error(`余额不足！当前余额: ${senderBalance}, 转账所需: ${tx.amount + tx.fee}`);
-        }
 
         // 构建完整的 Transaction 对象（如果传入的是普通 JSON 对象）
         let transaction;
@@ -53,6 +48,22 @@ class Blockchain {
         // ECDSA 签名验证（核心安全检查）
         if (!transaction.isValid()) {
             throw new Error('交易签名验证失败！可能是未签名、签名被篡改，或公钥与地址不匹配');
+        }
+
+        // 检查余额（必须把交易池中待打包的出账金额一起扣除，否则可连点多笔导致超额）
+        const senderBalance = this.getBalance(transaction.from);
+        const pendingOutgoing = this.pendingTransactions
+            .filter(t => t.from === transaction.from)
+            .reduce((sum, t) => sum + (Number(t.amount) || 0) + (Number(t.fee) || 0), 0);
+        const availableBalance = senderBalance - pendingOutgoing;
+
+        if (availableBalance < transaction.amount + transaction.fee) {
+            throw new Error(
+                `余额不足！已确认余额: ${senderBalance}, ` +
+                `交易池中待打包出账: ${pendingOutgoing}, ` +
+                `可用余额: ${availableBalance}, ` +
+                `当前转账所需: ${transaction.amount + transaction.fee}`
+            );
         }
 
         this.pendingTransactions.push(transaction);
