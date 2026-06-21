@@ -654,22 +654,59 @@
             <div class="loading">加载节点信息...</div>
         </div>
 
+        <!-- 钱包与转账控制 -->
         <div class="controls">
             <div class="control-group">
-                <label for="transactionInput">创建新交易</label>
-                <input type="text" id="transactionInput" placeholder="例如: Alice给Bob 10个StarCoin">
+                <label>💰 我的钱包</label>
+                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                    <input type="text" id="myAddress" placeholder="点击 [生成钱包] 或粘贴地址" style="flex:1; font-family: 'Courier New';">
+                    <button class="btn-info" onclick="newWallet()">🆕 生成钱包</button>
+                    <button class="btn-success" onclick="checkBalance()">🔍 查余额</button>
+                </div>
+                <div id="walletInfo" style="margin-top:8px; font-size:0.85rem; color:#555;"></div>
             </div>
+
             <div class="control-group">
-                <label for="peerUrl">连接/断开节点 (ws://host:port)</label>
+                <label>💸 创建转账交易</label>
+                <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap:8px;">
+                    <input type="text" id="txTo" placeholder="接收方地址 (例如: Bob)">
+                    <input type="number" id="txAmount" placeholder="金额" min="0" step="0.01">
+                    <input type="number" id="txFee" placeholder="手续费(可选)" min="0" step="0.01" value="0">
+                </div>
+                <input type="text" id="txNote" placeholder="备注(可选)" style="margin-top:8px;">
+            </div>
+
+            <div class="control-group">
+                <label>🔗 节点连接 (ws://host:port)</label>
                 <input type="text" id="peerUrl" placeholder="ws://localhost:3001" value="ws://localhost:3001">
             </div>
+
+            <div class="control-group">
+                <label>📝 备注文本 (可选，挖矿时写入区块)</label>
+                <input type="text" id="transactionInput" placeholder="例如: 支付订单 #12345">
+            </div>
+
             <div class="btn-group">
-                <button class="btn-primary" onclick="mineBlock()">⛏️ 挖矿并添加区块</button>
-                <button class="btn-success" onclick="validateChain()">✅ 验证区块链</button>
+                <button class="btn-primary" onclick="submitTransaction()">💸 发起转账(进入交易池)</button>
+                <button class="btn-success" onclick="mineBlock()">⛏️ 挖矿(打包交易到区块)</button>
+                <button class="btn-info" onclick="showMempool()">📋 查看交易池</button>
+                <button class="btn-info" onclick="validateChain()">✅ 验证区块链</button>
                 <button class="btn-info" onclick="connectToPeer()">🔗 连接到节点</button>
                 <button class="btn-danger" onclick="disconnectFromPeer()">🚫 断开节点</button>
                 <button class="btn-warning" onclick="refreshAll()">🔄 刷新全部</button>
             </div>
+        </div>
+
+        <!-- 地址排行榜 -->
+        <div id="addressRanking" style="display:none;" class="storage-card">
+            <h3 style="color:#667eea; margin-bottom:10px;">🏆 地址余额排行榜</h3>
+            <div id="addressList"></div>
+        </div>
+
+        <!-- 交易池显示 -->
+        <div id="mempoolPanel" style="display:none;" class="storage-card">
+            <h3 style="color:#667eea; margin-bottom:10px;">📋 待打包交易池 (Mempool)</h3>
+            <div id="mempoolList"></div>
         </div>
 
         <h2 class="section-title">📦 当前节点区块链</h2>
@@ -976,15 +1013,45 @@
                 const isGenesis = index === 0;
                 const blockElement = document.createElement('div');
                 blockElement.className = `block ${isGenesis ? 'block-genesis' : ''}`;
-                
+
                 const timestamp = new Date(block.timestamp).toLocaleString('zh-CN');
                 const shortHash = block.hash.substring(0, 20) + '...';
                 const shortPrevHash = block.previousHash.substring(0, 20) + '...';
 
+                // 兼容两种格式：新的 transactions 数组 或 旧的 data.data 字符串
+                const txList = block.transactions || (block.data ? [{ from: '', to: '', amount: '', note: block.data.data }] : []);
+
+                // 渲染交易列表
+                const txHtml = txList.map(tx => {
+                    const isReward = tx.from === 'SYSTEM' || tx.from === '';
+                    const isNoteOnly = tx.to === 'NOTE';
+                    const txTime = tx.timestamp ? new Date(tx.timestamp).toLocaleString('zh-CN') : '';
+                    if (isNoteOnly) {
+                        return `<div style="padding:6px 10px; background:#f0f4ff; border-left:3px solid #667eea; margin:4px 0; border-radius:4px;">
+                            <span style="color:#667eea; font-weight:600;">📝 备注:</span> ${tx.note || ''}
+                        </div>`;
+                    }
+                    if (isReward) {
+                        return `<div style="padding:8px 10px; background:linear-gradient(90deg,#fff0e6,#fff8dc); border-left:3px solid #f59e0b; margin:4px 0; border-radius:4px;">
+                            <span style="color:#d97706; font-weight:700;">⛏️ 矿工奖励</span>
+                            <span style="font-family:'Courier New';">+${tx.amount}</span> → 
+                            <span style="font-family:'Courier New';">${tx.to}</span>
+                        </div>`;
+                    }
+                    return `<div style="padding:8px 10px; background:#f8faff; border-left:3px solid #3b82f6; margin:4px 0; border-radius:4px; font-size:0.9rem;">
+                        <div><span style="font-family:'Courier New'; color:#2563eb;">${tx.from}</span> → 
+                        <span style="font-family:'Courier New'; color:#059669;">${tx.to}</span>
+                        <span style="color:#dc2626; font-weight:700;">${tx.amount}</span> ${tx.fee ? `(手续费:${tx.fee})` : ''}
+                        ${tx.note ? `<div style="font-size:0.8rem; color:#666; margin-top:3px;">📝 ${tx.note}</div>` : ''}
+                        ${txTime ? `<div style="font-size:0.75rem; color:#888; margin-top:3px;">🕐 ${txTime}</div>` : ''}
+                        </div>
+                    </div>`;
+                }).join('');
+
                 blockElement.innerHTML = `
                     <div class="block-header">
                         <div class="block-number">#${block.index}</div>
-                        <div class="block-type">${isGenesis ? '🌱 创世区块' : '📦 交易区块'}</div>
+                        <div class="block-type">${isGenesis ? '🌱 创世区块' : '📦 ' + txList.length + ' 笔交易'}</div>
                     </div>
                     <div class="block-content">
                         <div class="block-info">
@@ -993,13 +1060,13 @@
                                 <div class="info-value">${timestamp}</div>
                             </div>
                             <div class="info-item">
-                                <div class="info-label">📝 交易内容</div>
-                                <div class="info-value">${block.data.data}</div>
-                            </div>
-                            <div class="info-item">
                                 <div class="info-label">⚙️ Nonce值</div>
                                 <div class="info-value">${block.nonce}</div>
                             </div>
+                        </div>
+                        <div style="margin:10px 0;">
+                            <div style="font-size:0.85rem; color:#667eea; font-weight:600; margin-bottom:5px;">📄 区块内交易:</div>
+                            ${txHtml}
                         </div>
                         <div class="block-info">
                             <div class="info-item">
@@ -1025,38 +1092,153 @@
             });
         }
 
-        async function mineBlock() {
-            const input = document.getElementById('transactionInput');
-            const data = input.value.trim();
+        // =============== 新功能：钱包与转账 ===============
 
-            if (!data) {
-                showNotification('请输入交易内容', 'error');
+        let localWallet = null;
+
+        async function newWallet() {
+            try {
+                const response = await fetch('/api/wallet/new', { method: 'POST' });
+                const result = await response.json();
+                if (result.success) {
+                    localWallet = result.wallet;
+                    document.getElementById('myAddress').value = localWallet.address;
+                    document.getElementById('walletInfo').innerHTML =
+                        `<span style="color:#059669;">✅ 已生成新钱包</span><br>` +
+                        `<span style="font-family:'Courier New';">私钥: ${localWallet.privateKey.substring(0,20)}...</span>`;
+                    showNotification('🎉 钱包已生成！请从 GENESIS_WALLET 转账给它一些初始币', 'success');
+                }
+            } catch (error) {
+                showNotification('生成钱包失败: ' + error.message, 'error');
+            }
+        }
+
+        async function checkBalance() {
+            const addr = document.getElementById('myAddress').value.trim();
+            if (!addr) {
+                showNotification('请先填写或生成一个地址', 'error');
+                return;
+            }
+            try {
+                const response = await fetch(`/api/balance/${encodeURIComponent(addr)}`);
+                const result = await response.json();
+                if (result.success) {
+                    document.getElementById('walletInfo').innerHTML =
+                        `<span style="color:#059669; font-weight:700; font-size:1rem;">💰 余额: ${result.balance}</span><br>` +
+                        `<span style="color:#666;">📊 已打包交易: ${result.historyCount} 笔, 待打包: ${result.pendingTransactions} 笔</span>`;
+                    showNotification(`💰 ${addr.substring(0,15)}... 余额: ${result.balance}`, 'success');
+                }
+                // 顺便获取地址排行榜
+                const addrResp = await fetch('/api/addresses');
+                const addrResult = await addrResp.json();
+                if (addrResult.success && addrResult.addresses.length > 0) {
+                    const panel = document.getElementById('addressRanking');
+                    const list = document.getElementById('addressList');
+                    list.innerHTML = addrResult.addresses.map((a, i) =>
+                        `<div style="padding:8px 12px; background:${i===0?'#fff7ed':'#f8fafc'}; border-radius:6px; margin:4px 0; display:flex; justify-content:space-between; align-items:center;">
+                            <span><span style="font-weight:700;">#${i+1}</span> <span style="font-family:'Courier New';">${a.address}</span></span>
+                            <span style="color:#dc2626; font-weight:700;">${a.balance}</span>
+                            <span style="font-size:0.8rem; color:#888;">${a.txCount} 笔</span>
+                        </div>`
+                    ).join('');
+                    panel.style.display = 'block';
+                }
+            } catch (error) {
+                showNotification('查询失败: ' + error.message, 'error');
+            }
+        }
+
+        async function submitTransaction() {
+            const from = document.getElementById('myAddress').value.trim();
+            const to = document.getElementById('txTo').value.trim();
+            const amount = parseFloat(document.getElementById('txAmount').value);
+            const fee = parseFloat(document.getElementById('txFee').value) || 0;
+            const note = document.getElementById('txNote').value.trim();
+
+            if (!from || !to || !amount || amount <= 0) {
+                showNotification('请完善转账信息（发送方地址、接收方地址、金额）', 'error');
+                return;
+            }
+            if (from === to) {
+                showNotification('发送方和接收方不能相同', 'error');
                 return;
             }
 
             try {
+                const response = await fetch('/api/transaction', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ from, to, amount, fee, note })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    showNotification(`✅ 交易已进入交易池！当前交易池内共 ${result.poolCount} 笔`, 'success');
+                    document.getElementById('txTo').value = '';
+                    document.getElementById('txAmount').value = '';
+                    document.getElementById('txNote').value = '';
+                    showMempool();
+                } else {
+                    showNotification('❌ ' + result.error, 'error');
+                }
+            } catch (error) {
+                showNotification('提交交易失败: ' + error.message, 'error');
+            }
+        }
+
+        async function mineBlock() {
+            const myAddress = document.getElementById('myAddress').value.trim();
+            const note = document.getElementById('transactionInput').value.trim();
+
+            try {
                 const response = await fetch('/api/mine', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ data })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        minerAddress: myAddress || undefined,
+                        data: note || undefined
+                    })
                 });
 
                 const result = await response.json();
                 if (result.success) {
-                    showNotification(`🎉 挖矿成功！耗时 ${result.miningTime}`, 'success');
-                    input.value = '';
+                    showNotification(`🎉 挖矿成功！打包 ${result.transactionCount} 笔交易, 奖励 ${result.reward}, 耗时 ${result.miningTime}`, 'success');
+                    document.getElementById('transactionInput').value = '';
                     await refreshAll();
-                    
+                    showMempool();
                     setTimeout(() => {
-                        showNotification('🔄 区块已广播到所有连接的节点', 'info');
+                        showNotification('🔄 新区块已广播到所有连接的节点', 'info');
                     }, 1000);
                 } else {
                     showNotification('挖矿失败: ' + result.error, 'error');
                 }
             } catch (error) {
                 showNotification('挖矿请求失败: ' + error.message, 'error');
+            }
+        }
+
+        async function showMempool() {
+            try {
+                const response = await fetch('/api/mempool');
+                const result = await response.json();
+                const panel = document.getElementById('mempoolPanel');
+                const list = document.getElementById('mempoolList');
+                if (result.count === 0) {
+                    list.innerHTML = '<div style="color:#888; padding:10px;">📭 交易池为空，还没有待打包的交易</div>';
+                } else {
+                    list.innerHTML = `<div style="color:#667eea; font-weight:600; margin-bottom:8px;">共 ${result.count} 笔待打包</div>` +
+                        result.transactions.map(tx =>
+                            `<div style="padding:8px 10px; background:#fff8e1; border-left:3px solid #f59e0b; margin:4px 0; border-radius:4px; font-size:0.85rem;">
+                                <span style="font-family:'Courier New'; color:#2563eb;">${tx.from}</span> →
+                                <span style="font-family:'Courier New'; color:#059669;">${tx.to}</span>
+                                <span style="color:#dc2626; font-weight:700;">${tx.amount}</span>
+                                ${tx.fee ? `(手续费:${tx.fee})` : ''}
+                                ${tx.note ? `<div style="color:#666; margin-top:3px;">📝 ${tx.note}</div>` : ''}
+                            </div>`
+                        ).join('');
+                }
+                panel.style.display = 'block';
+            } catch (error) {
+                showNotification('获取交易池失败: ' + error.message, 'error');
             }
         }
 

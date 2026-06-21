@@ -3,34 +3,94 @@
     {
       "index": 0,
       "timestamp": "2025-01-01T00:00:00.000Z",
+      "previousHash": "0",
+      "nonce": 0,
       "data": {
         "data": "创世区块：StarCoin诞生！"
       },
-      "previousHash": "0",
-      "hash": "589ebf5be07bbb52bd816a0342f968bb4bdab532533f13bb1cc64237b131ca1a",
-      "nonce": 0
+      "transactions": [
+        {
+          "id": "77c7ae6e81995edba6d6e809df4a1aec6974ef071098f8fd2a3a37b6caa6fe91",
+          "from": "",
+          "to": "NOTE",
+          "amount": 0,
+          "fee": 0,
+          "note": "创世区块：StarCoin诞生！",
+          "timestamp": "2026-06-21T12:33:05.454Z",
+          "signature": ""
+        }
+      ],
+      "hash": "5f559dcf7802950f516da7225a974f8b75b943ff0051f8e2fc6d98538b097cfe"
     },
     {
       "index": 1,
-      "timestamp": "2026-06-21T12:01:54.090Z",
-      "data": {
-        "data": "​Alice给Bob 10个StarCoin"
-      },
-      "previousHash": "589ebf5be07bbb52bd816a0342f968bb4bdab532533f13bb1cc64237b131ca1a",
-      "hash": "00e82b27884e70b1a0bb83d9e2b8238e9f048a611ff173f18490a9b23888afe6",
-      "nonce": 464
+      "timestamp": "2026-06-21T12:33:50.906Z",
+      "previousHash": "5f559dcf7802950f516da7225a974f8b75b943ff0051f8e2fc6d98538b097cfe",
+      "nonce": 52,
+      "transactions": [
+        {
+          "id": "505ac30c4da788eb2cb93996fa81ebb184e11e75b8bde478c291f48f29218a32",
+          "from": "SYSTEM",
+          "to": "bb9f1569062276acb1de90fe41848527",
+          "amount": 50,
+          "fee": 0,
+          "note": "Miner Reward",
+          "timestamp": "2026-06-21T12:33:50.906Z",
+          "signature": ""
+        },
+        {
+          "id": "94b6dca9f542a64a4bd017232f1452ea098e25d6cdbe936f8134893e99e7d2da",
+          "from": "",
+          "to": "NOTE",
+          "amount": 0,
+          "fee": 0,
+          "note": "​Alice给Bob 10个StarCoin",
+          "timestamp": "2026-06-21T12:33:50.906Z",
+          "signature": ""
+        }
+      ],
+      "hash": "0047ed24b579251a72fb0fdee4a114b9f39dae60ed0a6bde96cfd83430efccd5"
     },
     {
       "index": 2,
-      "timestamp": "2026-06-21T12:02:00.443Z",
-      "data": {
-        "data": "Bob给Alice 15个StarCoin"
-      },
-      "previousHash": "00e82b27884e70b1a0bb83d9e2b8238e9f048a611ff173f18490a9b23888afe6",
-      "hash": "00ad5941fa9fdf7e9bd5bb16e78bed23036906b1c0c7f47125eebb73b5ff0c3d",
-      "nonce": 22
+      "timestamp": "2026-06-21T12:34:19.514Z",
+      "previousHash": "0047ed24b579251a72fb0fdee4a114b9f39dae60ed0a6bde96cfd83430efccd5",
+      "nonce": 835,
+      "transactions": [
+        {
+          "id": "e19506d9c91e37d11cbb340f4a229ebf8229ff6d615f51a9b3e8a1505a5c1016",
+          "from": "SYSTEM",
+          "to": "bb9f1569062276acb1de90fe41848527",
+          "amount": 50,
+          "fee": 0,
+          "note": "Miner Reward",
+          "timestamp": "2026-06-21T12:34:19.514Z",
+          "signature": ""
+        },
+        {
+          "id": "dd858c6be7c61e14fcce3a2009f806ab3a08479d02a3fbe55841c598ac2056db",
+          "from": "bb9f1569062276acb1de90fe41848527",
+          "to": "bob",
+          "amount": 20,
+          "fee": 0,
+          "note": "",
+          "timestamp": "2026-06-21T12:34:09.195Z",
+          "signature": "SIGNED_BY_bb9f1569062276acb1de90fe41848527"
+        },
+        {
+          "id": "3b730918e60be9dfa73f9fcdf2c5592bb91e5cbe9504d53d1f450d50c4637a50",
+          "from": "",
+          "to": "NOTE",
+          "amount": 0,
+          "fee": 0,
+          "note": "​Alice给Bob 20个StarCoin",
+          "timestamp": "2026-06-21T12:34:19.514Z",
+          "signature": ""
+        }
+      ],
+      "hash": "00c21cf4437a396493a940708b892d9e89f690653aacde9f988e3daa4f5c2ec9"
     }
   ],
-  "savedAt": "2026-06-21T12:04:39.750Z",
+  "savedAt": "2026-06-21T12:34:19.522Z",
   "version": "1.0"
 }
