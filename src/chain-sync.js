@@ -60,10 +60,16 @@ class ChainSync {
                 const txSrc = b.transactions || (b.data ? b.data : []);
                 currentBlock = new Block(b.index, b.timestamp, txSrc, b.previousHash);
                 currentBlock.nonce = b.nonce;
-                currentBlock.hash = b.hash;
+                currentBlock.merkleRoot = b.merkleRoot || null;
                 // 同时把原始 transactions 复制过来用于签名验证
                 if (b.transactions && Array.isArray(b.transactions)) {
                     currentBlock.transactions = b.transactions;
+                }
+                // 使用 merkleRoot 重新计算 hash 以保持一致性
+                if (currentBlock.merkleRoot) {
+                    currentBlock.hash = currentBlock.calculateHash();
+                } else {
+                    currentBlock.hash = b.hash;
                 }
             }
             if (!(previousBlock instanceof Block)) {
@@ -71,9 +77,14 @@ class ChainSync {
                 const txSrc = b.transactions || (b.data ? b.data : []);
                 previousBlock = new Block(b.index, b.timestamp, txSrc, b.previousHash);
                 previousBlock.nonce = b.nonce;
-                previousBlock.hash = b.hash;
+                previousBlock.merkleRoot = b.merkleRoot || null;
                 if (b.transactions && Array.isArray(b.transactions)) {
                     previousBlock.transactions = b.transactions;
+                }
+                if (previousBlock.merkleRoot) {
+                    previousBlock.hash = previousBlock.calculateHash();
+                } else {
+                    previousBlock.hash = b.hash;
                 }
             }
 

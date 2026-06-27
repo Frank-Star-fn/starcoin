@@ -139,6 +139,7 @@ async function refreshMempool() {
         }
     } catch (e) {
         document.getElementById('mempool').textContent = '查询失败';
+        document.getElementById('statMempool').textContent = '❌';
     }
 }
 
@@ -281,6 +282,12 @@ async function refreshChain() {
             }
     } catch (e) {
         document.getElementById('chainVisual').textContent = '查询失败';
+        document.getElementById('statBlocks').textContent = '❌';
+        document.getElementById('statDifficulty').textContent = '❌';
+        document.getElementById('statValid').textContent = '❌';
+        document.getElementById('statPort').textContent = '❌';
+        const statBurnedEl = document.getElementById('statBurnedFees');
+        if (statBurnedEl) statBurnedEl.textContent = '❌';
     }
 }
 

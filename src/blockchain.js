@@ -387,7 +387,6 @@ class Blockchain {
                     const rebuiltChain = saved.chain.map(b => {
                         const block = new Block(b.index, b.timestamp, [], b.previousHash);
                         block.nonce = b.nonce;
-                        block.hash = b.hash;
                         block.merkleRoot = b.merkleRoot || null;  // 恢复 merkleRoot（旧数据为 null，兼容旧链）
                         // 保留原始 transactions 数组（包含 signature/publicKey 等字段）
                         if (b.transactions && Array.isArray(b.transactions)) {
@@ -396,6 +395,12 @@ class Blockchain {
                             // 旧格式 data 字段：Block 构造函数已经帮我们派生 transactions
                             const blockWithData = new Block(b.index, b.timestamp, b.data, b.previousHash);
                             block.transactions = blockWithData.transactions;
+                        }
+                        // 恢复 hash：如果有 merkleRoot，确保 hash 与 merkleRoot 一致
+                        if (block.merkleRoot) {
+                            block.hash = block.calculateHash();
+                        } else {
+                            block.hash = b.hash;
                         }
                         return block;
                     });

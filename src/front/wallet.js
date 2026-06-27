@@ -251,3 +251,7 @@ async function refreshSelectedWalletDetails() {
         document.getElementById('selectedWalletHistory').textContent = '查询失败';
     }
 }
+
+// 将需要在 HTML 内联事件中使用的函数暴露到全局作用域
+window.toggleImportArea = toggleImportArea;
+window.doImportPrivateKey = doImportPrivateKey;
