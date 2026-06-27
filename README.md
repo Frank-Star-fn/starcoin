@@ -6,7 +6,6 @@
 ## 启动节点
 
 ```sh
-cd c:\myfile\program\btc\starcoin 
 $env:PORT="3000" ; node src/server.js
 $env:PORT="3001" ; node src/server.js
 ```
@@ -17,10 +16,10 @@ $env:PORT="3001" ; node src/server.js
 app.js, wallet.js, main.js, mining.js, 负责可视化和交互。
 
 后端：
-server.js, blockchain.js, chain-sync.js, core.js, p2p.js, p2p-core.js, 负责处理请求和响应。
+server.js, blockchain.js, difficulty-manager.js, chain-sync.js, core.js, p2p.js, p2p-core.js, 负责处理请求和响应。
 
 测试：
-test_ecdsa.js, 测试 ECDSA 签名和验证。
+test目录, 执行单元测试。
 
 ## 已完成功能
 
@@ -37,4 +36,3 @@ test_ecdsa.js, 测试 ECDSA 签名和验证。
 - 增加自动重连机制。
 
 ## 待增加功能
-

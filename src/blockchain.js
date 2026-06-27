@@ -3,19 +3,18 @@ const fs = require('fs');
 const crypto = require('crypto');
 const { Block, Transaction, generateWallet } = require('./core');
 const { ChainSync } = require('./chain-sync');
+const { DifficultyManager } = require('./difficulty-manager');
 
 class Blockchain {
     constructor(portOverride) {
         const PORT = process.env.PORT || 3000;
-        this.difficulty = 5;               // 当前挖矿难度（支持小数，例如 5.5 = 5个零 + 下字节≤0x7f）
-        this.difficultyHistory = [];        // 难度变更历史 [{blockIndex, difficulty, avgTime, reason}]
-        this.targetBlockTime = 12;          // 目标出块时间（秒）
-        this.difficultyAdjustInterval = 6;  // 每 N 个区块调整一次难度
-        this.difficultyMin = 3;             // 最小难度
-        this.difficultyMax = 12;            // 最大难度
-        this.difficultyStep = 0.1;          // 每次难度调整的步长（越小越平滑；0.1=约 1.3x 工作量变化）
-        this.lastAdjustmentBlock = 0;       // 上次调整时的区块高度
-        this.blockMiningTimes = {};         // { blockIndex: miningTimeSeconds }（已废弃，保留兼容）
+        this.diffManager = new DifficultyManager({
+            targetBlockTime: 12,
+            difficultyAdjustInterval: 6,
+            difficultyMin: 3,
+            difficultyMax: 12,
+            difficultyStep: 0.1
+        });
         this.pendingTransactions = [];  // 交易池 (Mempool)
         this.miningReward = 50;          // 挖矿奖励
         this.coinbaseMaturity = 5;       // 矿工奖励锁定期（块数），成熟后才能使用
@@ -26,6 +25,21 @@ class Blockchain {
         // freshStart: 是否未从本地加载到数据（全新节点），用于启动时优先从其他节点同步
         this.freshStart = !this.loadFromFile();
     }
+
+    // ============================================================
+    //  难度属性代理：委托给 this.diffManager（保持外部兼容）
+    // ============================================================
+    get difficulty() { return this.diffManager.difficulty; }
+    set difficulty(val) { this.diffManager.difficulty = val; }
+    get difficultyHistory() { return this.diffManager.difficultyHistory; }
+    set difficultyHistory(val) { this.diffManager.difficultyHistory = val; }
+    get targetBlockTime() { return this.diffManager.targetBlockTime; }
+    get difficultyAdjustInterval() { return this.diffManager.difficultyAdjustInterval; }
+    get difficultyMin() { return this.diffManager.difficultyMin; }
+    get difficultyMax() { return this.diffManager.difficultyMax; }
+    get difficultyStep() { return this.diffManager.difficultyStep; }
+    get lastAdjustmentBlock() { return this.diffManager.lastAdjustmentBlock; }
+    set lastAdjustmentBlock(val) { this.diffManager.lastAdjustmentBlock = val; }
 
     createGenesisBlock() {
         // 关键：创世区块必须使用旧格式 { data: '创世区块...' }
@@ -200,161 +214,15 @@ class Blockchain {
         return blockIndex + this.coinbaseMaturity <= this.getLatestBlock().index;
     }
 
-    // 动态难度调整：每 N 个区块，根据链上区块时间戳调整难度
-    // 使用区块时间戳而非本地挖矿计时，确保所有节点从同一链推导出相同难度
+    // 动态难度调整（委托给 DifficultyManager）
     adjustDifficulty() {
-        const latestIndex = this.getLatestBlock().index;
-
-        // 从创世块之后才开始调整
-        if (latestIndex < 2) return;
-
-        // 检查是否需要调整（每 difficultyAdjustInterval 个区块调整一次）
-        const blocksSinceLastAdjust = latestIndex - this.lastAdjustmentBlock;
-        if (blocksSinceLastAdjust < this.difficultyAdjustInterval) return;
-
-        // 使用链上区块时间戳计算最近 N 个区块的平均出块时间
-        // 所有节点共享同一链，因此时间戳一致 → 难度一致
-        let totalTime = 0;
-        let count = 0;
-        const startIdx = Math.max(1, latestIndex - this.difficultyAdjustInterval + 1);
-        for (let i = startIdx + 1; i <= latestIndex; i++) {
-            const prevBlock = this.chain[i - 1];
-            const currBlock = this.chain[i];
-            const timeDiff = (new Date(currBlock.timestamp) - new Date(prevBlock.timestamp)) / 1000;
-            // 合理范围：0 < timeDiff < 1小时（防止异常时间戳干扰）
-            if (timeDiff > 0 && timeDiff < 3600) {
-                totalTime += timeDiff;
-                count++;
-            }
-        }
-
-        if (count < 2) return; // 数据不足，暂不调整
-
-        const avgTime = totalTime / count;
-        const oldDifficulty = this.difficulty;
-
-        // ---- 难度调整算法（平滑浮点版） ----
-        // 根据 (avgTime / targetTime) 比例计算难度变化量，以 difficultyStep 为步长
-        //   ratio > 1 → 出块偏慢 → 降低难度
-        //   ratio < 1 → 出块偏快 → 升高难度
-        // 思路：ratio 的 log2 大致对应难度应变化的"整数位数"，再映射为步长变化
-        const ratio = avgTime / this.targetBlockTime;
-        // 为避免震荡，只在 ratio 偏离 1 较远时才调整（死区 10% 内不调）
-        let delta = 0;
-        if (ratio > 1.15) {
-            // 出块偏慢：降低难度（ratio=2 → -step；ratio=4 → -2step；用 log2 平滑）
-            delta = -this.difficultyStep * Math.min(3, Math.max(1, Math.round(Math.log2(ratio))));
-        } else if (ratio < 0.85) {
-            // 出块偏快：升高难度
-            delta = +this.difficultyStep * Math.min(3, Math.max(1, Math.round(-Math.log2(ratio))));
-        }
-
-        if (delta !== 0) {
-            const raw = this.difficulty + delta;
-            // 钳位到 [difficultyMin, difficultyMax]，并保留 1 位小数避免浮点误差
-            this.difficulty = Math.max(
-                this.difficultyMin,
-                Math.min(this.difficultyMax, Math.round(raw * 10) / 10)
-            );
-        }
-
-        // 记录难度变更历史
-        if (this.difficulty !== oldDifficulty) {
-            this.difficultyHistory.push({
-                blockIndex: latestIndex,
-                oldDifficulty: oldDifficulty,
-                newDifficulty: this.difficulty,
-                avgTime: Math.round(avgTime * 10) / 10,
-                targetTime: this.targetBlockTime,
-                reason: avgTime > this.targetBlockTime * 1.3 ? '出块偏慢 ↓' : '出块偏快 ↑'
-            });
-            console.log(
-                `⚙️ 难度调整 [区块 #${latestIndex}]: ${oldDifficulty} → ${this.difficulty} ` +
-                `(平均 ${avgTime.toFixed(1)}s/块, 目标 ${this.targetBlockTime}s/块)`
-            );
-        } else {
-            console.log(
-                `📊 难度评估 [区块 #${latestIndex}]: 维持 ${this.difficulty} ` +
-                `(平均 ${avgTime.toFixed(1)}s/块, 目标 ${this.targetBlockTime}s/块)`
-            );
-        }
-
-        this.lastAdjustmentBlock = latestIndex;
+        this.diffManager.adjustDifficulty(this.chain, this.getLatestBlock().index);
     }
 
     // 根据链上区块时间戳重新计算难度（用于 P2P 链替换后保持所有节点难度一致）
-    // 从头遍历整条链，在每个调整点按区块时间戳计算难度
+    // 委托给 DifficultyManager
     recalculateDifficulty() {
-        if (this.chain.length < 2) {
-            this.difficulty = 5;
-            this.lastAdjustmentBlock = 0;
-            this.difficultyHistory = [];
-            return;
-        }
-
-        // 重置为初始难度
-        let diff = 5;
-        let lastAdj = 0;
-        const history = [];
-
-        // 遍历链上每个区块，在调整点用时间戳计算难度
-        for (let i = 1; i < this.chain.length; i++) {
-            const blocksSinceLast = i - lastAdj;
-            if (blocksSinceLast >= this.difficultyAdjustInterval && i >= 2) {
-                // 用时间戳计算平均出块时间
-                const startIdx = Math.max(1, i - this.difficultyAdjustInterval + 1);
-                let totalTime = 0;
-                let count = 0;
-                for (let j = startIdx + 1; j <= i; j++) {
-                    const prevB = this.chain[j - 1];
-                    const currB = this.chain[j];
-                    const timeDiff = (new Date(currB.timestamp) - new Date(prevB.timestamp)) / 1000;
-                    if (timeDiff > 0 && timeDiff < 3600) {
-                        totalTime += timeDiff;
-                        count++;
-                    }
-                }
-
-                if (count >= 2) {
-                    const avgTime = totalTime / count;
-                    const ratio = avgTime / this.targetBlockTime;
-                    let delta = 0;
-                    if (ratio > 1.15) {
-                        delta = -this.difficultyStep * Math.min(3, Math.max(1, Math.round(Math.log2(ratio))));
-                    } else if (ratio < 0.85) {
-                        delta = +this.difficultyStep * Math.min(3, Math.max(1, Math.round(-Math.log2(ratio))));
-                    }
-                    if (delta !== 0) {
-                        const raw = diff + delta;
-                        diff = Math.max(
-                            this.difficultyMin,
-                            Math.min(this.difficultyMax, Math.round(raw * 10) / 10)
-                        );
-                    }
-                    history.push({
-                        blockIndex: i,
-                        oldDifficulty: this.difficulty,
-                        newDifficulty: diff,
-                        avgTime: Math.round(avgTime * 10) / 10,
-                        targetTime: this.targetBlockTime,
-                        reason: avgTime > this.targetBlockTime * 1.3 ? '出块偏慢 ↓' : '出块偏快 ↑'
-                    });
-                    lastAdj = i;
-                }
-            }
-        }
-
-        const oldDiff = this.difficulty;
-        this.difficulty = diff;
-        this.lastAdjustmentBlock = lastAdj;
-        this.difficultyHistory = history;
-
-        if (Math.abs(this.difficulty - oldDiff) > 0.01) {
-            console.log(
-                `⚙️ 难度重新计算 [全链重放]: ${oldDiff} → ${this.difficulty} ` +
-                `(基于 ${this.chain.length} 个区块的时间戳, ${history.length} 次调整)`
-            );
-        }
+        this.diffManager.recalculateDifficulty(this.chain);
     }
 
     // 计算指定地址的余额（遍历整个链）
