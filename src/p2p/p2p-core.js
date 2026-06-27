@@ -12,7 +12,11 @@ const MESSAGE_TYPES = {
     CHAIN_LENGTH: 'CHAIN_LENGTH',
     SYNC_REQUEST: 'SYNC_REQUEST',
     PING: 'PING',
-    PONG: 'PONG'
+    PONG: 'PONG',
+    // 交易池广播相关
+    TRANSACTION: 'TRANSACTION',
+    QUERY_PENDING_TXS: 'QUERY_PENDING_TXS',
+    PENDING_TXS: 'PENDING_TXS'
 };
 
 // ========== 重连管理器配置 ==========
@@ -194,6 +198,29 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         });
     }
 
+    /**
+     * 向所有已连接节点广播一笔交易（P2P 交易池同步）
+     * @param {object} tx - 交易对象
+     */
+    function broadcastTransaction(tx) {
+        broadcast({
+            type: MESSAGE_TYPES.TRANSACTION,
+            transaction: tx,
+            fromNode: nodeInfo.url
+        });
+    }
+
+    /**
+     * 向所有已连接节点广播本节点的待打包交易列表
+     */
+    function broadcastPendingTxs() {
+        broadcast({
+            type: MESSAGE_TYPES.PENDING_TXS,
+            transactions: starCoin.pendingTransactions,
+            fromNode: nodeInfo.url
+        });
+    }
+
     function updateNodeInfo() {
         nodeInfo.chainLength = starCoin.chain.length;
         nodeInfo.lastUpdated = new Date().toISOString();
@@ -252,6 +279,16 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
                     clearTimeout(pendingPongs.get(connectionId));
                     pendingPongs.delete(connectionId);
                 }
+                break;
+            // ====== 交易池广播消息处理 ======
+            case MESSAGE_TYPES.TRANSACTION:
+                handleTransaction(message.transaction, message.fromNode);
+                break;
+            case MESSAGE_TYPES.QUERY_PENDING_TXS:
+                handleQueryPendingTxs(ws, message.fromNode);
+                break;
+            case MESSAGE_TYPES.PENDING_TXS:
+                handlePendingTxs(message.transactions, message.fromNode);
                 break;
         }
     }
@@ -341,6 +378,29 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         }
     }
 
+    // ========== 交易池广播处理（基础层） ==========
+    // 注意：这些方法在 p2p.js 中会被上层扩展，以注入更完善的业务逻辑
+    // 基础层只做日志记录和基本转发
+
+    /** 处理收到的单笔交易（由上层 p2p.js 扩展覆盖） */
+    function handleTransaction(transaction, fromNode) {
+        console.log(`📥 [交易] 收到来自 ${fromNode || '某节点'} 的交易: ${transaction.id || 'unknown'}`);
+        // 基础层不做具体处理，交给上层扩展
+    }
+
+    /** 处理收到的待打包交易列表（由上层 p2p.js 扩展覆盖） */
+    function handlePendingTxs(transactions, fromNode) {
+        if (!Array.isArray(transactions) || transactions.length === 0) return;
+        console.log(`📥 [交易池] 收到来自 ${fromNode || '某节点'} 的 ${transactions.length} 笔待打包交易`);
+        // 基础层不做具体处理，交给上层扩展
+    }
+
+    /** 处理 QUERY_PENDING_TXS 请求（由上层 p2p.js 扩展覆盖） */
+    function handleQueryPendingTxs(ws, fromNode) {
+        console.log(`📥 [交易池] 收到来自 ${fromNode || '某节点'} 的交易池请求`);
+        // 基础层不做具体处理，交给上层扩展
+    }
+
     // ========== 节点连接管理 ==========
 
     /**
@@ -382,6 +442,12 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
 
             sendMessage(ws, {
                 type: MESSAGE_TYPES.QUERY_LATEST
+            });
+
+            // 连接后立即请求对方的待打包交易
+            sendMessage(ws, {
+                type: MESSAGE_TYPES.QUERY_PENDING_TXS,
+                fromNode: nodeInfo.url
             });
 
             nodeConnections.set(connectionId, { ws, id: connectionId, url: peerUrl });
@@ -566,6 +632,12 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
             type: MESSAGE_TYPES.NODE_LIST_REQUEST,
             fromNode: nodeInfo.url
         });
+
+        // 新连接建立后，主动请求对方的待打包交易
+        sendMessage(ws, {
+            type: MESSAGE_TYPES.QUERY_PENDING_TXS,
+            fromNode: nodeInfo.url
+        });
     });
 
     // ========== 组装核心 API ==========
@@ -588,6 +660,12 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         handleChainResponse,
         handleBlockResponse,
         handleNodeInfo,
+        // 交易池广播方法
+        broadcastTransaction,
+        broadcastPendingTxs,
+        handleTransaction,
+        handlePendingTxs,
+        handleQueryPendingTxs,
         connectToPeer,
         disconnectFromPeer,
         getAllNodeInfo,

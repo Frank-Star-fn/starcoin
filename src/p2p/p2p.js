@@ -168,6 +168,11 @@ function createP2P(server, starCoin, PORT, options = {}) {
             core.sendMessage(ws, {
                 type: MESSAGE_TYPES.QUERY_LATEST
             });
+            // 连接后立即请求对方的待打包交易
+            core.sendMessage(ws, {
+                type: MESSAGE_TYPES.QUERY_PENDING_TXS,
+                fromNode: core.nodeInfo.url
+            });
 
             core.nodeConnections.set(connectionId, { ws, id: connectionId, url: nodeUrl });
 
@@ -391,22 +396,158 @@ function createP2P(server, starCoin, PORT, options = {}) {
                         currentNode: core.nodeInfo
                     });
                 }
-                return; // 已处理，不再走原始 handler
+                return;
 
             case MESSAGE_TYPES.NODE_LIST_REQUEST:
-                // 主动请求节点列表，发送自己的列表作为响应
                 core.sendMessage(ws, {
                     type: MESSAGE_TYPES.NODE_LIST,
                     nodes: Array.from(core.nodes),
                     fromNode: core.nodeInfo.url,
                     currentNode: core.nodeInfo
                 });
-                return; // 已处理，不再走原始 handler
+                return;
+
+            // ====== 交易池广播消息处理 ======
+
+            case MESSAGE_TYPES.TRANSACTION:
+                handleIncomingTransaction(message.transaction, message.fromNode);
+                return;
+
+            case MESSAGE_TYPES.QUERY_PENDING_TXS:
+                // 收到交易池请求 → 发送本节点的待打包交易列表
+                core.sendMessage(ws, {
+                    type: MESSAGE_TYPES.PENDING_TXS,
+                    transactions: starCoin.pendingTransactions,
+                    fromNode: core.nodeInfo.url
+                });
+                return;
+
+            case MESSAGE_TYPES.PENDING_TXS:
+                handleIncomingPendingTxs(message.transactions, message.fromNode);
+                return;
         }
 
         // 其余消息类型交给原始 handler
         return origHandleMessage.call(this, ws, message, connectionId);
     };
+
+    // ========== 交易池消息处理逻辑 ==========
+
+    /**
+     * 处理从 P2P 网络收到的单笔交易
+     * - 验证签名
+     * - 去重（按 tx.id）
+     * - 加入本地交易池
+     * - 不转发（防止广播风暴）
+     */
+    function handleIncomingTransaction(transaction, fromNode) {
+        if (!transaction || !transaction.id) {
+            console.log('⚠️ [P2P交易] 收到无效交易，忽略');
+            return;
+        }
+
+        // 去重检查
+        if (starCoin.hasPendingTransaction(transaction.id)) {
+            return; // 已存在，静默忽略
+        }
+
+        console.log(`📥 [P2P交易] 收到来自 ${fromNode || '某节点'} 的交易: ${transaction.id.substring(0, 16)}...`);
+
+        // 使用 blockchain 的 addPendingTransaction 方法（跳过余额检查）
+        const result = starCoin.addPendingTransaction(transaction, true);
+        if (result.success) {
+            console.log(`✅ [P2P交易] 已加入本地交易池，当前池大小: ${starCoin.pendingTransactions.length}`);
+        } else {
+            console.log(`⚠️ [P2P交易] 拒绝加入: ${result.error}`);
+        }
+    }
+
+    /**
+     * 处理从 P2P 网络收到的待打包交易列表
+     * - 逐笔去重、验证、合并到本地交易池
+     */
+    function handleIncomingPendingTxs(transactions, fromNode) {
+        if (!Array.isArray(transactions) || transactions.length === 0) return;
+
+        let added = 0;
+        let skipped = 0;
+        for (const tx of transactions) {
+            if (starCoin.hasPendingTransaction(tx.id)) {
+                skipped++;
+                continue;
+            }
+            const result = starCoin.addPendingTransaction(tx, true);
+            if (result.success) {
+                added++;
+            } else {
+                skipped++;
+            }
+        }
+
+        if (added > 0) {
+            console.log(`📥 [P2P交易池] 从 ${fromNode || '某节点'} 合并了 ${added} 笔新交易（跳过 ${skipped} 笔），当前池大小: ${starCoin.pendingTransactions.length}`);
+        }
+    }
+
+    // ========== 交易池广播同步方法 ==========
+
+    /**
+     * 广播一笔交易到所有对等节点（单笔广播）
+     * @param {object} tx - 交易对象
+     */
+    function broadcastTransaction(tx) {
+        const connectedCount = core.nodes.size;
+        if (connectedCount === 0) return;
+
+        console.log(`📤 [P2P交易] 广播交易 ${tx.id.substring(0, 16)}... 到 ${connectedCount} 个节点`);
+        core.broadcastTransaction(tx);
+    }
+
+    /**
+     * 广播整个交易池到所有对等节点
+     */
+    function broadcastPendingTxs() {
+        const connectedCount = core.nodes.size;
+        if (connectedCount === 0) return;
+        if (starCoin.pendingTransactions.length === 0) return;
+
+        console.log(`📤 [P2P交易池] 广播 ${starCoin.pendingTransactions.length} 笔待打包交易到 ${connectedCount} 个节点`);
+        core.broadcastPendingTxs();
+    }
+
+    /**
+     * 向所有对等节点请求交易池并合并
+     * - 广播 QUERY_PENDING_TXS 请求
+     * - 各节点通过 PENDING_TXS 回复
+     * - 逐笔验证合并
+     */
+    function syncPendingTxs() {
+        const connectedCount = core.nodes.size;
+        if (connectedCount === 0) {
+            console.log('⚠️ [P2P交易池] 没有已连接节点，无法同步');
+            return { success: false, message: '没有已连接节点' };
+        }
+
+        console.log(`🔄 [P2P交易池] 向 ${connectedCount} 个节点请求交易池同步...`);
+
+        const requestMsg = {
+            type: MESSAGE_TYPES.QUERY_PENDING_TXS,
+            fromNode: core.nodeInfo.url
+        };
+
+        core.wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                core.sendMessage(client, requestMsg);
+            }
+        });
+        core.nodeConnections.forEach((conn) => {
+            if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
+                core.sendMessage(conn.ws, requestMsg);
+            }
+        });
+
+        return { success: true, message: `已向 ${connectedCount} 个节点发送交易池同步请求` };
+    }
 
     // 扩展 handleChainResponse：注入同步汇聚模式
     const origHandleChainResponse = core.handleChainResponse;
@@ -511,6 +652,11 @@ function createP2P(server, starCoin, PORT, options = {}) {
             candidateCount: syncState.candidates.length,
             candidates: syncState.candidates
         }),
+
+        // 交易池广播方法
+        broadcastTransaction,
+        broadcastPendingTxs,
+        syncPendingTxs,
 
         // 健康检查方法
         checkChainHealth,

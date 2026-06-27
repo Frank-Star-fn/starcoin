@@ -170,6 +170,8 @@ app.post('/api/transaction', (req, res) => {
             poolCount: starCoin.pendingTransactions.length,
             txId: savedTx.id
         });
+        // P2P 广播：将交易广播到其他节点
+        p2p.broadcastTransaction(savedTx);
         res.json({
             success: true,
             message: '交易已通过 ECDSA 签名验证，已加入交易池',
@@ -256,6 +258,8 @@ app.post('/api/mine', (req, res) => {
 
         // 广播新区块到其他节点
         p2p.broadcastLatest();
+        // 广播更新后的交易池（通知其他节点哪些交易已被打包）
+        p2p.broadcastPendingTxs();
         p2p.updateNodeInfo();
 
         // WebSocket 推送：新区块诞生
@@ -363,6 +367,8 @@ app.get('/api/mine/stream', async (req, res) => {
 
             // 挖矿完成，广播到其他节点
             p2p.broadcastLatest();
+            // 广播更新后的交易池（通知其他节点哪些交易已被打包）
+            p2p.broadcastPendingTxs();
             p2p.updateNodeInfo();
 
             // WebSocket 推送：新区块诞生（SSE 挖矿路径）
@@ -449,6 +455,31 @@ app.get('/api/sync/status', (req, res) => {
         connectedNodes: p2p.getConnectedCount(),
         peerChains: peerSummary,
         candidates: syncData.candidates.length
+    });
+});
+
+// ============ 交易池同步 API ============
+
+// 手动触发生交池同步
+app.post('/api/mempool/sync', (req, res) => {
+    const result = p2p.syncPendingTxs();
+    res.json({
+        success: result.success,
+        message: result.message,
+        poolCount: starCoin.pendingTransactions.length,
+        connectedNodes: p2p.getConnectedCount()
+    });
+});
+
+// 手动广播本地交易池
+app.post('/api/mempool/broadcast', (req, res) => {
+    const count = starCoin.pendingTransactions.length;
+    p2p.broadcastPendingTxs();
+    res.json({
+        success: true,
+        message: `已广播 ${count} 笔待打包交易到对等节点`,
+        poolCount: count,
+        connectedNodes: p2p.getConnectedCount()
     });
 });
 

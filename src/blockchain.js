@@ -113,6 +113,75 @@ class Blockchain {
         return transaction;
     }
 
+    /**
+     * 检查交易池中是否已存在指定 ID 的交易（用于 P2P 去重）
+     * @param {string} txId
+     * @returns {boolean}
+     */
+    hasPendingTransaction(txId) {
+        return this.pendingTransactions.some(t => t.id === txId);
+    }
+
+    /**
+     * 从 P2P 网络接收交易时使用的方法：
+     * - 不抛异常（返回错误信息字符串），方便 P2P 层处理
+     * - 可选跳过余额检查（不同节点交易池状态不同，余额检查由矿工节点在打包时做最终验证）
+     *
+     * @param {object} txData - 交易数据（可以是普通 JSON 对象或 Transaction 实例）
+     * @param {boolean} skipBalanceCheck - 是否跳过余额检查（默认 true，P2P 场景建议跳过）
+     * @returns {{ success: boolean, error?: string, transaction?: object }}
+     */
+    addPendingTransaction(txData, skipBalanceCheck = true) {
+        // 去重检查
+        if (this.hasPendingTransaction(txData.id)) {
+            return { success: false, error: '交易已存在于交易池中' };
+        }
+
+        // 构造 Transaction 对象
+        let tx;
+        if (txData instanceof Transaction) {
+            tx = txData;
+        } else {
+            tx = new Transaction(txData.from, txData.to, txData.amount, txData.fee || 0, txData.note || '');
+            if (txData.signature) tx.signature = txData.signature;
+            if (txData.publicKey) tx.publicKey = txData.publicKey;
+            if (txData.timestamp) tx.timestamp = txData.timestamp;
+            if (txData.id) tx.id = txData.id;
+        }
+
+        // 基本字段校验（兼容备注交易 from='' 和 SYSTEM 交易）
+        const isNoteTx = !tx.from && tx.to === 'NOTE' && tx.amount === 0;
+        const isSpecialTx = isNoteTx || tx.from === 'SYSTEM';
+        if (!isSpecialTx) {
+            if (!tx.from || !tx.to || tx.amount <= 0) {
+                return { success: false, error: '交易缺少必要字段（from, to, amount）' };
+            }
+            if (tx.from === tx.to) {
+                return { success: false, error: '不能给自己转账' };
+            }
+        }
+
+        // ECDSA 签名验证（核心安全检查，不能跳过）
+        if (!tx.isValid()) {
+            return { success: false, error: '交易签名验证失败' };
+        }
+
+        // 余额检查（可选跳过；备注交易和 SYSTEM 交易无需检查余额）
+        if (!skipBalanceCheck && !isSpecialTx) {
+            const senderBalance = this.getBalance(tx.from);
+            const pendingOutgoing = this.pendingTransactions
+                .filter(t => t.from === tx.from)
+                .reduce((sum, t) => sum + (Number(t.amount) || 0) + (Number(t.fee) || 0), 0);
+            const availableBalance = senderBalance - pendingOutgoing;
+            if (availableBalance < tx.amount + tx.fee) {
+                return { success: false, error: `余额不足：可用 ${availableBalance}，需要 ${tx.amount + tx.fee}` };
+            }
+        }
+
+        this.pendingTransactions.push(tx);
+        return { success: true, transaction: tx };
+    }
+
     // 从交易池挖矿，打包交易到新区块
     mineBlock(minerAddress, blockDataText) {
         // 准备要打包的交易：按手续费降序排序，优先打包手续费最高的交易
@@ -496,6 +565,24 @@ class Blockchain {
             return null;
         }
         this.chain.push(block);
+
+        // 🧹 清理交易池：移除该区块中已确认的交易（防止同一笔交易被其他节点再次打包）
+        if (block.transactions && Array.isArray(block.transactions)) {
+            const txIdsInBlock = new Set(
+                block.transactions
+                    .filter(tx => tx.id && tx.from && tx.from !== 'SYSTEM')
+                    .map(tx => tx.id)
+            );
+            if (txIdsInBlock.size > 0) {
+                const before = this.pendingTransactions.length;
+                this.pendingTransactions = this.pendingTransactions.filter(t => !txIdsInBlock.has(t.id));
+                const removed = before - this.pendingTransactions.length;
+                if (removed > 0) {
+                    console.log(`🧹 [addBlock] 交易池清理：移除了 ${removed} 笔已被区块 #${block.index} 打包的交易`);
+                }
+            }
+        }
+
         // P2P 接收区块后也用链上时间戳调整难度，确保全网一致
         this.adjustDifficulty();
         this.saveToFile();

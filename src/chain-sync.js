@@ -276,6 +276,18 @@ class ChainSync {
             block.hash = b.hash;
             return block;
         });
+
+        // 🧹 清理交易池：移除新链中已打包的交易（防止同一笔交易被其他节点再次打包）
+        const pendingBefore = bc.pendingTransactions.length;
+        // txIdsInNewChain 已在前面回滚逻辑中计算好，直接复用
+        if (txIdsInNewChain.size > 0) {
+            bc.pendingTransactions = bc.pendingTransactions.filter(t => !txIdsInNewChain.has(t.id));
+            const removed = pendingBefore - bc.pendingTransactions.length;
+            if (removed > 0) {
+                console.log(`🧹 [replaceChain] 交易池清理：移除了 ${removed} 笔已被新链确认的交易`);
+            }
+        }
+
         // 根据新链的区块时间戳重新计算难度，保证所有节点难度一致
         bc.recalculateDifficulty();
         bc.saveToFile();

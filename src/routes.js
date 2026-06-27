@@ -100,6 +100,8 @@ function createRoutes(starCoin, p2p, broadcastToFrontend, PORT) {
                 poolCount: starCoin.pendingTransactions.length,
                 txId: savedTx.id
             });
+            // P2P 广播：将交易广播到其他节点
+            p2p.broadcastTransaction(savedTx);
             res.json({
                 success: true,
                 message: '交易已通过 ECDSA 签名验证，已加入交易池',
@@ -185,6 +187,8 @@ function createRoutes(starCoin, p2p, broadcastToFrontend, PORT) {
             const miningTime = Date.now() - startTime;
 
             p2p.broadcastLatest();
+            // 广播更新后的交易池（通知其他节点哪些交易已被打包）
+            p2p.broadcastPendingTxs();
             p2p.updateNodeInfo();
 
             broadcastToFrontend('newBlock', {
@@ -289,6 +293,8 @@ function createRoutes(starCoin, p2p, broadcastToFrontend, PORT) {
                 consecutiveCancels = 0;
 
                 p2p.broadcastLatest();
+                // 广播更新后的交易池（通知其他节点哪些交易已被打包）
+                p2p.broadcastPendingTxs();
                 p2p.updateNodeInfo();
 
                 broadcastToFrontend('newBlock', {
