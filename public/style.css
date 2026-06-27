@@ -142,15 +142,41 @@
     }
     input:focus, textarea:focus { outline: none; border-color: #ffd700; }
 
-    /* 发送者选择 */
+    /* 发送者选择 — 金色醒目下拉框 */
     .wallet-dropdown {
         width: 100%;
-        background: rgba(255,255,255,0.05);
-        border: 1px solid rgba(255,255,255,0.15);
+        background: rgba(255,215,0,0.1);
+        border: 2px solid rgba(255,215,0,0.45);
         border-radius: 6px;
         padding: 10px;
-        color: #e8e8e8;
+        color: #ffd700;
         font-size: 13px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.25s ease;
+        appearance: auto;
+    }
+    .wallet-dropdown:hover {
+        background: rgba(255,215,0,0.18);
+        border-color: rgba(255,215,0,0.7);
+        box-shadow: 0 0 12px rgba(255,215,0,0.2);
+    }
+    .wallet-dropdown:focus {
+        outline: none;
+        border-color: #ffd700;
+        box-shadow: 0 0 16px rgba(255,215,0,0.35);
+        background: rgba(255,215,0,0.15);
+    }
+    .wallet-dropdown option {
+        background: #1a1a2e;
+        color: #e8e8e8;
+        font-weight: normal;
+        padding: 8px;
+    }
+    .wallet-dropdown option:hover,
+    .wallet-dropdown option:checked {
+        background: rgba(255,215,0,0.25);
+        color: #ffd700;
     }
 
     /* 消息提示 */
