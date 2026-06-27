@@ -83,7 +83,13 @@ async function renderWallets() {
             try {
                 const data = await api('/api/balance/' + state.wallets[i].address);
                 const el = document.getElementById('wallet-balance-' + i);
-                if (el) el.textContent = '余额: ' + (data.balance || 0) + ' STC';
+                if (el) {
+                    let txt = '余额: ' + (data.balance || 0) + ' STC';
+                    if (data.lockedRewards > 0) {
+                        txt += ' <span style="color:#fbbf24;font-size:11px;">🔒 +' + data.lockedRewards + ' 锁定</span>';
+                    }
+                    el.innerHTML = txt;
+                }
             } catch (e) {}
         }
 
@@ -110,7 +116,15 @@ async function refreshSelectedWalletDetails() {
 
     try {
         const data = await api('/api/balance/' + w.address);
-        document.getElementById('selectedWalletBalance').textContent = (data.balance || 0) + ' STC';
+        const balEl = document.getElementById('selectedWalletBalance');
+        let txt = (data.balance || 0) + ' STC';
+        if (data.lockedRewards > 0) {
+            txt += ' <span style="color:#fbbf24;">(🔒 ' + data.lockedRewards + ' 奖励锁定中)</span>';
+        }
+        balEl.innerHTML = txt;
+        // 同时更新锁定期提示
+        document.getElementById('maturityHint').textContent =
+            '⏳ 矿工奖励需 ' + (data.coinbaseMaturity || 5) + ' 个区块确认后才能使用';
     } catch (e) {
         document.getElementById('selectedWalletBalance').textContent = '查询失败';
     }

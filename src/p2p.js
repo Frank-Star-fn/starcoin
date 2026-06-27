@@ -8,6 +8,7 @@ const MESSAGE_TYPES = {
     QUERY_ALL: 'QUERY_ALL',
     NODE_INFO: 'NODE_INFO',
     NODE_LIST: 'NODE_LIST',
+    NODE_LIST_REQUEST: 'NODE_LIST_REQUEST',
     CHAIN_LENGTH: 'CHAIN_LENGTH',
     SYNC_REQUEST: 'SYNC_REQUEST'
 };
@@ -36,6 +37,18 @@ function createP2P(server, starCoin, PORT) {
         expectedCount: 0,
         resolved: false
     };
+
+    // 自动发现状态
+    const pendingNodes = new Set();      // 待连接节点队列（去重）
+    const connectingNodes = new Set();   // 正在连接中的节点 URL
+    const discoveryConfig = {
+        interval: 30000,                 // 发现间隔（毫秒）
+        maxPeers: 20,                    // 最大对等节点数
+        maxConnectPerRound: 3,           // 每轮最大尝试连接数
+        enabled: true                    // 是否启用自动发现
+    };
+    let discoveryTimer = null;           // 定时器句柄
+    let isDiscovering = false;           // 是否正在发现中
 
     // 节点信息
     const nodeInfo = {
@@ -120,9 +133,25 @@ function createP2P(server, starCoin, PORT) {
                 handleNodeInfo(message.node);
                 break;
             case MESSAGE_TYPES.NODE_LIST:
+                if (message.nodes && Array.isArray(message.nodes)) {
+                    // 收到节点列表响应，处理发现的节点
+                    handleDiscoveredNodes(message.nodes, message.fromNode || message.currentNode?.url);
+                } else {
+                    // 收到节点列表请求，发送自己的节点列表
+                    sendMessage(ws, {
+                        type: MESSAGE_TYPES.NODE_LIST,
+                        nodes: Array.from(nodes),
+                        fromNode: nodeInfo.url,
+                        currentNode: nodeInfo
+                    });
+                }
+                break;
+            case MESSAGE_TYPES.NODE_LIST_REQUEST:
+                // 主动请求节点列表，发送自己的列表作为响应
                 sendMessage(ws, {
                     type: MESSAGE_TYPES.NODE_LIST,
                     nodes: Array.from(nodes),
+                    fromNode: nodeInfo.url,
                     currentNode: nodeInfo
                 });
                 break;
@@ -223,6 +252,186 @@ function createP2P(server, starCoin, PORT) {
             nodes.add(node.url);
             console.log(`📝 发现新节点: ${node.url}`);
         }
+    }
+
+    // ========== 自动节点发现 ==========
+
+    // 处理从其他节点发现的节点 URL，加入待连接队列
+    function handleDiscoveredNodes(discoveredNodes, fromNode) {
+        if (!Array.isArray(discoveredNodes) || discoveredNodes.length === 0) return;
+
+        let newCount = 0;
+        for (const nodeUrl of discoveredNodes) {
+            // 跳过自身、已连接、正在连接、已在队列中的节点
+            if (nodeUrl === nodeInfo.url) continue;
+            if (nodes.has(nodeUrl)) continue;
+            if (connectingNodes.has(nodeUrl)) continue;
+            if (pendingNodes.has(nodeUrl)) continue;
+
+            pendingNodes.add(nodeUrl);
+            newCount++;
+        }
+
+        if (newCount > 0) {
+            console.log(`🔍 从 ${fromNode || '某节点'} 发现 ${newCount} 个新节点，待连接队列: ${pendingNodes.size}`);
+        }
+    }
+
+    // 向所有已连接节点广播节点列表请求
+    function requestNodeLists() {
+        if (isDiscovering) return;
+        if (!discoveryConfig.enabled) return;
+
+        const connectedCount = nodeConnections.size +
+            Array.from(wss.clients).filter(c => c.readyState === WebSocket.OPEN).length;
+
+        if (connectedCount === 0) {
+            return;
+        }
+
+        isDiscovering = true;
+        console.log(`🔍 [发现] 正在向 ${connectedCount} 个已连接节点请求节点列表...`);
+
+        const requestMsg = {
+            type: MESSAGE_TYPES.NODE_LIST_REQUEST,
+            fromNode: nodeInfo.url
+        };
+
+        wss.clients.forEach((client) => {
+            if (client.readyState === WebSocket.OPEN) {
+                sendMessage(client, requestMsg);
+            }
+        });
+        nodeConnections.forEach((conn) => {
+            if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
+                sendMessage(conn.ws, requestMsg);
+            }
+        });
+
+        // 给节点一些时间响应，然后尝试连接待连接节点
+        setTimeout(() => {
+            tryConnectPendingNodes();
+            isDiscovering = false;
+        }, 5000);
+    }
+
+    // 尝试连接待连接队列中的节点
+    function tryConnectPendingNodes() {
+        if (pendingNodes.size === 0) return;
+        if (!discoveryConfig.enabled) return;
+
+        const currentPeers = nodes.size;
+        if (currentPeers >= discoveryConfig.maxPeers) {
+            console.log(`🔍 [发现] 已达到最大连接数 (${discoveryConfig.maxPeers})，清空待连接队列`);
+            pendingNodes.clear();
+            return;
+        }
+
+        const canConnect = Math.min(
+            discoveryConfig.maxConnectPerRound,
+            discoveryConfig.maxPeers - currentPeers,
+            pendingNodes.size
+        );
+
+        if (canConnect === 0) return;
+        console.log(`🔍 [发现] 正在尝试连接 ${canConnect}/${pendingNodes.size} 个待连接节点...`);
+
+        const toConnect = [];
+        for (const nodeUrl of pendingNodes) {
+            if (toConnect.length >= canConnect) break;
+            pendingNodes.delete(nodeUrl);
+            connectingNodes.add(nodeUrl);
+            toConnect.push(nodeUrl);
+        }
+
+        for (const nodeUrl of toConnect) {
+            _autoConnect(nodeUrl);
+        }
+    }
+
+    // 自动连接单个节点（与手动 connectToPeer 逻辑类似，但管理 connectingNodes）
+    function _autoConnect(nodeUrl) {
+        if (nodes.has(nodeUrl) || nodeUrl === nodeInfo.url) {
+            connectingNodes.delete(nodeUrl);
+            return;
+        }
+
+        const ws = new WebSocket(nodeUrl);
+        const connectionId = `auto_${Math.random().toString(36).substr(2, 9)}`;
+
+        ws.on('open', () => {
+            console.log(`🔗 [自动发现] 已连接到: ${nodeUrl}`);
+            nodes.add(nodeUrl);
+            connectingNodes.delete(nodeUrl);
+
+            sendMessage(ws, {
+                type: MESSAGE_TYPES.NODE_INFO,
+                node: nodeInfo
+            });
+            // 连接后立即请求对方的节点列表
+            sendMessage(ws, {
+                type: MESSAGE_TYPES.NODE_LIST_REQUEST,
+                fromNode: nodeInfo.url
+            });
+            sendMessage(ws, {
+                type: MESSAGE_TYPES.QUERY_LATEST
+            });
+
+            nodeConnections.set(connectionId, { ws, id: connectionId, url: nodeUrl });
+        });
+
+        ws.on('message', (message) => {
+            handleMessage(ws, JSON.parse(message), connectionId);
+        });
+
+        ws.on('close', () => {
+            console.log(`🔌 [自动发现] 连接已关闭: ${nodeUrl}`);
+            nodes.delete(nodeUrl);
+            nodeConnections.delete(connectionId);
+            connectingNodes.delete(nodeUrl);
+        });
+
+        ws.on('error', (error) => {
+            console.error(`❌ [自动发现] 连接失败: ${nodeUrl}`, error.message || error);
+            nodes.delete(nodeUrl);
+            nodeConnections.delete(connectionId);
+            connectingNodes.delete(nodeUrl);
+        });
+    }
+
+    // 启动自动发现定时器
+    function startDiscovery() {
+        if (discoveryTimer) return;
+        discoveryConfig.enabled = true;
+        console.log(`🔍 [自动发现] 已启动（间隔: ${discoveryConfig.interval / 1000}秒, 最大节点数: ${discoveryConfig.maxPeers}）`);
+        discoveryTimer = setInterval(() => {
+            requestNodeLists();
+        }, discoveryConfig.interval);
+    }
+
+    // 停止自动发现定时器
+    function stopDiscovery() {
+        if (discoveryTimer) {
+            clearInterval(discoveryTimer);
+            discoveryTimer = null;
+        }
+        discoveryConfig.enabled = false;
+        console.log('🔍 [自动发现] 已停止');
+    }
+
+    // 获取自动发现状态
+    function getDiscoveryStatus() {
+        return {
+            enabled: discoveryConfig.enabled,
+            interval: discoveryConfig.interval,
+            maxPeers: discoveryConfig.maxPeers,
+            connectedCount: nodes.size,
+            pendingCount: pendingNodes.size,
+            connectingCount: connectingNodes.size,
+            isDiscovering: isDiscovering,
+            pendingNodes: Array.from(pendingNodes),
+            connectingNodes: Array.from(connectingNodes)
+        };
     }
 
     // ========== 同步候选链解析 ==========
@@ -369,6 +578,12 @@ function createP2P(server, starCoin, PORT) {
                 node: nodeInfo
             });
 
+            // 连接后立即请求对方的节点列表
+            sendMessage(ws, {
+                type: MESSAGE_TYPES.NODE_LIST_REQUEST,
+                fromNode: nodeInfo.url
+            });
+
             sendMessage(ws, {
                 type: MESSAGE_TYPES.QUERY_LATEST
             });
@@ -513,12 +728,25 @@ function createP2P(server, starCoin, PORT) {
             node: nodeInfo
         });
 
+        // 新连接建立后，主动请求对方的节点列表
         sendMessage(ws, {
-            type: MESSAGE_TYPES.NODE_LIST
+            type: MESSAGE_TYPES.NODE_LIST_REQUEST,
+            fromNode: nodeInfo.url
         });
     });
 
     // ========== 对外暴露的接口 ==========
+
+    // 启动自动发现（首次连接其他节点后才开始周期性扫描）
+    // 如果尚未连接任何节点，先不启动定时器，等有节点后再启动
+    if (discoveryConfig.enabled) {
+        // 延时启动，确保服务器完全就绪
+        setTimeout(() => {
+            startDiscovery();
+            // 首次启动时立即发起一次发现请求
+            setTimeout(() => requestNodeLists(), 2000);
+        }, 3000);
+    }
 
     return {
         nodeInfo,
@@ -536,6 +764,10 @@ function createP2P(server, starCoin, PORT) {
         }),
         broadcastLatest,
         updateNodeInfo,
+        startDiscovery,
+        stopDiscovery,
+        getDiscoveryStatus,
+        requestNodeLists,
         wss
     };
 }

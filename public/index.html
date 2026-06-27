@@ -18,6 +18,10 @@
                 <div class="stat-value" id="statBlocks">--</div>
             </div>
             <div class="stat-box">
+                <div class="stat-label">挖矿难度</div>
+                <div class="stat-value" id="statDifficulty">--</div>
+            </div>
+            <div class="stat-box">
                 <div class="stat-label">链状态</div>
                 <div class="stat-value" id="statValid">--</div>
             </div>
@@ -47,6 +51,7 @@
                 <div style="font-size:11px; color:#888; margin-top:6px;">
                     余额: <span id="selectedWalletBalance" style="color:#4ade80; font-weight:bold;">--</span>
                 </div>
+                <div id="maturityHint" style="font-size:10px; color:#fbbf24; margin-top:3px;"></div>
                 <button class="secondary small" style="margin-top:8px;" onclick="copySelectedAddress()">复制地址</button>
                 <div style="margin-top:12px;">
                     <div style="font-size:11px; color:#aaa; margin-bottom:4px;">交易历史</div>
@@ -92,9 +97,57 @@
             <h2 style="margin-top:5px;">⛏️ 挖矿打包</h2>
             <label>矿工奖励接收地址（默认使用当前选中钱包）</label>
             <input type="text" id="minerAddress" placeholder="自动填入当前选中钱包的地址">
+
+            <!-- 手动设置难度 -->
+            <div style="margin-top:8px;">
+                <label style="font-size:12px;">⚙️ 手动设置难度（支持小数 3~12，例如 5.5）</label>
+                <div style="display:flex; gap:6px; align-items:center;">
+                    <input type="number" id="difficultyInput" min="3" max="12" step="0.1" placeholder="5.0">
+                    <button onclick="setDifficulty()" style="padding:6px 12px; font-size:12px;">应用</button>
+                </div>
+                <div id="difficultyMessage" style="font-size:11px; margin-top:4px; color:#888;">
+                    💡 不填则使用系统自动调整的难度；小数=0.1 档（约 1.3x 工作量变化）
+                </div>
+            </div>
+
             <button onclick="mineBlock()" id="mineBtn" style="width:100%; margin-top:10px; padding:12px; font-size:15px;">
                 ⛏️ 开始挖矿并打包交易
             </button>
+
+            <!-- 自动持续挖矿 -->
+            <button onclick="toggleAutoMine()" id="autoMineBtn" class="secondary" style="width:100%; margin-top:6px; padding:10px; font-size:13px;">
+                ⏱️ 自动持续挖矿
+            </button>
+            <div id="autoMineStatus" style="display:none; font-size:11px; color:#4ade80; text-align:center; margin-top:6px; padding:6px; background:rgba(74,222,128,0.1); border-radius:6px;"></div>
+
+            <!-- 挖矿动画区域 -->
+            <div id="miningAnimation" class="mining-animation" style="display:none;">
+                <div class="mining-header">
+                    <span class="mining-icon">⛏️</span>
+                    <span id="miningStatus">准备挖矿...</span>
+                </div>
+                <div class="mining-stats">
+                    <div class="mining-stat-item">
+                        <div class="mining-stat-label">Nonce</div>
+                        <div class="mining-stat-value" id="miningNonce">0</div>
+                    </div>
+                    <div class="mining-stat-item">
+                        <div class="mining-stat-label">难度</div>
+                        <div class="mining-stat-value" id="miningDifficulty" style="font-size:18px;color:#ffd700;">--</div>
+                    </div>
+                    <div class="mining-stat-item">
+                        <div class="mining-stat-label">哈希率</div>
+                        <div class="mining-stat-value" id="miningHashrate">--</div>
+                    </div>
+                </div>
+                <div class="mining-hash-box">
+                    <div class="mining-hash-label">当前哈希</div>
+                    <div class="mining-hash-value" id="miningHash">--</div>
+                </div>
+                <div class="mining-progress-track">
+                    <div class="mining-progress-bar" id="miningProgress"></div>
+                </div>
+            </div>
 
             <div class="hint" style="margin-top:10px;">
                 💡 流程：先生成钱包 → 挖矿获得初始币 → 用私钥签名发起转账 → 再次挖矿把交易打包进区块
@@ -122,6 +175,7 @@
     <div class="panel wide-panel">
         <h2>🔗 区块链 — 区块详情</h2>
         <div class="chain-visual" id="chainVisual"></div>
+        <div id="chainDiffHistory"></div>
     </div>
 
 </div>

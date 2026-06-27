@@ -2,7 +2,7 @@
 // ECDSA 签名系统测试脚本
 // 运行方式: node test_ecdsa.js
 // ============================================================
-const { Blockchain, Block, Transaction, generateWallet } = require('./blockchain');
+const { Blockchain, Block, Transaction, generateWallet } = require('../src/blockchain');
 
 let testCount = 0;
 let passCount = 0;

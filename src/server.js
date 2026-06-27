@@ -30,6 +30,8 @@ app.get('/api/blockchain', (req, res) => {
         stats: {
             totalBlocks: starCoin.chain.length,
             difficulty: starCoin.difficulty,
+            targetBlockTime: starCoin.targetBlockTime,
+            difficultyHistory: starCoin.difficultyHistory.slice(-10), // 最近10次调整
             genesisBlock: starCoin.chain[0].hash.substring(0, 16) + '...',
             connectedNodes: p2p.getConnectedCount()
         },
@@ -87,7 +89,9 @@ app.post('/api/transaction', (req, res) => {
 // 3. 查询地址余额
 app.get('/api/balance/:address', (req, res) => {
     const address = req.params.address;
-    const balance = starCoin.getBalance(address);
+    const balance = starCoin.getBalance(address);               // 可用余额（已剔除未成熟奖励）
+    const totalBalance = starCoin.getBalance(address, true);    // 总余额（含未成熟奖励）
+    const lockedRewards = starCoin.getLockedRewards(address);
     const pendingInPool = starCoin.pendingTransactions
         .filter(tx => tx.from === address || tx.to === address)
         .length;
@@ -95,6 +99,9 @@ app.get('/api/balance/:address', (req, res) => {
         success: true,
         address: address,
         balance: balance,
+        totalBalance: totalBalance,
+        lockedRewards: lockedRewards,
+        coinbaseMaturity: starCoin.coinbaseMaturity,
         pendingTransactions: pendingInPool,
         historyCount: starCoin.getTransactionHistory(address).length
     });
@@ -165,6 +172,92 @@ app.post('/api/mine', (req, res) => {
             success: false,
             error: err.message
         });
+    }
+});
+
+// 8.5 手动设置挖矿难度（支持小数，如 5.5）
+app.post('/api/difficulty', (req, res) => {
+    const { difficulty } = req.body;
+    const d = Number(difficulty);
+    if (!Number.isFinite(d) || d < starCoin.difficultyMin || d > starCoin.difficultyMax) {
+        return res.status(400).json({
+            success: false,
+            error: `难度必须在 ${starCoin.difficultyMin} ~ ${starCoin.difficultyMax} 之间，支持小数（例如 5.5）`
+        });
+    }
+    // 保留 1 位小数，避免浮点误差累积
+    const rounded = Math.round(d * 10) / 10;
+    const oldVal = starCoin.difficulty;
+    starCoin.difficulty = rounded;
+    starCoin.saveToFile();
+    const diffInfo = Block._parseDifficulty(rounded);
+    res.json({
+        success: true,
+        oldDifficulty: oldVal,
+        newDifficulty: rounded,
+        targetText: diffInfo.targetText,
+        prefixLength: diffInfo.prefixLength,
+        maxNextByte: diffInfo.maxNextByte,
+        note: '手动设置难度后，下次挖矿立即生效；自动难度调整仍会继续作用于后续区块。'
+    });
+});
+
+// 8b. SSE 挖矿进度流（带可视化动画）
+app.get('/api/mine/stream', async (req, res) => {
+    const minerAddress = req.query.minerAddress || starCoin.miningAddress;
+
+    // 设置 SSE 响应头
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*'
+    });
+
+    // 立即发送初始进度（显示开始挖矿）
+    const diffInfo = Block._parseDifficulty(starCoin.difficulty);
+    res.write(`data: ${JSON.stringify({
+        nonce: 0, hash: '', target: diffInfo.targetText,
+        difficulty: starCoin.difficulty,
+        found: false, started: true,
+        message: '⛏️ 开始挖矿... (难度=' + starCoin.difficulty + ', 目标=' + diffInfo.targetText + ')'
+    })}\n\n`);
+
+    try {
+        // 异步挖矿，每找到一批 nonce 就回调推送进度
+        const newBlock = await starCoin.mineBlockAsync(minerAddress, null, (progress) => {
+            res.write(`data: ${JSON.stringify(progress)}\n\n`);
+        });
+
+        // 挖矿完成，广播到其他节点
+        p2p.broadcastLatest();
+        p2p.updateNodeInfo();
+
+        // 发送最终结果
+        res.write(`data: ${JSON.stringify({
+            found: true,
+            nonce: newBlock.nonce,
+            hash: newBlock.hash,
+            difficulty: starCoin.difficulty,
+            block: {
+                index: newBlock.index,
+                hash: newBlock.hash,
+                previousHash: newBlock.previousHash,
+                nonce: newBlock.nonce,
+                timestamp: newBlock.timestamp,
+                transactionCount: newBlock.transactions.length
+            },
+            reward: starCoin.miningReward,
+            message: '🎉 挖矿成功！区块 #' + newBlock.index + ' 已生成'
+        })}\n\n`);
+    } catch (err) {
+        res.write(`data: ${JSON.stringify({
+            found: false,
+            error: err.message,
+            message: '❌ ' + err.message
+        })}\n\n`);
+    } finally {
+        res.end();
     }
 });
 
@@ -350,6 +443,46 @@ app.get('/api/all-nodes', async (req, res) => {
     res.json({
         nodes: allNodes,
         total: allNodes.length
+    });
+});
+
+// ============ 自动节点发现 API ============
+
+// 获取自动发现状态
+app.get('/api/discovery/status', (req, res) => {
+    res.json({
+        success: true,
+        discovery: p2p.getDiscoveryStatus()
+    });
+});
+
+// 启动自动发现
+app.post('/api/discovery/start', (req, res) => {
+    p2p.startDiscovery();
+    res.json({
+        success: true,
+        message: '✅ 自动节点发现已启动',
+        status: p2p.getDiscoveryStatus()
+    });
+});
+
+// 停止自动发现
+app.post('/api/discovery/stop', (req, res) => {
+    p2p.stopDiscovery();
+    res.json({
+        success: true,
+        message: '⏸️ 自动节点发现已停止',
+        status: p2p.getDiscoveryStatus()
+    });
+});
+
+// 手动触发一次节点发现
+app.post('/api/discovery/scan', (req, res) => {
+    p2p.requestNodeLists();
+    res.json({
+        success: true,
+        message: '🔍 已发起节点发现扫描',
+        status: p2p.getDiscoveryStatus()
     });
 });
 

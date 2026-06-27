@@ -5,9 +5,18 @@ const { Block, Transaction, generateWallet } = require('./core');
 class Blockchain {
     constructor(portOverride) {
         const PORT = process.env.PORT || 3000;
-        this.difficulty = 4; // 2;
+        this.difficulty = 5;               // 当前挖矿难度（支持小数，例如 5.5 = 5个零 + 下字节≤0x7f）
+        this.difficultyHistory = [];        // 难度变更历史 [{blockIndex, difficulty, avgTime, reason}]
+        this.targetBlockTime = 12;          // 目标出块时间（秒）
+        this.difficultyAdjustInterval = 6;  // 每 N 个区块调整一次难度
+        this.difficultyMin = 3;             // 最小难度
+        this.difficultyMax = 12;            // 最大难度
+        this.difficultyStep = 0.1;          // 每次难度调整的步长（越小越平滑；0.1=约 1.3x 工作量变化）
+        this.lastAdjustmentBlock = 0;       // 上次调整时的区块高度
+        this.blockMiningTimes = {};         // { blockIndex: miningTimeSeconds }
         this.pendingTransactions = [];  // 交易池 (Mempool)
         this.miningReward = 50;          // 挖矿奖励
+        this.coinbaseMaturity = 5;       // 矿工奖励锁定期（块数），成熟后才能使用
         this.miningAddress = 'MINER_' + (portOverride || PORT);
         this.chain = [this.createGenesisBlock()]; // 先初始化创世区块
         this.dataFile = path.join(__dirname, '..', 'data', `blockchain_${portOverride || PORT}.json`);
@@ -72,6 +81,7 @@ class Blockchain {
 
     // 从交易池挖矿，打包交易到新区块
     mineBlock(minerAddress, blockDataText) {
+        const startTime = Date.now();
         // 准备要打包的交易
         const txsToInclude = this.pendingTransactions.slice(0, 100); // 最多100笔/区块
         // 如果没有交易，也允许只写一条备注文本（兼容旧接口）
@@ -104,14 +114,141 @@ class Blockchain {
         this.pendingTransactions = this.pendingTransactions.filter(t => !txIdsInBlock.includes(t.id));
 
         this.chain.push(block);
+        this.recordMiningTime(block.index, (Date.now() - startTime) / 1000);
+        this.adjustDifficulty();
         this.saveToFile();
         return block;
     }
 
+    // 异步挖矿（带进度回调，用于前端可视化）
+    async mineBlockAsync(minerAddress, blockDataText, onProgress) {
+        const startTime = Date.now();
+        const txsToInclude = this.pendingTransactions.slice(0, 100);
+        if (blockDataText && blockDataText.trim()) {
+            txsToInclude.push(new Transaction('', 'NOTE', 0, 0, blockDataText.trim()));
+        }
+        const rewardTx = new Transaction(
+            'SYSTEM',
+            minerAddress || this.miningAddress,
+            this.miningReward,
+            0,
+            'Miner Reward'
+        );
+        txsToInclude.unshift(rewardTx);
+
+        const block = new Block(
+            this.chain.length,
+            new Date().toISOString(),
+            txsToInclude,
+            this.getLatestBlock().hash
+        );
+
+        // 异步挖矿（让步事件循环，让进度能实时推送）
+        await block.mineBlockAsync(this.difficulty, onProgress);
+
+        const txIdsInBlock = txsToInclude.map(t => t.id);
+        this.pendingTransactions = this.pendingTransactions.filter(t => !txIdsInBlock.includes(t.id));
+
+        this.chain.push(block);
+        this.recordMiningTime(block.index, (Date.now() - startTime) / 1000);
+        this.adjustDifficulty();
+        this.saveToFile();
+        return block;
+    }
+
+    // 判断一笔矿工奖励（coinbase）是否已成熟（达到锁定期确认数）
+    _isCoinbaseMature(blockIndex) {
+        // 奖励所在区块索引 + 成熟期 <= 当前链尾索引，才算成熟
+        return blockIndex + this.coinbaseMaturity <= this.getLatestBlock().index;
+    }
+
+    // 记录区块挖矿耗时（用于难度调整）
+    recordMiningTime(blockIndex, timeSeconds) {
+        this.blockMiningTimes[blockIndex] = timeSeconds;
+    }
+
+    // 动态难度调整：每 N 个区块，根据最近出块速度调整难度
+    adjustDifficulty() {
+        const latestIndex = this.getLatestBlock().index;
+
+        // 从创世块之后才开始调整
+        if (latestIndex < 2) return;
+
+        // 检查是否需要调整（每 difficultyAdjustInterval 个区块调整一次）
+        const blocksSinceLastAdjust = latestIndex - this.lastAdjustmentBlock;
+        if (blocksSinceLastAdjust < this.difficultyAdjustInterval) return;
+
+        // 获取最近 N 个区块的平均挖矿时间
+        let totalTime = 0;
+        let count = 0;
+        const startIdx = Math.max(1, latestIndex - this.difficultyAdjustInterval + 1);
+        for (let i = startIdx; i <= latestIndex; i++) {
+            if (this.blockMiningTimes[i] != null) {
+                totalTime += this.blockMiningTimes[i];
+                count++;
+            }
+        }
+
+        if (count < 2) return; // 数据不足，暂不调整
+
+        const avgTime = totalTime / count;
+        const oldDifficulty = this.difficulty;
+
+        // ---- 难度调整算法（平滑浮点版） ----
+        // 根据 (avgTime / targetTime) 比例计算难度变化量，以 difficultyStep 为步长
+        //   ratio > 1 → 出块偏慢 → 降低难度
+        //   ratio < 1 → 出块偏快 → 升高难度
+        // 思路：ratio 的 log2 大致对应难度应变化的"整数位数"，再映射为步长变化
+        const ratio = avgTime / this.targetBlockTime;
+        // 为避免震荡，只在 ratio 偏离 1 较远时才调整（死区 10% 内不调）
+        let delta = 0;
+        if (ratio > 1.15) {
+            // 出块偏慢：降低难度（ratio=2 → -step；ratio=4 → -2step；用 log2 平滑）
+            delta = -this.difficultyStep * Math.min(3, Math.max(1, Math.round(Math.log2(ratio))));
+        } else if (ratio < 0.85) {
+            // 出块偏快：升高难度
+            delta = +this.difficultyStep * Math.min(3, Math.max(1, Math.round(-Math.log2(ratio))));
+        }
+
+        if (delta !== 0) {
+            const raw = this.difficulty + delta;
+            // 钳位到 [difficultyMin, difficultyMax]，并保留 1 位小数避免浮点误差
+            this.difficulty = Math.max(
+                this.difficultyMin,
+                Math.min(this.difficultyMax, Math.round(raw * 10) / 10)
+            );
+        }
+
+        // 记录难度变更历史
+        if (this.difficulty !== oldDifficulty) {
+            this.difficultyHistory.push({
+                blockIndex: latestIndex,
+                oldDifficulty: oldDifficulty,
+                newDifficulty: this.difficulty,
+                avgTime: Math.round(avgTime * 10) / 10,
+                targetTime: this.targetBlockTime,
+                reason: avgTime > this.targetBlockTime * 1.3 ? '出块偏慢 ↓' : '出块偏快 ↑'
+            });
+            console.log(
+                `⚙️ 难度调整 [区块 #${latestIndex}]: ${oldDifficulty} → ${this.difficulty} ` +
+                `(平均 ${avgTime.toFixed(1)}s/块, 目标 ${this.targetBlockTime}s/块)`
+            );
+        } else {
+            console.log(
+                `📊 难度评估 [区块 #${latestIndex}]: 维持 ${this.difficulty} ` +
+                `(平均 ${avgTime.toFixed(1)}s/块, 目标 ${this.targetBlockTime}s/块)`
+            );
+        }
+
+        this.lastAdjustmentBlock = latestIndex;
+    }
+
     // 计算指定地址的余额（遍历整个链）
-    getBalance(address) {
+    // @param includeImmature 是否包含未成熟的矿工奖励（缺省 false，仅返回可用余额）
+    getBalance(address, includeImmature = false) {
         if (!address) return 0;
         let balance = 0;
+        const latestIndex = this.getLatestBlock().index;
         for (const block of this.chain) {
             for (const tx of block.transactions) {
                 if (tx.from === address) {
@@ -119,11 +256,34 @@ class Blockchain {
                     balance -= tx.fee;
                 }
                 if (tx.to === address) {
+                    // 矿工奖励：检查锁定期
+                    if (tx.from === 'SYSTEM' && !includeImmature) {
+                        if (!this._isCoinbaseMature(block.index)) {
+                            continue; // 奖励未成熟，不计入可用余额
+                        }
+                    }
                     balance += tx.amount;
                 }
             }
         }
         return balance;
+    }
+
+    // 获取地址的"锁定奖励"金额（未成熟的矿工奖励总额）
+    getLockedRewards(address) {
+        if (!address) return 0;
+        let locked = 0;
+        const latestIndex = this.getLatestBlock().index;
+        for (const block of this.chain) {
+            for (const tx of block.transactions) {
+                if (tx.to === address && tx.from === 'SYSTEM') {
+                    if (!this._isCoinbaseMature(block.index)) {
+                        locked += Number(tx.amount) || 0;
+                    }
+                }
+            }
+        }
+        return locked;
     }
 
     // 获取地址的所有交易历史
@@ -159,6 +319,7 @@ class Blockchain {
             result.push({
                 address: addr,
                 balance: this.getBalance(addr),
+                lockedRewards: this.getLockedRewards(addr),
                 txCount: this.getTransactionHistory(addr).length
             });
         }
@@ -171,6 +332,20 @@ class Blockchain {
                 const raw = fs.readFileSync(this.dataFile, 'utf8');
                 const saved = JSON.parse(raw);
                 if (saved && saved.chain && saved.chain.length > 0) {
+                    // ----- 恢复难度数据 -----
+                    if (saved.difficulty != null) {
+                        this.difficulty = saved.difficulty;
+                    }
+                    if (saved.difficultyHistory) {
+                        this.difficultyHistory = saved.difficultyHistory;
+                    }
+                    if (saved.blockMiningTimes) {
+                        this.blockMiningTimes = saved.blockMiningTimes;
+                    }
+                    if (saved.lastAdjustmentBlock != null) {
+                        this.lastAdjustmentBlock = saved.lastAdjustmentBlock;
+                    }
+
                     // 从保存数据重建区块对象 (支持 data 旧格式和 transactions 新格式)
                     // 注意：从 JSON 读取的 transactions 是普通对象，保留它们供签名验证使用
                     const rebuiltChain = saved.chain.map(b => {
@@ -192,14 +367,14 @@ class Blockchain {
 
                     // 第一级：严格验证（区块 hash + 交易签名）
                     if (this.isChainValid(undefined, true)) {
-                        console.log(`📂 已从本地文件加载区块链: ${this.dataFile} (${rebuiltChain.length} 个区块) ✓`);
+                        console.log(`📂 已从本地文件加载区块链: ${this.dataFile} (${rebuiltChain.length} 个区块, 难度=${this.difficulty}) ✓`);
                         return true;
                     }
 
                     // 第二级：降级验证（仅区块 hash，兼容旧数据格式）
                     if (this.isChainValid(undefined, false)) {
                         console.log(`⚠️  [兼容模式] 本地链使用旧签名格式（非 ECDSA），区块结构有效但签名未验证`);
-                        console.log(`📂 已从本地文件加载区块链: ${this.dataFile} (${rebuiltChain.length} 个区块)`);
+                        console.log(`📂 已从本地文件加载区块链: ${this.dataFile} (${rebuiltChain.length} 个区块, 难度=${this.difficulty})`);
                         return true;
                     }
 
@@ -226,8 +401,12 @@ class Blockchain {
         try {
             const data = {
                 chain: this.chain,
+                difficulty: this.difficulty,
+                difficultyHistory: this.difficultyHistory,
+                blockMiningTimes: this.blockMiningTimes,
+                lastAdjustmentBlock: this.lastAdjustmentBlock,
                 savedAt: new Date().toISOString(),
-                version: '1.0'
+                version: '2.0'
             };
             fs.writeFileSync(this.dataFile, JSON.stringify(data, null, 2), 'utf8');
             return true;

@@ -252,3 +252,152 @@
         border-top: 1px dashed rgba(255,255,255,0.1);
         margin: 15px 0;
     }
+
+    /* ============================================================
+       挖矿动画
+       ============================================================ */
+    .mining-animation {
+        background: rgba(0,0,0,0.3);
+        border: 1px solid rgba(255,215,0,0.3);
+        border-radius: 10px;
+        padding: 16px;
+        margin-top: 15px;
+        transition: all 0.3s;
+    }
+
+    @keyframes mining-glow-bg {
+        0%, 100% { border-color: rgba(255,215,0,0.3); box-shadow: 0 0 15px rgba(255,215,0,0.1); }
+        50% { border-color: rgba(255,215,0,0.8); box-shadow: 0 0 30px rgba(255,215,0,0.3); }
+    }
+    @keyframes mining-spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    @keyframes mining-pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.15); }
+    }
+    @keyframes mining-bar-stripes {
+        0% { background-position: 0 0; }
+        100% { background-position: 40px 0; }
+    }
+
+    .mining-animation.mining-active {
+        animation: mining-glow-bg 1.5s infinite;
+        border-color: rgba(255,215,0,0.6);
+    }
+
+    .mining-animation.mining-success {
+        border-color: #4ade80;
+        background: rgba(74,222,128,0.1);
+        box-shadow: 0 0 40px rgba(74,222,128,0.2);
+        animation: none;
+    }
+
+    .mining-animation.mining-error {
+        border-color: #f87171;
+        background: rgba(248,113,113,0.1);
+        animation: none;
+    }
+
+    .mining-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+    }
+
+    .mining-icon {
+        font-size: 28px;
+        display: inline-block;
+    }
+    .mining-active .mining-icon {
+        animation: mining-spin 1s ease-in-out infinite;
+    }
+    .mining-success .mining-icon {
+        animation: mining-pulse 1s ease-in-out 3;
+    }
+
+    #miningStatus {
+        font-size: 13px;
+        color: #ffd700;
+        font-weight: bold;
+    }
+    .mining-success #miningStatus { color: #4ade80; }
+    .mining-error #miningStatus { color: #f87171; }
+
+    .mining-stats {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+
+    .mining-stat-item {
+        background: rgba(255,255,255,0.05);
+        border-radius: 6px;
+        padding: 8px 12px;
+        flex: 1;
+        text-align: center;
+    }
+
+    .mining-stat-label {
+        font-size: 10px;
+        color: #888;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 4px;
+    }
+
+    .mining-stat-value {
+        font-size: 22px;
+        font-weight: bold;
+        color: #60a5fa;
+        font-family: monospace;
+    }
+    .mining-success .mining-stat-value { color: #4ade80; }
+
+    .mining-hash-box {
+        background: rgba(0,0,0,0.3);
+        border-radius: 6px;
+        padding: 8px 12px;
+        margin-bottom: 12px;
+    }
+
+    .mining-hash-label {
+        font-size: 10px;
+        color: #888;
+        margin-bottom: 4px;
+    }
+
+    .mining-hash-value {
+        font-family: monospace;
+        font-size: 11px;
+        color: #fbbf24;
+        word-break: break-all;
+        line-height: 1.4;
+        max-height: 32px;
+        overflow-y: auto;
+    }
+
+    .mining-progress-track {
+        height: 8px;
+        background: rgba(255,255,255,0.08);
+        border-radius: 4px;
+        overflow: hidden;
+    }
+
+    .mining-progress-bar {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #ffd700, #ffb700, #ffd700);
+        background-size: 40px 100%;
+        border-radius: 4px;
+        transition: width 0.3s ease;
+    }
+    .mining-active .mining-progress-bar {
+        animation: mining-bar-stripes 0.8s linear infinite;
+    }
+    .mining-success .mining-progress-bar {
+        background: linear-gradient(90deg, #4ade80, #22c55e);
+        animation: none;
+    }

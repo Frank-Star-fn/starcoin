@@ -167,12 +167,86 @@ class Block {
         ).digest('hex');
     }
 
+    // 静态：根据难度值生成 {prefixLength, maxNextByte, targetText}
+    //   整数部分 = 前导零位数
+    //   小数部分 = 对"前导零后第一字节"的上限约束（0x00 ~ 0xff 映射到 0.00~1.00）
+    //   例：difficulty = 5.5  →  要求哈希以 "00000" 开头，且下一个 hex 值 ≤ 0x7f
+    static _parseDifficulty(difficulty) {
+        const d = Math.max(0, Number(difficulty) || 0);
+        const prefixLength = Math.floor(d);            // 前导零位数（整数部分）
+        const fraction = d - prefixLength;             // 小数部分，0.00 ~ 0.999...
+        // 小数部分约束下一个 hex 字节的上限（00~ff 共 256 个值，映射 fraction*256）
+        // fraction=0 → 不额外约束（相当于只看前缀零）
+        // fraction=1 → 等价于 prefixLength+1（下一个字节必须是 0x00，即多一位零）
+        const maxNextByte = fraction > 0
+            ? Math.max(0, Math.min(255, Math.floor(fraction * 256))) // 上限（不含）
+            : null;
+        const targetText = '0'.repeat(prefixLength) +
+            (maxNextByte != null ? `(≤${maxNextByte.toString(16).padStart(2,'0')})` : '');
+        return { prefixLength, maxNextByte, targetText };
+    }
+
+    // 静态：判断一个 hash 是否满足指定难度（供挖矿、验证共用）
+    static _meetsDifficulty(hash, difficulty) {
+        const { prefixLength, maxNextByte } = Block._parseDifficulty(difficulty);
+        // 1) 前缀零检查
+        if (hash.substring(0, prefixLength) !== '0'.repeat(prefixLength)) return false;
+        // 2) 小数部分：检查前缀之后的下一个字节（2 位 hex）是否在约束内
+        if (maxNextByte != null) {
+            const nextByteHex = hash.substring(prefixLength, prefixLength + 2);
+            if (nextByteHex.length < 2) return false;
+            const nextByteVal = parseInt(nextByteHex, 16);
+            // 注意：maxNextByte 是"上限（不含）"。fraction=1 → maxNextByte=256 时
+            // 实际上被上面 clamp 成 255，效果等价于"再加一位零"的近似。
+            if (nextByteVal >= maxNextByte) return false;
+        }
+        return true;
+    }
+
+    // 同步挖矿（用于测试）
     mineBlock(difficulty) {
-        const target = Array(difficulty + 1).join('0');
-        while (this.hash.substring(0, difficulty) !== target) {
+        const { targetText } = Block._parseDifficulty(difficulty);
+        this.targetText = targetText;
+        while (!Block._meetsDifficulty(this.hash, difficulty)) {
             this.nonce++;
             this.hash = this.calculateHash();
         }
+    }
+
+    // 异步挖矿（带进度回调，用于前端动画）
+    // 每 stepInterval 次 hash 让步一次事件循环 + 回调进度
+    async mineBlockAsync(difficulty, onProgress, stepInterval = 5000) {
+        const { targetText } = Block._parseDifficulty(difficulty);
+        this.targetText = targetText;
+        while (!Block._meetsDifficulty(this.hash, difficulty)) {
+            this.nonce++;
+            this.hash = this.calculateHash();
+
+            if (this.nonce % stepInterval === 0) {
+                // 让步事件循环，让 SSE 等异步操作有机会发送数据
+                await new Promise(r => setImmediate(r));
+                if (onProgress) {
+                    onProgress({
+                        nonce: this.nonce,
+                        hash: this.hash,
+                        target: targetText,
+                        difficulty: difficulty,
+                        found: false
+                    });
+                }
+            }
+        }
+        // 挖到后回调一次
+        if (onProgress) {
+            onProgress({
+                nonce: this.nonce,
+                hash: this.hash,
+                target: targetText,
+                difficulty: difficulty,
+                found: true
+            });
+        }
+        return this;
     }
 }
 
