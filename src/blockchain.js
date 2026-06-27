@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { Block, Transaction, generateWallet } = require('./core');
+const { Block, Transaction, generateWallet, importWalletFromPem } = require('./core');
 const { ChainSync } = require('./chain-sync');
 const { DifficultyManager } = require('./difficulty-manager');
 
@@ -500,4 +500,4 @@ class Blockchain {
     }
 }
 
-module.exports = { Blockchain, Block, Transaction, generateWallet };
+module.exports = { Blockchain, Block, Transaction, generateWallet, importWalletFromPem };

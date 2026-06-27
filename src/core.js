@@ -7,7 +7,7 @@ const EC_CURVE = 'secp256k1';
 
 function getPublicKeyFromPrivateKeyPem(privateKeyPem) {
     const key = crypto.createPrivateKey({ key: privateKeyPem, format: 'pem', type: 'pkcs8' });
-    return key.export({ format: 'der', type: 'spki' }).toString('hex');
+    return crypto.createPublicKey(key).export({ format: 'der', type: 'spki' }).toString('hex');
 }
 
 function publicKeyToAddress(publicKeyHex) {
@@ -318,7 +318,7 @@ function importWalletFromPem(privateKeyPem) {
     // 2) 尝试解析私钥，如果失败说明密钥无效
     const publicKeyHex = getPublicKeyFromPrivateKeyPem(trimmed);
     const address = publicKeyToAddress(publicKeyHex);
-    return { privateKey: trimmed, publicKey: publicKeyHex, address };
+    return { privateKey: privateKeyPem, publicKey: publicKeyHex, address };
 }
 
 module.exports = { Block, Transaction, generateWallet, calculateMerkleRoot,
