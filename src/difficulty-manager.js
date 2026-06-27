@@ -143,20 +143,21 @@ class DifficultyManager {
                         delta = +this.difficultyStep * Math.min(3, Math.max(1, Math.round(-Math.log2(ratio))));
                     }
                     if (delta !== 0) {
+                        const oldDiffBefore = diff;
                         const raw = diff + delta;
                         diff = Math.max(
                             this.difficultyMin,
                             Math.min(this.difficultyMax, Math.round(raw * 10) / 10)
                         );
+                        history.push({
+                            blockIndex: i,
+                            oldDifficulty: oldDiffBefore,
+                            newDifficulty: diff,
+                            avgTime: Math.round(avgTime * 10) / 10,
+                            targetTime: this.targetBlockTime,
+                            reason: avgTime > this.targetBlockTime * 1.3 ? '出块偏慢 ↓' : '出块偏快 ↑'
+                        });
                     }
-                    history.push({
-                        blockIndex: i,
-                        oldDifficulty: this.difficulty,
-                        newDifficulty: diff,
-                        avgTime: Math.round(avgTime * 10) / 10,
-                        targetTime: this.targetBlockTime,
-                        reason: avgTime > this.targetBlockTime * 1.3 ? '出块偏慢 ↓' : '出块偏快 ↑'
-                    });
                     lastAdj = i;
                 }
             }

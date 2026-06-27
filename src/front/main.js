@@ -162,49 +162,6 @@ async function refreshAddressRank() {
     }
 }
 
-/* ============================================================
-   燃烧手续费图表渲染
-   ============================================================ */
-function renderFeeBurnChart(recentFees) {
-    const chartEl = document.getElementById('feeBurnChart');
-    if (!chartEl) return;
-
-    if (!recentFees || recentFees.length === 0) {
-        chartEl.innerHTML = '<div class="mempool-empty">暂无数据</div>';
-        return;
-    }
-
-    // 找最大值用于归一化高度
-    const maxFee = Math.max(1, ...recentFees.map(r => r.totalFees));
-
-    // 计算累计燃烧值
-    let cumulative = 0;
-    const feeData = recentFees.map(r => {
-        cumulative += r.totalFees;
-        return { ...r, cumulative };
-    });
-    const maxCumulative = cumulative || 1;
-
-    // 生成柱状图 HTML
-    chartEl.innerHTML = feeData.map(r => {
-        const barHeight = Math.max(2, (r.totalFees / maxFee) * 80); // 最大 80px
-        const cumulPct = (r.cumulative / maxCumulative) * 100;
-        return `
-            <div class="fee-bar-wrapper">
-                <div class="fee-bar-tooltip">
-                    <div style="font-weight:bold;color:#f87171;">区块 #${r.blockIndex}</div>
-                    <div>🔥 燃烧: <b>${r.totalFees} STC</b></div>
-                    <div>📦 含费交易: ${r.txWithFeeCount}/${r.totalTxCount} 笔</div>
-                    <div style="color:#fbbf24;">📈 累计: ${r.cumulative} STC</div>
-                </div>
-                <div class="fee-bar" style="height:${barHeight}px;background:linear-gradient(180deg,#f87171,#dc2626);"
-                     title="区块 #${r.blockIndex}: ${r.totalFees} STC"></div>
-                <div class="fee-bar-label">#${r.blockIndex}</div>
-            </div>
-        `;
-    }).join('');
-}
-
 async function refreshChain() {
     try {
         const data = await api('/api/blockchain');
@@ -224,17 +181,6 @@ async function refreshChain() {
                 statBurnedEl.style.color = '#f87171';
             }
         }
-        // 燃烧详情面板中的总计
-        const totalBurnedDisplay = document.getElementById('totalBurnedDisplay');
-        if (totalBurnedDisplay) {
-            totalBurnedDisplay.textContent = totalBurned;
-        }
-
-        // ---- 渲染燃烧图表 ----
-        if (data.stats && data.stats.recentBurnedFees) {
-            renderFeeBurnChart(data.stats.recentBurnedFees);
-        }
-
         // 难度信息（支持小数难度）
         const difficultyEl = document.getElementById('statDifficulty');
         if (data.stats) {

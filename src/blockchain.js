@@ -115,8 +115,9 @@ class Blockchain {
 
     // 从交易池挖矿，打包交易到新区块
     mineBlock(minerAddress, blockDataText) {
-        // 准备要打包的交易
-        const txsToInclude = this.pendingTransactions.slice(0, 100); // 最多100笔/区块
+        // 准备要打包的交易：按手续费降序排序，优先打包手续费最高的交易
+        const sortedTxs = [...this.pendingTransactions].sort((a, b) => (b.fee || 0) - (a.fee || 0));
+        const txsToInclude = sortedTxs.slice(0, 100); // 最多100笔/区块
         // 如果没有交易，也允许只写一条备注文本（兼容旧接口）
         if (blockDataText && blockDataText.trim()) {
             txsToInclude.push(new Transaction('', 'NOTE', 0, 0, blockDataText.trim()));
@@ -155,7 +156,9 @@ class Blockchain {
 
     // 异步挖矿（带进度回调，用于前端可视化）
     async mineBlockAsync(minerAddress, blockDataText, onProgress) {
-        const txsToInclude = this.pendingTransactions.slice(0, 100);
+        // 按手续费降序排序，优先打包手续费最高的交易
+        const sortedTxs = [...this.pendingTransactions].sort((a, b) => (b.fee || 0) - (a.fee || 0));
+        const txsToInclude = sortedTxs.slice(0, 100);
         if (blockDataText && blockDataText.trim()) {
             txsToInclude.push(new Transaction('', 'NOTE', 0, 0, blockDataText.trim()));
         }
