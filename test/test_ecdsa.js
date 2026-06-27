@@ -2,7 +2,7 @@
 // ECDSA 签名系统测试脚本
 // 运行方式: node test_ecdsa.js
 // ============================================================
-const { Blockchain, Block, Transaction, generateWallet } = require('../src/blockchain');
+const { Blockchain, Block, Transaction, generateWallet, importWalletFromPem } = require('../src/blockchain');
 
 let testCount = 0;
 let passCount = 0;
@@ -243,6 +243,76 @@ test('篡改链上交易后 isChainValid 返回 false', () => {
     const after = chain.isChainValid();
     return before === true && after === false ? true
         : `before=${before}, after=${after}（篡改后应返回 false）`;
+});
+
+console.log('');
+console.log('============================================================');
+console.log('  第6组: 私钥导入/导出测试');
+console.log('============================================================');
+
+let exportedPem = '';
+let originalWallet;
+
+test('importWalletFromPem 可以导入 generateWallet 生成的 PEM 私钥', () => {
+    const w1 = generateWallet();
+    originalWallet = w1;
+    const imported = importWalletFromPem(w1.privateKey);
+    return (imported.privateKey === w1.privateKey &&
+            imported.publicKey === w1.publicKey &&
+            imported.address === w1.address) ? true : '导入后数据不一致';
+});
+
+test('importWalletFromPem 返回的 address 与原始钱包一致', () => {
+    const crypto = require('crypto');
+    const expectedAddr = crypto.createHash('sha256')
+        .update(originalWallet.publicKey, 'hex').digest('hex').substring(0, 32);
+    const imported = importWalletFromPem(originalWallet.privateKey);
+    return imported.address === expectedAddr ? true
+        : `地址不匹配: ${imported.address} vs ${expectedAddr}`;
+});
+
+test('用导入的私钥能正常签名交易', () => {
+    const w2 = generateWallet();
+    const imported = importWalletFromPem(w2.privateKey);
+    const tx = new Transaction(imported.address, w2.address, 5, 1, '导入密钥签名测试');
+    tx.signTransaction(imported.privateKey, imported.publicKey);
+    return tx.isValid() === true ? true : '导入的私钥签名后验证失败';
+});
+
+test('importWalletFromPem 拒绝无效的 PEM 字符串', () => {
+    let threw = false;
+    try {
+        importWalletFromPem('这不是有效的 PEM 格式');
+    } catch (e) {
+        threw = true;
+    }
+    return threw ? true : '无效 PEM 应该抛出错误';
+});
+
+test('importWalletFromPem 拒绝空字符串', () => {
+    let threw = false;
+    try {
+        importWalletFromPem('');
+    } catch (e) {
+        threw = true;
+    }
+    return threw ? true : '空字符串应该抛出错误';
+});
+
+test('生成 → 导出 PEM → 重新导入 → 地址一致（完整流程）', () => {
+    // 模拟完整的导出导入流程
+    const alice = generateWallet();
+    const pem = alice.privateKey;               // 导出 = 拿 PEM
+    const imported = importWalletFromPem(pem);   // 导入 = 从 PEM 恢复
+
+    // 用导入的密钥签名交易
+    const tx = new Transaction(imported.address, alice.address, 10, 0, '完整流程测试');
+    tx.signTransaction(imported.privateKey, imported.publicKey);
+
+    return (imported.address === alice.address &&
+            imported.publicKey === alice.publicKey &&
+            tx.isValid() === true) ? true
+        : `地址: ${imported.address} vs ${alice.address}, 签名有效: ${tx.isValid()}`;
 });
 
 console.log('');

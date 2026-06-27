@@ -170,6 +170,7 @@ async function renderWallets() {
                 <div class="wallet-address">${escapeHtml(shortAddr(w.address, 40))}</div>
                 <div class="wallet-balance" id="wallet-balance-${i}">余额: --</div>
                 <div class="wallet-actions">
+                    <button class="secondary small" onclick="event.stopPropagation(); exportPrivateKey(${i})">🔑 导出私钥</button>
                     <button class="secondary small" onclick="event.stopPropagation(); copyWalletAddress(${i})">复制地址</button>
                     <button class="secondary small" onclick="event.stopPropagation(); setAsReceiver(${i})">设为接收方</button>
                     <button class="secondary small" onclick="event.stopPropagation(); exportPrivateKey(${i})">🔑 导出私钥</button>
@@ -252,6 +253,146 @@ async function refreshSelectedWalletDetails() {
     }
 }
 
-// 将需要在 HTML 内联事件中使用的函数暴露到全局作用域
-window.toggleImportArea = toggleImportArea;
-window.doImportPrivateKey = doImportPrivateKey;
+/* ============================================================
+   私钥导出：下载 PEM 文件（不经过网络）
+   ============================================================ */
+function exportPrivateKey(index) {
+    const w = state.wallets[index];
+    if (!w) return;
+
+    // 安全确认
+    if (!confirm(`⚠️  即将导出私钥！\n\n钱包: ${w.label}\n地址: ${shortAddr(w.address, 20)}\n\n持有私钥即可完全控制该钱包中的资产。\n请确保在安全的环境下操作。\n\n确认导出吗？`)) return;
+
+    // 构建 .pem 文件内容
+    const pemContent = w.privateKey;
+    const shortAddrPart = w.address.substring(0, 8);
+    const fileName = `starcoin_wallet_${shortAddrPart}.pem`;
+
+    // 下载文件
+    const blob = new Blob([pemContent], { type: 'application/x-pem-file' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showMessage('txMessage', `✅ 私钥已导出: ${fileName}\n📁 请妥善保管！`, 'success', 5000);
+}
+
+/* ============================================================
+   私钥导入：显示对话框
+   ============================================================ */
+function showImportKeyDialog() {
+    const dialog = document.getElementById('importKeyDialog');
+    dialog.style.display = 'block';
+    document.getElementById('importKeyInput').value = '';
+    document.getElementById('importKeyMessage').className = 'message';
+    document.getElementById('importKeyMessage').textContent = '';
+    document.getElementById('importKeyBtn').disabled = false;
+    document.getElementById('importKeyBtn').textContent = '✅ 导入';
+    document.getElementById('importKeyFile').value = '';
+}
+
+function hideImportKeyDialog() {
+    document.getElementById('importKeyDialog').style.display = 'none';
+}
+
+/* ============================================================
+   私钥导入：提交到后端验证并恢复钱包
+   ============================================================ */
+async function importPrivateKey() {
+    const btn = document.getElementById('importKeyBtn');
+    const input = document.getElementById('importKeyInput');
+    const msgEl = document.getElementById('importKeyMessage');
+    const fileInput = document.getElementById('importKeyFile');
+
+    let pemText = input.value.trim();
+
+    // 优先检查是否有文件被选中
+    if (fileInput.files && fileInput.files.length > 0) {
+        try {
+            pemText = await fileInput.files[0].text();
+            pemText = pemText.trim();
+        } catch (e) {
+            msgEl.className = 'message error';
+            msgEl.textContent = '❌ 文件读取失败: ' + e.message;
+            return;
+        }
+    }
+
+    if (!pemText) {
+        msgEl.className = 'message error';
+        msgEl.textContent = '❌ 请粘贴私钥 PEM 内容或选择 .pem 文件';
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ 验证中...';
+    }
+    msgEl.className = 'message info';
+    msgEl.textContent = '🔑 正在验证 PEM 私钥...';
+
+    try {
+        const result = await api('/api/wallet/import', 'POST', { privateKeyPem: pemText });
+
+        if (result.success) {
+            const w = result.wallet;
+            // 检查是否已存在相同地址的钱包
+            const exists = state.wallets.some(ex => ex.address === w.address);
+            if (exists) {
+                msgEl.className = 'message error';
+                msgEl.textContent = '⚠️  该私钥对应的钱包已存在，无需重复导入';
+                if (btn) { btn.disabled = false; btn.textContent = '✅ 导入'; }
+                return;
+            }
+
+            // 添加到钱包列表
+            const walletEntry = {
+                label: '钱包 #' + (state.wallets.length + 1) + '（导入）',
+                privateKey: w.privateKey,
+                publicKey: w.publicKey,
+                address: w.address
+            };
+            state.wallets.push(walletEntry);
+            state.selectedWallet = state.wallets.length - 1; // 自动选中
+            renderWallets();
+            renderTransfer();
+            saveWallets();
+            hideImportKeyDialog();
+            showMessage('txMessage', `✅ 私钥导入成功！地址: ${shortAddr(w.address, 20)}`, 'success', 5000);
+            await refreshAll();
+        } else {
+            msgEl.className = 'message error';
+            msgEl.textContent = '❌ ' + (result.error || '导入失败');
+            if (btn) { btn.disabled = false; btn.textContent = '✅ 导入'; }
+        }
+    } catch (err) {
+        msgEl.className = 'message error';
+        msgEl.textContent = '❌ 导入失败: ' + err.message;
+        if (btn) { btn.disabled = false; btn.textContent = '✅ 导入'; }
+    }
+}
+
+/* ============================================================
+   私钥导入：文件选择自动加载
+   ============================================================ */
+document.addEventListener('DOMContentLoaded', () => {
+    const fileInput = document.getElementById('importKeyFile');
+    if (fileInput) {
+        fileInput.addEventListener('change', async (e) => {
+            if (e.target.files && e.target.files.length > 0) {
+                try {
+                    const text = await e.target.files[0].text();
+                    document.getElementById('importKeyInput').value = text;
+                    showMessage('importKeyMessage', '📄 已加载文件，点击 "导入" 完成导入', 'info', 0);
+                } catch (err) {
+                    showMessage('importKeyMessage', '❌ 文件读取失败: ' + err.message, 'error', 0);
+                }
+            }
+        });
+    }
+});
