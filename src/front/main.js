@@ -1,4 +1,12 @@
 /* ============================================================
+   工具：格式化余额（最多保留 6 位小数）
+   ============================================================ */
+function formatBalance(num) {
+    if (num === undefined || num === null || isNaN(Number(num))) return '0';
+    return Number(num).toFixed(6).replace(/\.?0+$/, '');
+}
+
+/* ============================================================
    渲染：转账表单
    ============================================================ */
 function renderTransfer() {
@@ -39,9 +47,9 @@ async function updateFromBalanceHint() {
     if (fromIdx >= 0 && state.wallets[fromIdx]) {
         try {
             const data = await api('/api/balance/' + state.wallets[fromIdx].address);
-            let txt = '可用余额: ' + (data.balance || 0) + ' STC';
+            let txt = '可用余额: ' + formatBalance(data.balance) + ' STC';
             if (data.lockedRewards > 0) {
-                txt += '（🔒 ' + data.lockedRewards + ' 奖励锁定中，共 ' + (data.totalBalance || 0) + ' STC）';
+                txt += '（🔒 ' + formatBalance(data.lockedRewards) + ' 奖励锁定中，共 ' + formatBalance(data.totalBalance) + ' STC）';
             }
             txt += '（未包含交易池中待确认的 ' + (data.pendingTransactions || 0) + ' 笔）';
             document.getElementById('fromBalanceHint').textContent = txt;
@@ -154,7 +162,7 @@ async function refreshAddressRank() {
             el.innerHTML = list.map(a => `
                 <div class="address-row">
                     <span class="addr">${shortAddr(a.address, 18)} <span style="color:#666;">(${a.txCount}笔)</span></span>
-                    <span class="bal">${a.balance} STC</span>
+                    <span class="bal">${formatBalance(a.balance)} STC</span>
                 </div>
             `).join('');
         }

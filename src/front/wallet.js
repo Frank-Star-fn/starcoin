@@ -1,6 +1,11 @@
 /* ============================================================
    钱包：生成 + 选择
    ============================================================ */
+function formatBalance(num) {
+    if (num === undefined || num === null || isNaN(Number(num))) return '0';
+    return Number(num).toFixed(6).replace(/\.?0+$/, '');
+}
+
 async function generateWallet() {
     try {
         const data = await api('/api/wallet/new', 'POST');
@@ -184,9 +189,9 @@ async function renderWallets() {
                 const data = await api('/api/balance/' + state.wallets[i].address);
                 const el = document.getElementById('wallet-balance-' + i);
                 if (el) {
-                    let txt = '余额: ' + (data.balance || 0) + ' STC';
+                    let txt = '余额: ' + formatBalance(data.balance) + ' STC';
                     if (data.lockedRewards > 0) {
-                        txt += ' <span style="color:#fbbf24;font-size:11px;">🔒 +' + data.lockedRewards + ' 锁定</span>';
+                        txt += ' <span style="color:#fbbf24;font-size:11px;">🔒 +' + formatBalance(data.lockedRewards) + ' 锁定</span>';
                     }
                     el.innerHTML = txt;
                 }
@@ -217,9 +222,9 @@ async function refreshSelectedWalletDetails() {
     try {
         const data = await api('/api/balance/' + w.address);
         const balEl = document.getElementById('selectedWalletBalance');
-        let txt = (data.balance || 0) + ' STC';
+        let txt = formatBalance(data.balance) + ' STC';
         if (data.lockedRewards > 0) {
-            txt += ' <span style="color:#fbbf24;">(🔒 ' + data.lockedRewards + ' 奖励锁定中)</span>';
+            txt += ' <span style="color:#fbbf24;">(🔒 ' + formatBalance(data.lockedRewards) + ' 奖励锁定中)</span>';
         }
         balEl.innerHTML = txt;
         // 同时更新锁定期提示
