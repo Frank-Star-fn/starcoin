@@ -13,7 +13,7 @@ class Blockchain {
         this.difficultyMax = 12;            // 最大难度
         this.difficultyStep = 0.1;          // 每次难度调整的步长（越小越平滑；0.1=约 1.3x 工作量变化）
         this.lastAdjustmentBlock = 0;       // 上次调整时的区块高度
-        this.blockMiningTimes = {};         // { blockIndex: miningTimeSeconds }
+        this.blockMiningTimes = {};         // { blockIndex: miningTimeSeconds }（已废弃，保留兼容）
         this.pendingTransactions = [];  // 交易池 (Mempool)
         this.miningReward = 50;          // 挖矿奖励
         this.coinbaseMaturity = 5;       // 矿工奖励锁定期（块数），成熟后才能使用
@@ -81,7 +81,6 @@ class Blockchain {
 
     // 从交易池挖矿，打包交易到新区块
     mineBlock(minerAddress, blockDataText) {
-        const startTime = Date.now();
         // 准备要打包的交易
         const txsToInclude = this.pendingTransactions.slice(0, 100); // 最多100笔/区块
         // 如果没有交易，也允许只写一条备注文本（兼容旧接口）
@@ -114,7 +113,7 @@ class Blockchain {
         this.pendingTransactions = this.pendingTransactions.filter(t => !txIdsInBlock.includes(t.id));
 
         this.chain.push(block);
-        this.recordMiningTime(block.index, (Date.now() - startTime) / 1000);
+        // 使用链上区块时间戳调整难度，确保所有节点难度一致
         this.adjustDifficulty();
         this.saveToFile();
         return block;
@@ -122,7 +121,6 @@ class Blockchain {
 
     // 异步挖矿（带进度回调，用于前端可视化）
     async mineBlockAsync(minerAddress, blockDataText, onProgress) {
-        const startTime = Date.now();
         const txsToInclude = this.pendingTransactions.slice(0, 100);
         if (blockDataText && blockDataText.trim()) {
             txsToInclude.push(new Transaction('', 'NOTE', 0, 0, blockDataText.trim()));
@@ -150,9 +148,29 @@ class Blockchain {
         this.pendingTransactions = this.pendingTransactions.filter(t => !txIdsInBlock.includes(t.id));
 
         this.chain.push(block);
-        this.recordMiningTime(block.index, (Date.now() - startTime) / 1000);
+        // 使用链上区块时间戳调整难度，确保所有节点难度一致
         this.adjustDifficulty();
-        this.saveToFile();
+
+        // 异步挖矿期间可能收到 P2P 区块导致链状态变化，验证并自动修复
+        if (!this.isChainValid()) {
+            console.warn('⚠️ [异步挖矿] 链可能已被其他节点更新，自动修复中...');
+            const removed = this.repairChain();
+            // 把被截断区块中的用户交易放回交易池（排除 SYSTEM 奖励交易和空交易）
+            const existingPendingIds = new Set(this.pendingTransactions.map(t => t.id));
+            for (const rb of removed) {
+                if (!rb.transactions || !Array.isArray(rb.transactions)) continue;
+                for (const tx of rb.transactions) {
+                    if (!tx.from || tx.from === 'SYSTEM' || tx.from === '') continue;
+                    if (existingPendingIds.has(tx.id)) continue;
+                    this.pendingTransactions.unshift(tx);
+                    existingPendingIds.add(tx.id);
+                }
+            }
+            this.saveToFile();
+            console.log(`✅ [异步挖矿] 修复完成，当前链长度: ${this.chain.length}`);
+        } else {
+            this.saveToFile();
+        }
         return block;
     }
 
@@ -162,12 +180,8 @@ class Blockchain {
         return blockIndex + this.coinbaseMaturity <= this.getLatestBlock().index;
     }
 
-    // 记录区块挖矿耗时（用于难度调整）
-    recordMiningTime(blockIndex, timeSeconds) {
-        this.blockMiningTimes[blockIndex] = timeSeconds;
-    }
-
-    // 动态难度调整：每 N 个区块，根据最近出块速度调整难度
+    // 动态难度调整：每 N 个区块，根据链上区块时间戳调整难度
+    // 使用区块时间戳而非本地挖矿计时，确保所有节点从同一链推导出相同难度
     adjustDifficulty() {
         const latestIndex = this.getLatestBlock().index;
 
@@ -178,13 +192,18 @@ class Blockchain {
         const blocksSinceLastAdjust = latestIndex - this.lastAdjustmentBlock;
         if (blocksSinceLastAdjust < this.difficultyAdjustInterval) return;
 
-        // 获取最近 N 个区块的平均挖矿时间
+        // 使用链上区块时间戳计算最近 N 个区块的平均出块时间
+        // 所有节点共享同一链，因此时间戳一致 → 难度一致
         let totalTime = 0;
         let count = 0;
         const startIdx = Math.max(1, latestIndex - this.difficultyAdjustInterval + 1);
-        for (let i = startIdx; i <= latestIndex; i++) {
-            if (this.blockMiningTimes[i] != null) {
-                totalTime += this.blockMiningTimes[i];
+        for (let i = startIdx + 1; i <= latestIndex; i++) {
+            const prevBlock = this.chain[i - 1];
+            const currBlock = this.chain[i];
+            const timeDiff = (new Date(currBlock.timestamp) - new Date(prevBlock.timestamp)) / 1000;
+            // 合理范围：0 < timeDiff < 1小时（防止异常时间戳干扰）
+            if (timeDiff > 0 && timeDiff < 3600) {
+                totalTime += timeDiff;
                 count++;
             }
         }
@@ -241,6 +260,81 @@ class Blockchain {
         }
 
         this.lastAdjustmentBlock = latestIndex;
+    }
+
+    // 根据链上区块时间戳重新计算难度（用于 P2P 链替换后保持所有节点难度一致）
+    // 从头遍历整条链，在每个调整点按区块时间戳计算难度
+    recalculateDifficulty() {
+        if (this.chain.length < 2) {
+            this.difficulty = 5;
+            this.lastAdjustmentBlock = 0;
+            this.difficultyHistory = [];
+            return;
+        }
+
+        // 重置为初始难度
+        let diff = 5;
+        let lastAdj = 0;
+        const history = [];
+
+        // 遍历链上每个区块，在调整点用时间戳计算难度
+        for (let i = 1; i < this.chain.length; i++) {
+            const blocksSinceLast = i - lastAdj;
+            if (blocksSinceLast >= this.difficultyAdjustInterval && i >= 2) {
+                // 用时间戳计算平均出块时间
+                const startIdx = Math.max(1, i - this.difficultyAdjustInterval + 1);
+                let totalTime = 0;
+                let count = 0;
+                for (let j = startIdx + 1; j <= i; j++) {
+                    const prevB = this.chain[j - 1];
+                    const currB = this.chain[j];
+                    const timeDiff = (new Date(currB.timestamp) - new Date(prevB.timestamp)) / 1000;
+                    if (timeDiff > 0 && timeDiff < 3600) {
+                        totalTime += timeDiff;
+                        count++;
+                    }
+                }
+
+                if (count >= 2) {
+                    const avgTime = totalTime / count;
+                    const ratio = avgTime / this.targetBlockTime;
+                    let delta = 0;
+                    if (ratio > 1.15) {
+                        delta = -this.difficultyStep * Math.min(3, Math.max(1, Math.round(Math.log2(ratio))));
+                    } else if (ratio < 0.85) {
+                        delta = +this.difficultyStep * Math.min(3, Math.max(1, Math.round(-Math.log2(ratio))));
+                    }
+                    if (delta !== 0) {
+                        const raw = diff + delta;
+                        diff = Math.max(
+                            this.difficultyMin,
+                            Math.min(this.difficultyMax, Math.round(raw * 10) / 10)
+                        );
+                    }
+                    history.push({
+                        blockIndex: i,
+                        oldDifficulty: this.difficulty,
+                        newDifficulty: diff,
+                        avgTime: Math.round(avgTime * 10) / 10,
+                        targetTime: this.targetBlockTime,
+                        reason: avgTime > this.targetBlockTime * 1.3 ? '出块偏慢 ↓' : '出块偏快 ↑'
+                    });
+                    lastAdj = i;
+                }
+            }
+        }
+
+        const oldDiff = this.difficulty;
+        this.difficulty = diff;
+        this.lastAdjustmentBlock = lastAdj;
+        this.difficultyHistory = history;
+
+        if (Math.abs(this.difficulty - oldDiff) > 0.01) {
+            console.log(
+                `⚙️ 难度重新计算 [全链重放]: ${oldDiff} → ${this.difficulty} ` +
+                `(基于 ${this.chain.length} 个区块的时间戳, ${history.length} 次调整)`
+            );
+        }
     }
 
     // 计算指定地址的余额（遍历整个链）
@@ -332,16 +426,14 @@ class Blockchain {
                 const raw = fs.readFileSync(this.dataFile, 'utf8');
                 const saved = JSON.parse(raw);
                 if (saved && saved.chain && saved.chain.length > 0) {
-                    // ----- 恢复难度数据 -----
+                    // ----- 恢复难度数据（兼容旧格式，但最终以链上时间戳为准） -----
                     if (saved.difficulty != null) {
                         this.difficulty = saved.difficulty;
                     }
                     if (saved.difficultyHistory) {
                         this.difficultyHistory = saved.difficultyHistory;
                     }
-                    if (saved.blockMiningTimes) {
-                        this.blockMiningTimes = saved.blockMiningTimes;
-                    }
+                    // blockMiningTimes 已废弃，不再从文件加载
                     if (saved.lastAdjustmentBlock != null) {
                         this.lastAdjustmentBlock = saved.lastAdjustmentBlock;
                     }
@@ -367,12 +459,16 @@ class Blockchain {
 
                     // 第一级：严格验证（区块 hash + 交易签名）
                     if (this.isChainValid(undefined, true)) {
+                        // 加载成功后，根据链上区块时间戳重新计算难度，保证所有节点一致
+                        this.recalculateDifficulty();
                         console.log(`📂 已从本地文件加载区块链: ${this.dataFile} (${rebuiltChain.length} 个区块, 难度=${this.difficulty}) ✓`);
                         return true;
                     }
 
                     // 第二级：降级验证（仅区块 hash，兼容旧数据格式）
                     if (this.isChainValid(undefined, false)) {
+                        // 加载成功后，根据链上区块时间戳重新计算难度
+                        this.recalculateDifficulty();
                         console.log(`⚠️  [兼容模式] 本地链使用旧签名格式（非 ECDSA），区块结构有效但签名未验证`);
                         console.log(`📂 已从本地文件加载区块链: ${this.dataFile} (${rebuiltChain.length} 个区块, 难度=${this.difficulty})`);
                         return true;
@@ -403,10 +499,10 @@ class Blockchain {
                 chain: this.chain,
                 difficulty: this.difficulty,
                 difficultyHistory: this.difficultyHistory,
-                blockMiningTimes: this.blockMiningTimes,
+                // blockMiningTimes 已废弃（改用链上时间戳），不再持久化
                 lastAdjustmentBlock: this.lastAdjustmentBlock,
                 savedAt: new Date().toISOString(),
-                version: '2.0'
+                version: '3.0'
             };
             fs.writeFileSync(this.dataFile, JSON.stringify(data, null, 2), 'utf8');
             return true;
@@ -422,6 +518,9 @@ class Blockchain {
                 fs.unlinkSync(this.dataFile);
             }
             this.chain = [this.createGenesisBlock()];
+            this.difficulty = 5;
+            this.lastAdjustmentBlock = 0;
+            this.difficultyHistory = [];
             return true;
         } catch (err) {
             console.error('❌ 清除文件失败:', err.message);
@@ -445,6 +544,8 @@ class Blockchain {
             return null;
         }
         this.chain.push(block);
+        // P2P 接收区块后也用链上时间戳调整难度，确保全网一致
+        this.adjustDifficulty();
         this.saveToFile();
         return block;
     }
@@ -545,6 +646,63 @@ class Blockchain {
         return true;
     }
 
+    // 自动检测并修复本地链
+    // 从尾部向前扫描，找到第一个断裂点并截断
+    // 返回被移除的区块（用于交易恢复）
+    repairChain() {
+        const invalidIndex = this._findFirstInvalidIndex();
+        if (invalidIndex === -1) {
+            return []; // 链是有效的
+        }
+
+        const removedBlocks = this.chain.splice(invalidIndex);
+        this.saveToFile();
+        console.log(`🔧 [自动修复] 区块 #${invalidIndex} 开始断裂，已截断 ${removedBlocks.length} 个区块`);
+        return removedBlocks;
+    }
+
+    // 从索引 1 开始扫描，返回第一个无效区块的索引；-1 表示全部有效
+    _findFirstInvalidIndex() {
+        for (let i = 1; i < this.chain.length; i++) {
+            let currentBlock = this.chain[i];
+            let previousBlock = this.chain[i - 1];
+
+            // 重建 Block 实例（处理从 JSON 反序列化的情况）
+            if (!(currentBlock instanceof Block)) {
+                const b = currentBlock;
+                const txSrc = b.transactions || (b.data ? b.data : []);
+                currentBlock = new Block(b.index, b.timestamp, txSrc, b.previousHash);
+                currentBlock.nonce = b.nonce;
+                currentBlock.hash = b.hash;
+                if (b.transactions && Array.isArray(b.transactions)) {
+                    currentBlock.transactions = b.transactions;
+                }
+            }
+            if (!(previousBlock instanceof Block)) {
+                const b = previousBlock;
+                const txSrc = b.transactions || (b.data ? b.data : []);
+                previousBlock = new Block(b.index, b.timestamp, txSrc, b.previousHash);
+                previousBlock.nonce = b.nonce;
+                previousBlock.hash = b.hash;
+                if (b.transactions && Array.isArray(b.transactions)) {
+                    previousBlock.transactions = b.transactions;
+                }
+            }
+
+            // 验证 hash
+            if (currentBlock.hash !== currentBlock.calculateHash()) {
+                console.warn(`🔧 [自动修复] 区块 #${i} hash 不一致，从此处截断`);
+                return i;
+            }
+            // 验证 previousHash 链式引用
+            if (currentBlock.previousHash !== previousBlock.hash) {
+                console.warn(`🔧 [自动修复] 区块 #${i} previousHash 不匹配前一区块，从此处截断`);
+                return i;
+            }
+        }
+        return -1; // 全部有效
+    }
+
     // 替换为更长的链
     replaceChain(newChain) {
         if (newChain.length <= this.chain.length) {
@@ -630,8 +788,10 @@ class Blockchain {
             block.hash = b.hash;
             return block;
         });
+        // 根据新链的区块时间戳重新计算难度，保证所有节点难度一致
+        this.recalculateDifficulty();
         this.saveToFile();
-        console.log(`✅ 链已替换，新长度: ${this.chain.length}（回滚了 ${rollbackTx.length} 笔交易到交易池）`);
+        console.log(`✅ 链已替换，新长度: ${this.chain.length}（回滚了 ${rollbackTx.length} 笔交易到交易池，难度=${this.difficulty}）`);
         return true;
     }
 }

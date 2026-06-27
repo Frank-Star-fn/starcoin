@@ -98,18 +98,6 @@
             <label>矿工奖励接收地址（默认使用当前选中钱包）</label>
             <input type="text" id="minerAddress" placeholder="自动填入当前选中钱包的地址">
 
-            <!-- 手动设置难度 -->
-            <div style="margin-top:8px;">
-                <label style="font-size:12px;">⚙️ 手动设置难度（支持小数 3~12，例如 5.5）</label>
-                <div style="display:flex; gap:6px; align-items:center;">
-                    <input type="number" id="difficultyInput" min="3" max="12" step="0.1" placeholder="5.0">
-                    <button onclick="setDifficulty()" style="padding:6px 12px; font-size:12px;">应用</button>
-                </div>
-                <div id="difficultyMessage" style="font-size:11px; margin-top:4px; color:#888;">
-                    💡 不填则使用系统自动调整的难度；小数=0.1 档（约 1.3x 工作量变化）
-                </div>
-            </div>
-
             <button onclick="mineBlock()" id="mineBtn" style="width:100%; margin-top:10px; padding:12px; font-size:15px;">
                 ⛏️ 开始挖矿并打包交易
             </button>

@@ -643,35 +643,7 @@ async function refreshChain() {
     }
 }
 
-/* ============================================================
-   手动设置难度
-   ============================================================ */
-async function setDifficulty() {
-    const input = document.getElementById('difficultyInput');
-    const msg = document.getElementById('difficultyMessage');
-    const val = input.value.trim();
-    if (val === '') {
-        msg.innerHTML = '<span style="color:#fbbf24;">⚠️ 请输入难度值（3~12，支持小数）</span>';
-        return;
-    }
-    const d = Number(val);
-    if (!Number.isFinite(d) || d < 3 || d > 12) {
-        msg.innerHTML = `<span style="color:#ef4444;">❌ 难度必须在 3 ~ 12 之间</span>`;
-        return;
-    }
-    try {
-        const res = await api('/api/difficulty', 'POST', { difficulty: d });
-        if (res.success) {
-            msg.innerHTML = `<span style="color:#4ade80;">✓ 已设置难度 ${res.oldDifficulty} → ${res.newDifficulty}（目标: 0x${res.targetText}）</span>`;
-            input.value = '';
-            refreshChain();
-        } else {
-            msg.innerHTML = `<span style="color:#ef4444;">❌ ${res.error}</span>`;
-        }
-    } catch (err) {
-        msg.innerHTML = `<span style="color:#ef4444;">❌ ${err.message}</span>`;
-    }
-}
+
 
 /* ============================================================
    整体刷新

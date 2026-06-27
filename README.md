@@ -11,13 +11,13 @@ $env:PORT="3000" ; node src/server.js
 $env:PORT="3001" ; node src/server.js
 ```
 
-## 代码含义
+## 代码结构
 
 前端(front)：
 app.js, wallet.js, main.js 负责可视化和交互。
 
 后端：
-server.js, blockchain.js, core.js, p2p.js 负责处理请求和响应。
+server.js, blockchain.js, core.js, p2p.js, p2p-core.js 负责处理请求和响应。
 
 测试：
 test_ecdsa.js 测试 ECDSA 签名和验证。

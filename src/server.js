@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const http = require('http');
 const { Blockchain, Block, Transaction, generateWallet } = require('./blockchain');
-const { createP2P } = require('./p2p');
+const { createP2P } = require('./p2p/p2p');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -173,33 +173,6 @@ app.post('/api/mine', (req, res) => {
             error: err.message
         });
     }
-});
-
-// 8.5 手动设置挖矿难度（支持小数，如 5.5）
-app.post('/api/difficulty', (req, res) => {
-    const { difficulty } = req.body;
-    const d = Number(difficulty);
-    if (!Number.isFinite(d) || d < starCoin.difficultyMin || d > starCoin.difficultyMax) {
-        return res.status(400).json({
-            success: false,
-            error: `难度必须在 ${starCoin.difficultyMin} ~ ${starCoin.difficultyMax} 之间，支持小数（例如 5.5）`
-        });
-    }
-    // 保留 1 位小数，避免浮点误差累积
-    const rounded = Math.round(d * 10) / 10;
-    const oldVal = starCoin.difficulty;
-    starCoin.difficulty = rounded;
-    starCoin.saveToFile();
-    const diffInfo = Block._parseDifficulty(rounded);
-    res.json({
-        success: true,
-        oldDifficulty: oldVal,
-        newDifficulty: rounded,
-        targetText: diffInfo.targetText,
-        prefixLength: diffInfo.prefixLength,
-        maxNextByte: diffInfo.maxNextByte,
-        note: '手动设置难度后，下次挖矿立即生效；自动难度调整仍会继续作用于后续区块。'
-    });
 });
 
 // 8b. SSE 挖矿进度流（带可视化动画）
