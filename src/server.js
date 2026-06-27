@@ -293,60 +293,105 @@ app.get('/api/mine/stream', async (req, res) => {
         'Access-Control-Allow-Origin': '*'
     });
 
-    // 立即发送初始进度（显示开始挖矿）
-    const diffInfo = Block._parseDifficulty(starCoin.difficulty);
-    res.write(`data: ${JSON.stringify({
-        nonce: 0, hash: '', target: diffInfo.targetText,
-        difficulty: starCoin.difficulty,
-        found: false, started: true,
-        message: '⛏️ 开始挖矿... (难度=' + starCoin.difficulty + ', 目标=' + diffInfo.targetText + ')'
-    })}\n\n`);
+    // 持续挖矿标志：当中止时自动重启
+    let keepMining = true;
+    let consecutiveCancels = 0;
 
-    try {
-        // 异步挖矿，每找到一批 nonce 就回调推送进度
-        const newBlock = await starCoin.mineBlockAsync(minerAddress, null, (progress) => {
-            res.write(`data: ${JSON.stringify(progress)}\n\n`);
-        });
-
-        // 挖矿完成，广播到其他节点
-        p2p.broadcastLatest();
-        p2p.updateNodeInfo();
-
-        // WebSocket 推送：新区块诞生（SSE 挖矿路径）
-        broadcastToFrontend('newBlock', {
-            blockIndex: newBlock.index,
-            blockHash: newBlock.hash,
-            transactionCount: newBlock.transactions.length,
-            difficulty: starCoin.difficulty,
-            source: 'sse-mining'
-        });
-
-        // 发送最终结果
+    while (keepMining) {
+        const diffInfo = Block._parseDifficulty(starCoin.difficulty);
+        const chainLength = starCoin.chain.length;
         res.write(`data: ${JSON.stringify({
-            found: true,
-            nonce: newBlock.nonce,
-            hash: newBlock.hash,
+            nonce: 0, hash: '', target: diffInfo.targetText,
             difficulty: starCoin.difficulty,
-            block: {
-                index: newBlock.index,
-                hash: newBlock.hash,
-                previousHash: newBlock.previousHash,
-                nonce: newBlock.nonce,
-                timestamp: newBlock.timestamp,
-                transactionCount: newBlock.transactions.length
-            },
-            reward: starCoin.miningReward,
-            message: '🎉 挖矿成功！区块 #' + newBlock.index + ' 已生成'
+            found: false, started: true,
+            chainLength: chainLength,
+            message: '⛏️ 开始挖矿... (难度=' + starCoin.difficulty + ', 目标=' + diffInfo.targetText + ', 高度=' + chainLength + ')'
         })}\n\n`);
-    } catch (err) {
-        res.write(`data: ${JSON.stringify({
-            found: false,
-            error: err.message,
-            message: '❌ ' + err.message
-        })}\n\n`);
-    } finally {
-        res.end();
+
+        try {
+            // 异步挖矿，每找到一批 nonce 就回调推送进度
+            const result = await starCoin.mineBlockAsync(minerAddress, null, (progress) => {
+                // 如果挖矿过程中检测到链更新，在进度中通知前端
+                if (progress.aborted) {
+                    res.write(`data: ${JSON.stringify({
+                        ...progress,
+                        message: '🔄 检测到区块链更新，正在切换到新链...'
+                    })}\n\n`);
+                } else {
+                    res.write(`data: ${JSON.stringify(progress)}\n\n`);
+                }
+            });
+
+            // 如果挖矿被取消（链已更新），自动在新链上重新开始挖矿
+            if (result && result.canceled) {
+                consecutiveCancels++;
+                // 防止无限循环：如果连续取消超过 20 次，放弃
+                if (consecutiveCancels > 20) {
+                    res.write(`data: ${JSON.stringify({
+                        found: false,
+                        error: '链频繁更新，已放弃挖矿',
+                        message: '❌ 链频繁更新，已放弃挖矿'
+                    })}\n\n`);
+                    keepMining = false;
+                    break;
+                }
+                console.log(`🔄 [SSE挖矿] 链已更新，自动在新链上重新开始挖矿（第 ${consecutiveCancels} 次取消）`);
+                // 发送链更新通知，然后继续循环
+                res.write(`data: ${JSON.stringify({
+                    chainUpdated: true,
+                    newChainLength: starCoin.chain.length,
+                    difficulty: starCoin.difficulty,
+                    message: '🔄 区块链已更新（高度=' + starCoin.chain.length + '），自动切换到新链继续挖矿...'
+                })}\n\n`);
+                continue; // 回到循环开始，在新链上重启挖矿
+            }
+
+            // 正常挖矿成功，重置取消计数
+            consecutiveCancels = 0;
+
+            // 挖矿完成，广播到其他节点
+            p2p.broadcastLatest();
+            p2p.updateNodeInfo();
+
+            // WebSocket 推送：新区块诞生（SSE 挖矿路径）
+            broadcastToFrontend('newBlock', {
+                blockIndex: result.index,
+                blockHash: result.hash,
+                transactionCount: result.transactions.length,
+                difficulty: starCoin.difficulty,
+                source: 'sse-mining'
+            });
+
+            // 发送最终结果
+            res.write(`data: ${JSON.stringify({
+                found: true,
+                nonce: result.nonce,
+                hash: result.hash,
+                difficulty: starCoin.difficulty,
+                block: {
+                    index: result.index,
+                    hash: result.hash,
+                    previousHash: result.previousHash,
+                    nonce: result.nonce,
+                    timestamp: result.timestamp,
+                    transactionCount: result.transactions.length
+                },
+                reward: starCoin.miningReward,
+                message: '🎉 挖矿成功！区块 #' + result.index + ' 已生成'
+            })}\n\n`);
+
+            keepMining = false; // 只在挖矿成功时退出循环
+        } catch (err) {
+            res.write(`data: ${JSON.stringify({
+                found: false,
+                error: err.message,
+                message: '❌ ' + err.message
+            })}\n\n`);
+            keepMining = false;
+        }
     }
+
+    res.end();
 });
 
 app.get('/api/validate', (req, res) => {

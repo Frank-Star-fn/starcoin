@@ -63,9 +63,9 @@ class DifficultyManager {
         const ratio = avgTime / this.targetBlockTime;
         let delta = 0;
         if (ratio > 1.15) {
-            delta = -this.difficultyStep * Math.min(3, Math.max(1, Math.round(Math.log2(ratio))));
+            delta = -this.difficultyStep;
         } else if (ratio < 0.85) {
-            delta = +this.difficultyStep * Math.min(3, Math.max(1, Math.round(-Math.log2(ratio))));
+            delta = +this.difficultyStep;
         }
 
         if (delta !== 0) {
@@ -138,9 +138,9 @@ class DifficultyManager {
                     const ratio = avgTime / this.targetBlockTime;
                     let delta = 0;
                     if (ratio > 1.15) {
-                        delta = -this.difficultyStep * Math.min(3, Math.max(1, Math.round(Math.log2(ratio))));
+                        delta = -this.difficultyStep;
                     } else if (ratio < 0.85) {
-                        delta = +this.difficultyStep * Math.min(3, Math.max(1, Math.round(-Math.log2(ratio))));
+                        delta = +this.difficultyStep;
                     }
                     if (delta !== 0) {
                         const oldDiffBefore = diff;
