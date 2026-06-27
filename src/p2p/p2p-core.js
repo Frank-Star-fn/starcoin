@@ -25,8 +25,11 @@ const MESSAGE_TYPES = {
  * @param {http.Server} server - HTTP 服务器实例
  * @param {Blockchain} starCoin - 区块链实例
  * @param {number} PORT - 当前节点端口
+ * @param {object} [options] - 可选配置
+ * @param {function} [options.onChainChange] - 链数据变化时的回调
+ * @param {function} [options.onFrontendConnection] - 前端 WebSocket 连接回调（路径为 /ws）
  */
-function createP2PCore(server, starCoin, PORT) {
+function createP2PCore(server, starCoin, PORT, options = {}) {
     // WebSocket 服务器
     const wss = new WebSocket.Server({ server });
 
@@ -159,6 +162,7 @@ function createP2PCore(server, starCoin, PORT) {
                     }
                     broadcastLatest();
                     updateNodeInfo();
+                    if (options.onChainChange) options.onChainChange();
                 }
             } else if (chain.length === 1) {
                 console.log('📥 收到创世区块');
@@ -177,6 +181,7 @@ function createP2PCore(server, starCoin, PORT) {
                     }
                     broadcastLatest();
                     updateNodeInfo();
+                    if (options.onChainChange) options.onChainChange();
                 }
             }
         } else {
@@ -205,6 +210,7 @@ function createP2PCore(server, starCoin, PORT) {
                 }
                 broadcastLatest();
                 updateNodeInfo();
+                if (options.onChainChange) options.onChainChange();
             }
         } else {
             console.log('🔄 需要查询完整链');
@@ -359,7 +365,20 @@ function createP2PCore(server, starCoin, PORT) {
 
     // ========== WebSocket 连接监听 ==========
 
-    wss.on('connection', (ws) => {
+    wss.on('connection', (ws, req) => {
+        // 检查连接路径: 前端 WebSocket 客户端连接 /ws，P2P 节点连接 /
+        const urlPath = req ? req.url : '/';
+        if (urlPath === '/ws') {
+            // 前端客户端连接——交给上层处理
+            if (options.onFrontendConnection) {
+                options.onFrontendConnection(ws, req);
+            } else {
+                console.log('🌐 前端 WS 客户端已连接（未注册处理函数）');
+                ws.close();
+            }
+            return;
+        }
+
         console.log('📡 新节点已连接');
 
         const connectionId = `conn_${Math.random().toString(36).substr(2, 9)}`;

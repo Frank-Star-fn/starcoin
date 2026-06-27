@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const http = require('http');
+const WebSocket = require('ws');
 const { Blockchain, Block, Transaction, generateWallet } = require('./blockchain');
 const { createP2P } = require('./p2p/p2p');
 
@@ -13,8 +14,48 @@ const starCoin = new Blockchain();
 // 创建 HTTP 服务器
 const server = http.createServer(app);
 
-// 初始化 P2P 网络层
-const p2p = createP2P(server, starCoin, PORT);
+// ============================================================
+// 前端 WebSocket 推送服务（与 P2P 共享同一 WebSocket 服务器）
+// 通过 URL 路径区分: 前端连接 /ws, P2P 节点连接 /
+// ============================================================
+const frontendClients = new Set();
+
+/**
+ * 向所有已连接的前端客户端广播消息
+ * @param {string} type - 消息类型: 'newBlock' | 'newTransaction' | 'chainUpdated'
+ * @param {object} data - 附加数据
+ */
+function broadcastToFrontend(type, data = {}) {
+    const message = JSON.stringify({ type, ...data, timestamp: Date.now() });
+    frontendClients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(message);
+        } else {
+            frontendClients.delete(client);
+        }
+    });
+}
+
+// 初始化 P2P 网络层（传入 frontendConnection 回调，由 P2P 层代为处理前端 WS 连接）
+const p2p = createP2P(server, starCoin, PORT, {
+    onFrontendConnection: (ws) => {
+        frontendClients.add(ws);
+        console.log(`🎯 前端客户端已连接，当前连接数: ${frontendClients.size}`);
+
+        ws.on('close', () => {
+            frontendClients.delete(ws);
+            console.log(`🔌 前端客户端已断开，剩余连接数: ${frontendClients.size}`);
+        });
+
+        ws.on('error', (err) => {
+            frontendClients.delete(ws);
+            console.error('❌ 前端 WebSocket 错误:', err.message);
+        });
+    },
+    onChainChange: () => {
+        broadcastToFrontend('chainUpdated');
+    }
+});
 
 // 静态文件服务
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -74,6 +115,11 @@ app.post('/api/transaction', (req, res) => {
         const tx = new Transaction(from, to, Number(amount), Number(fee) || 0, note || '');
         tx.signTransaction(privateKey, publicKey);
         const savedTx = starCoin.addTransaction(tx);
+        // WebSocket 推送：新区交易到达
+        broadcastToFrontend('newTransaction', {
+            poolCount: starCoin.pendingTransactions.length,
+            txId: savedTx.id
+        });
         res.json({
             success: true,
             message: '交易已通过 ECDSA 签名验证，已加入交易池',
@@ -162,6 +208,14 @@ app.post('/api/mine', (req, res) => {
         p2p.broadcastLatest();
         p2p.updateNodeInfo();
 
+        // WebSocket 推送：新区块诞生
+        broadcastToFrontend('newBlock', {
+            blockIndex: newBlock.index,
+            blockHash: newBlock.hash,
+            transactionCount: newBlock.transactions.length,
+            difficulty: starCoin.difficulty
+        });
+
         res.json({
             success: true,
             block: newBlock,
@@ -207,6 +261,15 @@ app.get('/api/mine/stream', async (req, res) => {
         // 挖矿完成，广播到其他节点
         p2p.broadcastLatest();
         p2p.updateNodeInfo();
+
+        // WebSocket 推送：新区块诞生（SSE 挖矿路径）
+        broadcastToFrontend('newBlock', {
+            blockIndex: newBlock.index,
+            blockHash: newBlock.hash,
+            transactionCount: newBlock.transactions.length,
+            difficulty: starCoin.difficulty,
+            source: 'sse-mining'
+        });
 
         // 发送最终结果
         res.write(`data: ${JSON.stringify({

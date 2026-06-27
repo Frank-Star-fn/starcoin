@@ -360,9 +360,12 @@ renderWallets();
 renderTransfer();
 refreshAll();
 
-// 每 15 秒自动刷新一次（轻量刷新：不重绘钱包列表，只刷新动态数据）
+// 连接 WebSocket，接收实时推送（新区块/新交易/链更新）
+connectWebSocket();
+
+// 备用轮询：每 60 秒刷新一次（WebSocket 断开时的兜底）
 setInterval(() => {
     refreshMempool();
     refreshChain();
     refreshAddressRank();
-}, 15000);
+}, 60000);

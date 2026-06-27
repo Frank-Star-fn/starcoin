@@ -10,10 +10,12 @@ const { createP2PCore, MESSAGE_TYPES } = require('./p2p-core');
  * @param {http.Server} server - HTTP 服务器实例
  * @param {Blockchain} starCoin - 区块链实例
  * @param {number} PORT - 当前节点端口
+ * @param {object} [options] - 可选配置
+ * @param {function} [options.onChainChange] - 链数据变化时的回调（用于前端 WebSocket 推送）
  */
-function createP2P(server, starCoin, PORT) {
-    // 1. 创建核心层
-    const core = createP2PCore(server, starCoin, PORT);
+function createP2P(server, starCoin, PORT, options = {}) {
+    // 1. 创建核心层，传递 onChainChange 回调
+    const core = createP2PCore(server, starCoin, PORT, options);
 
     // ========== 同步状态 ==========
     const syncState = {
@@ -270,6 +272,11 @@ function createP2P(server, starCoin, PORT) {
         core.broadcastLatest();
         syncState.lastSyncAt = new Date().toISOString();
         console.log(`✅ [同步] 完成，当前链长度: ${starCoin.chain.length}`);
+
+        // 同步完成后通知前端刷新
+        if (options.onChainChange) {
+            options.onChainChange();
+        }
     }
 
     function syncWithPeers() {
