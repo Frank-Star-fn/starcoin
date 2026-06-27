@@ -1,7 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { Block, Transaction, generateWallet } = require('./core');
+const { Block, Transaction, generateWallet, importWalletFromPrivateKey } = require('./core');
 const { ChainSync } = require('./chain-sync');
 const { DifficultyManager } = require('./difficulty-manager');
 
@@ -171,15 +171,30 @@ class Blockchain {
         );
         txsToInclude.unshift(rewardTx);
 
+        // 记录挖矿开始时的链尾 hash，用于检测挖矿过程中链是否被外部更新
+        const startingLatestHash = this.getLatestBlock().hash;
+
         const block = new Block(
             this.chain.length,
             new Date().toISOString(),
             txsToInclude,
-            this.getLatestBlock().hash
+            startingLatestHash
         );
 
+        // 创建 shouldAbort 函数：当链尾 hash 与开始时不一致，说明链被外部更新了
+        const shouldAbort = () => {
+            return this.getLatestBlock().hash !== startingLatestHash;
+        };
+
         // 异步挖矿（让步事件循环，让进度能实时推送）
-        await block.mineBlockAsync(this.difficulty, onProgress);
+        // 传入 shouldAbort，让 block.mineBlockAsync 在检测到链变化时提前中止
+        const mineResult = await block.mineBlockAsync(this.difficulty, onProgress, 5000, shouldAbort);
+
+        // 如果挖矿被中止（链已更新），则丢弃当前区块，交易留在交易池，等调用者重新开始
+        if (mineResult && mineResult.aborted) {
+            console.log('🔄 [异步挖矿] 检测到链已更新，中止当前挖矿，等待在新链上重新开始');
+            return { canceled: true, reason: mineResult.reason };
+        }
 
         const txIdsInBlock = txsToInclude.map(t => t.id);
         this.pendingTransactions = this.pendingTransactions.filter(t => !txIdsInBlock.includes(t.id));
@@ -500,4 +515,4 @@ class Blockchain {
     }
 }
 
-module.exports = { Blockchain, Block, Transaction, generateWallet };
+module.exports = { Blockchain, Block, Transaction, generateWallet, importWalletFromPrivateKey };

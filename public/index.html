@@ -46,7 +46,23 @@
         <!-- 第一栏：钱包管理 -->
         <div class="panel">
             <h2>💼 我的钱包</h2>
-            <button onclick="generateWallet()">＋ 生成新钱包</button>
+            <div style="display:flex;gap:6px;margin-bottom:10px;">
+                <button onclick="generateWallet()" style="flex:1;">＋ 生成新钱包</button>
+                <button onclick="toggleImportArea()" id="importBtn" class="secondary" style="flex:1;">📥 导入私钥</button>
+            </div>
+            <!-- 私钥导入区域（默认隐藏） -->
+            <div id="importArea" style="display:none; margin-bottom:10px; padding:12px; background:rgba(255,255,255,0.03); border-radius:8px; border:1px solid rgba(255,255,255,0.08);">
+                <div style="font-size:12px; color:#aaa; margin-bottom:8px;">🔑 粘贴 PKCS#8 PEM 格式私钥：</div>
+                <textarea id="importKeyTextarea"
+                    style="width:100%;height:120px;background:#0f0f23;color:#e0e0e0;border:1px solid rgba(255,255,255,0.1);border-radius:6px;padding:10px;font-family:'Courier New',monospace;font-size:12px;resize:vertical;outline:none;box-sizing:border-box;"
+                    placeholder="-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg...</textarea>
+                <div id="importMessage" class="message" style="margin-top:8px;"></div>
+                <div style="display:flex;gap:6px;margin-top:8px;">
+                    <button onclick="doImportPrivateKey()" style="flex:1;padding:8px;font-size:13px;">✅ 导入</button>
+                    <button onclick="toggleImportArea()" class="secondary" style="flex:1;padding:8px;font-size:13px;">取消</button>
+                </div>
+            </div>
             <hr class="section-divider">
             <div id="walletList"></div>
             <div id="selectedWalletInfo" style="display:none; margin-top:15px; padding-top:15px; border-top:1px dashed rgba(255,255,255,0.1);">

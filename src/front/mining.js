@@ -32,6 +32,9 @@ async function mineBlock() {
     statusText.textContent = '⛏️ 正在寻找满足条件的 nonce...';
     showMessage('txMessage', '', 'info', 0);
 
+    // 最佳进度（单调递增，防止进度条抖动）
+    let bestPct = 0;
+
     // 用于统计
     let lastNonce = 0;
     let startTime = Date.now();
@@ -128,7 +131,11 @@ async function mineBlock() {
                         }
                     }
                     pct = Math.min(95, Math.max(1, pct));
-                    progressBar.style.width = pct + '%';
+                    // 只升不降：仅当当前进度超过历史最佳时才更新进度条
+                    if (pct > bestPct) {
+                        bestPct = pct;
+                        progressBar.style.width = pct + '%';
+                    }
                 }
 
                 // 计算哈希速率
@@ -262,6 +269,9 @@ async function startNextAutoMine() {
     progressBar.style.width = '0%';
     statusText.textContent = '⛏️ 自动挖矿中...';
 
+    // 最佳进度（单调递增，防止进度条抖动）
+    let bestPct = 0;
+
     // 更新状态栏
     const counterEl = document.getElementById('autoMineCounter');
     if (counterEl) {
@@ -372,7 +382,11 @@ async function startNextAutoMine() {
                         }
                     }
                     pct = Math.min(95, Math.max(1, pct));
-                    progressBar.style.width = pct + '%';
+                    // 只升不降：仅当当前进度超过历史最佳时才更新进度条
+                    if (pct > bestPct) {
+                        bestPct = pct;
+                        progressBar.style.width = pct + '%';
+                    }
                 }
 
                 const elapsed = (Date.now() - startTime) / 1000;

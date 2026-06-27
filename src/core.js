@@ -121,6 +121,17 @@ function generateWallet() {
     return { privateKey, publicKey, address };
 }
 
+/**
+ * 从已有的私钥 PEM 导入钱包，推导出公钥和地址
+ * @param {string} privateKeyPem - PKCS#8 PEM 格式的私钥
+ * @returns {{ privateKey: string, publicKey: string, address: string }}
+ */
+function importWalletFromPrivateKey(privateKeyPem) {
+    const publicKey = getPublicKeyFromPrivateKeyPem(privateKeyPem);
+    const address = publicKeyToAddress(publicKey);
+    return { privateKey: privateKeyPem, publicKey, address };
+}
+
 // ============================================================
 // Merkle 树：计算交易列表的 Merkle 根
 // ============================================================
@@ -268,10 +279,27 @@ class Block {
 
     // 异步挖矿（带进度回调，用于前端动画）
     // 每 stepInterval 次 hash 让步一次事件循环 + 回调进度
-    async mineBlockAsync(difficulty, onProgress, stepInterval = 5000) {
+    // @param {function} [shouldAbort] - 可选函数，每次让步时调用，返回 true 则中止挖矿
+    async mineBlockAsync(difficulty, onProgress, stepInterval = 5000, shouldAbort) {
         const { targetText } = Block._parseDifficulty(difficulty);
         this.targetText = targetText;
         while (!Block._meetsDifficulty(this.hash, difficulty)) {
+            // 检查是否需要中止（例如外部链已更新）
+            if (shouldAbort && shouldAbort()) {
+                if (onProgress) {
+                    onProgress({
+                        nonce: this.nonce,
+                        hash: this.hash,
+                        target: targetText,
+                        difficulty: difficulty,
+                        found: false,
+                        aborted: true,
+                        reason: 'chain_updated'
+                    });
+                }
+                return { aborted: true, reason: 'chain_updated' };
+            }
+
             this.nonce++;
             this.hash = this.calculateHash();
 
@@ -303,6 +331,6 @@ class Block {
     }
 }
 
-module.exports = { Block, Transaction, generateWallet, calculateMerkleRoot,
+module.exports = { Block, Transaction, generateWallet, importWalletFromPrivateKey, calculateMerkleRoot,
                    getPublicKeyFromPrivateKeyPem, publicKeyToAddress,
                    verifyPublicKeyMatchesAddress, signWithECDSA, verifyWithECDSA };

@@ -56,6 +56,105 @@ function copySelectedAddress() {
 }
 
 /* ============================================================
+   私钥导出 / 导入
+   ============================================================ */
+
+/**
+ * 导出指定钱包的私钥（下载为 .pem 文件）
+ */
+function exportPrivateKey(index) {
+    const w = state.wallets[index];
+    if (!w) return;
+    if (!confirm(`⚠️ 即将导出「${w.label}」的私钥。\n私钥可完全控制该钱包资产，请妥善保管，切勿泄露！\n\n确定导出吗？`)) return;
+
+    // 构造 .pem 文件内容并下载
+    const blob = new Blob([w.privateKey], { type: 'application/x-pem-file' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `starcoin_${w.label.replace(/[^a-zA-Z0-9_#]/g, '_')}_${w.address.substring(0, 8)}.pem`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showMessage('txMessage', `✅ 私钥已导出为文件：${a.download}`, 'success', 5000);
+}
+
+/**
+ * 切换私钥导入区域的显示/隐藏
+ */
+function toggleImportArea() {
+    const area = document.getElementById('importArea');
+    const btn = document.getElementById('importBtn');
+    if (area.style.display === 'none') {
+        area.style.display = 'block';
+        btn.textContent = '✕ 关闭导入';
+        // 清空上次输入和消息
+        document.getElementById('importKeyTextarea').value = '';
+        document.getElementById('importMessage').textContent = '';
+        document.getElementById('importMessage').className = 'message';
+    } else {
+        area.style.display = 'none';
+        btn.textContent = '📥 导入私钥';
+    }
+}
+
+/**
+ * 执行私钥导入
+ */
+async function doImportPrivateKey() {
+    const textarea = document.getElementById('importKeyTextarea');
+    const msgEl = document.getElementById('importMessage');
+    const privateKey = textarea.value.trim();
+
+    if (!privateKey) {
+        msgEl.textContent = '❌ 请粘贴私钥内容';
+        msgEl.className = 'message error';
+        return;
+    }
+
+    msgEl.textContent = '⏳ 正在导入...';
+    msgEl.className = 'message info';
+
+    try {
+        const data = await api('/api/wallet/import', 'POST', { privateKey });
+        if (!data.success || !data.wallet) {
+            throw new Error(data.error || '导入失败');
+        }
+        const w = data.wallet;
+
+        // 检查是否已存在相同的钱包
+        const exists = state.wallets.some(ew => ew.address === w.address);
+        if (exists) {
+            msgEl.className = 'message warning';
+            msgEl.textContent = '⚠️ 该私钥对应的钱包已存在，无需重复导入';
+            return;
+        }
+
+        state.wallets.push({
+            label: '钱包 #' + (state.wallets.length + 1) + ' (导入)',
+            privateKey: w.privateKey,
+            publicKey: w.publicKey,
+            address: w.address
+        });
+        state.selectedWallet = state.wallets.length - 1;
+        saveWallets();
+        renderWallets();
+        renderTransfer();
+
+        // 关闭导入区域
+        toggleImportArea();
+
+        showMessage('txMessage', '✅ 私钥导入成功！地址：' + shortAddr(w.address, 16), 'success', 5000);
+        await refreshAll();
+    } catch (err) {
+        msgEl.textContent = '❌ ' + err.message;
+        msgEl.className = 'message error';
+    }
+}
+
+/* ============================================================
    渲染：钱包列表
    ============================================================ */
 async function renderWallets() {
@@ -73,6 +172,7 @@ async function renderWallets() {
                 <div class="wallet-actions">
                     <button class="secondary small" onclick="event.stopPropagation(); copyWalletAddress(${i})">复制地址</button>
                     <button class="secondary small" onclick="event.stopPropagation(); setAsReceiver(${i})">设为接收方</button>
+                    <button class="secondary small" onclick="event.stopPropagation(); exportPrivateKey(${i})">🔑 导出私钥</button>
                     <button class="danger small" onclick="event.stopPropagation(); removeWallet(${i})">删除</button>
                 </div>
             </div>
