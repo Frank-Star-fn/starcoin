@@ -343,7 +343,7 @@ describe('chain.replaceChain() — 链替换时交易池清理', () => {
       chain.getLatestBlock().hash,
     );
     blockWithTx.mineBlock(chain.difficulty);
-    chain.chain.push(blockWithTx);
+    chain.addBlock(blockWithTx);
 
     // 现在 tx 从交易池移除（已被打包）
     expect(chain.hasPendingTransaction(tx.id)).toBe(false);
