@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const http = require('http');
 const WebSocket = require('ws');
-const { Blockchain, Block, Transaction, generateWallet } = require('./blockchain');
+const { Blockchain, Block, Transaction, generateWallet, importWalletFromPem } = require('./blockchain');
 const { createP2P } = require('./p2p/p2p');
 
 const app = express();
@@ -94,6 +94,55 @@ app.post('/api/wallet/new', (req, res) => {
         success: true,
         wallet: wallet
     });
+});
+
+// 1b. 从 PEM 私钥导入钱包（恢复地址和公钥）
+app.post('/api/wallet/import', (req, res) => {
+    try {
+        const { privateKeyPem } = req.body;
+        if (!privateKeyPem) {
+            return res.status(400).json({
+                success: false,
+                error: '必须提供 privateKeyPem 字段（PEM 格式私钥）'
+            });
+        }
+        const wallet = importWalletFromPem(privateKeyPem);
+        res.json({
+            success: true,
+            message: '✅ 私钥有效，已恢复钱包',
+            wallet: wallet
+        });
+    } catch (err) {
+        res.status(400).json({
+            success: false,
+            error: '私钥导入失败: ' + err.message
+        });
+    }
+});
+
+// 1c. 验证 PEM 私钥是否有效（仅验证，不返回完整私钥
+app.post('/api/wallet/verify-pem', (req, res) => {
+    try {
+        const { privateKeyPem } = req.body;
+        if (!privateKeyPem) {
+            return res.status(400).json({
+                success: false,
+                error: '必须提供 privateKeyPem 字段'
+            });
+        }
+        const wallet = importWalletFromPem(privateKeyPem);
+        res.json({
+            success: true,
+            message: '✅ PEM 格式有效',
+            publicKey: wallet.publicKey,
+            address: wallet.address
+        });
+    } catch (err) {
+        res.status(400).json({
+            success: false,
+            error: 'PEM 验证失败: ' + err.message
+        });
+    }
 });
 
 // 2. 提交一笔转账到交易池（需要 ECDSA 签名）
@@ -618,4 +667,4 @@ server.listen(PORT, () => {
 });
 
 // 导出用于测试
-module.exports = { starCoin, Blockchain, Block, Transaction, generateWallet };
+module.exports = { starCoin, Blockchain, Block, Transaction, generateWallet, importWalletFromPem };

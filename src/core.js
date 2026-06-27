@@ -303,6 +303,25 @@ class Block {
     }
 }
 
+// ============================================================
+// 导入工具：从 PEM 私钥恢复钱包
+// ============================================================
+function importWalletFromPem(privateKeyPem) {
+    // 1) 基本格式校验
+    if (!privateKeyPem || typeof privateKeyPem !== 'string') {
+        throw new Error('私钥不能为空');
+    }
+    const trimmed = privateKeyPem.trim();
+    if (!trimmed.startsWith('-----BEGIN')) {
+        throw new Error('无效的 PEM 格式：必须以 -----BEGIN 开头');
+    }
+    // 2) 尝试解析私钥，如果失败说明密钥无效
+    const publicKeyHex = getPublicKeyFromPrivateKeyPem(trimmed);
+    const address = publicKeyToAddress(publicKeyHex);
+    return { privateKey: trimmed, publicKey: publicKeyHex, address };
+}
+
 module.exports = { Block, Transaction, generateWallet, calculateMerkleRoot,
                    getPublicKeyFromPrivateKeyPem, publicKeyToAddress,
-                   verifyPublicKeyMatchesAddress, signWithECDSA, verifyWithECDSA };
+                   verifyPublicKeyMatchesAddress, signWithECDSA, verifyWithECDSA,
+                   importWalletFromPem };
