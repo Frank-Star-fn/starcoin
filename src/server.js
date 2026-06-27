@@ -18,6 +18,8 @@ const p2p = createP2P(server, starCoin, PORT);
 
 // 静态文件服务
 app.use(express.static(path.join(__dirname, '..', 'public')));
+// 同时提供 src/ 目录下的 JS 文件的访问
+app.use('/src', express.static(path.join(__dirname, '..', 'src')));
 app.use(express.json());
 
 // API 路由

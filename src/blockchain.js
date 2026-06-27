@@ -5,7 +5,7 @@ const { Block, Transaction, generateWallet } = require('./core');
 class Blockchain {
     constructor(portOverride) {
         const PORT = process.env.PORT || 3000;
-        this.difficulty = 2;
+        this.difficulty = 4; // 2;
         this.pendingTransactions = [];  // 交易池 (Mempool)
         this.miningReward = 50;          // 挖矿奖励
         this.miningAddress = 'MINER_' + (portOverride || PORT);
