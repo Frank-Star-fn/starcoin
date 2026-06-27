@@ -472,22 +472,77 @@ server.listen(PORT, () => {
     console.log(`📊 初始区块链已创建，包含 ${starCoin.chain.length} 个区块`);
     console.log(`🆔 节点ID: ${p2p.nodeInfo.id}`);
 
-    // 自动连接到对等节点（如果是第二个节点）
-    if (PORT !== 3000) {
+    // ---------- 种子节点发现与启动同步 ----------
+    // 从环境变量 SEED_PEERS 获取种子节点列表（逗号分隔），
+    // 例如: SEED_PEERS="ws://localhost:3000,ws://localhost:3001"
+    const seedPeers = (process.env.SEED_PEERS || '')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+
+    // 如果是全新启动（无本地数据），优先从其他节点获取链
+    if (starCoin.freshStart) {
+        console.log('🆕 检测到全新节点（无本地数据），将优先从其他节点同步区块链...');
+        if (seedPeers.length === 0) {
+            // 未配置 SEED_PEERS 时，默认尝试连接其他常见端口
+            const commonPorts = ['3000', '3001', '3002', '3003', '3004'];
+            for (const p of commonPorts) {
+                if (p !== PORT) {
+                    seedPeers.push(`ws://localhost:${p}`);
+                }
+            }
+        }
+    } else {
+        // 有本地数据，但仍尝试连接已配置的种子节点
+        if (seedPeers.length === 0) {
+            // 如果本地有数据且非 3000 端口，默认尝试连接 3000 同步
+            if (PORT !== '3000') {
+                seedPeers.push('ws://localhost:3000');
+            }
+        }
+    }
+
+    // 连接种子节点并执行首次同步
+    if (seedPeers.length > 0) {
+        console.log(`🔗 将尝试连接 ${seedPeers.length} 个种子节点: ${seedPeers.join(', ')}`);
         setTimeout(() => {
-            p2p.connectToPeer(`ws://localhost:3000`);
+            let connected = 0;
+            for (const peerUrl of seedPeers) {
+                try {
+                    p2p.connectToPeer(peerUrl);
+                    connected++;
+                } catch (e) {
+                    // 连接失败静默处理
+                }
+            }
+            // 等待连接建立后同步
+            const syncDelay = starCoin.freshStart ? 5000 : 3000;
             setTimeout(() => {
                 console.log('🔄 启动后首次同步...');
-                p2p.syncWithPeers();
-            }, 3000);
-        }, 1000);
+                const result = p2p.syncWithPeers();
+                if (starCoin.freshStart) {
+                    // 同步完成后检查是否获取到了数据
+                    setTimeout(() => {
+                        if (starCoin.chain.length <= 1) {
+                            console.log('ℹ️  未从其他节点获取到区块链数据，将使用本地创世区块开始新链');
+                        } else {
+                            console.log(`✅ 已从其他节点同步区块链，当前链长度: ${starCoin.chain.length}`);
+                        }
+                    }, 12000); // 等待同步超时 + 缓冲
+                }
+            }, syncDelay);
+        }, 1500);
     } else {
-        setTimeout(() => {
-            if (p2p.getConnectedCount() > 0) {
-                console.log('🔄 主节点启动后同步检查...');
-                p2p.syncWithPeers();
-            }
-        }, 5000);
+        // 没有种子节点，仅对非 3000 节点保持向后兼容
+        if (PORT !== '3000') {
+            setTimeout(() => {
+                p2p.connectToPeer('ws://localhost:3000');
+                setTimeout(() => {
+                    console.log('🔄 启动后首次同步...');
+                    p2p.syncWithPeers();
+                }, 3000);
+            }, 1000);
+        }
     }
 
     // 每 60 秒自动同步一次

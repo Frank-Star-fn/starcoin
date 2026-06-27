@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { Block, Transaction, generateWallet } = require('./core');
 const { ChainSync } = require('./chain-sync');
 
@@ -21,7 +22,8 @@ class Blockchain {
         this.miningAddress = 'MINER_' + (portOverride || PORT);
         this.chain = [this.createGenesisBlock()]; // 先初始化创世区块
         this.dataFile = path.join(__dirname, '..', 'data', `blockchain_${portOverride || PORT}.json`);
-        this.loadFromFile();
+        // freshStart: 是否未从本地加载到数据（全新节点），用于启动时优先从其他节点同步
+        this.freshStart = !this.loadFromFile();
         this.sync = new ChainSync(this);
     }
 
@@ -29,8 +31,24 @@ class Blockchain {
         // 关键：创世区块必须使用旧格式 { data: '创世区块...' }
         // 这样旧节点、新节点、旧 blockchain.json 文件的创世区块 hash 完全一致
         // Block 构造函数会自动派生 transactions 数组用于显示/遍历
-        return new Block(0, '2025-01-01T00:00:00.000Z',
+        //
+        // ⚠️ 重要：Transaction 构造函数 id = hash(... + Date.now() + Math.random())
+        // 会导致每次创建相同交易都得到不同 id → 不同 merkleRoot → 不同 block hash。
+        // 因此必须覆盖 genesis tx 的 id 为确定性值，以确保所有节点创世块 hash 一致。
+        const block = new Block(0, '2025-01-01T00:00:00.000Z',
             { data: '创世区块：StarCoin诞生！' }, '0');
+        if (block.transactions && block.transactions.length > 0) {
+            // 使用内容的确定性 hash 作为 id，确保所有节点一致
+            block.transactions[0].id = crypto.createHash('sha256')
+                .update('genesis:' + block.transactions[0].from + block.transactions[0].to +
+                        block.transactions[0].amount + block.transactions[0].note)
+                .digest('hex');
+            block.transactions[0].timestamp = '2025-01-01T00:00:00.000Z';
+            // 重新计算 merkleRoot 和 block hash
+            block.updateMerkleRoot();
+            block.hash = block.calculateHash();
+        }
+        return block;
     }
 
     // 添加交易到交易池

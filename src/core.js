@@ -130,7 +130,18 @@ function calculateMerkleRoot(transactions) {
     }
 
     // 第一层：每笔交易算自己的哈希
-    let layer = transactions.map(tx => tx.calculateHash());
+    // 注意：从其他节点或文件加载的 tx 可能是普通 JSON 对象（非 Transaction 实例），
+    // 此时 tx.calculateHash 不存在，需要直接计算 hash
+    let layer = transactions.map(tx => {
+        if (typeof tx.calculateHash === 'function') {
+            return tx.calculateHash();
+        }
+        // 普通 JSON 对象：直接用字段计算 hash
+        return crypto.createHash('sha256').update(
+            (tx.id || '') + (tx.from || '') + (tx.to || '') + (Number(tx.amount) || 0) +
+            (Number(tx.fee) || 0) + (tx.note || '') + (tx.timestamp || '')
+        ).digest('hex');
+    });
 
     // 逐层向上合并，直到只剩一个根
     while (layer.length > 1) {
