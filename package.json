@@ -6,7 +6,8 @@
     "start": "node src/server.js",
     "start:node1": "set PORT=3000 && node src/server.js",
     "start:node2": "set PORT=3001 && node src/server.js",
-    "test": "node test/test_ecdsa.js"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -15,5 +16,8 @@
   "dependencies": {
     "express": "^4.18.2",
     "ws": "^8.14.2"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.9"
   }
 }
