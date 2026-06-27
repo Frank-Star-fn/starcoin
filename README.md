@@ -17,7 +17,7 @@ $env:PORT="3002" ; node src/server.js
 app.js, wallet.js, main.js, mining.js, 负责可视化和交互。
 
 后端：
-server.js, routers.js, blockchain.js, difficulty-manager.js, chain-sync.js, core.js, p2p.js, p2p-core.js, 负责处理请求和响应。
+server.js, blockchain.js, difficulty-manager.js, chain-sync.js, core.js, routers目录, p2p目录, 负责处理请求和响应。
 
 测试：
 test目录, 执行单元测试。
@@ -28,6 +28,7 @@ test目录, 执行单元测试。
 
 - 多节点。连接节点后，让所有节点的情况相同。允许主动断开和某个其他节点的连接。支持节点自动发现。支持自动重连机制。
 - 节点同步。和其他节点检查同步，如果发现不同步，使用最长的那个链。更新链，造成分叉回滚时，分叉内的交易回到交易池，并且分叉链的矿工奖励回滚。使用WebSocket实时推送。
+- 通过 P2P 广播机制，在不同节点之间更新交易池。
 
 - 锁定期。矿工奖励需要5个区块确认后才能使用。挖矿节点从交易池选取交易打包时，优先打包手续费最高的交易。
 - 动态难度调整。控制平均出块速度在12秒左右，对标Ethereum。支持浮点数难度。支持自动持续挖矿，挖矿时有动画，显示 nonce 搜索过程。
