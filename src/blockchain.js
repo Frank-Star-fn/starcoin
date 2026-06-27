@@ -155,7 +155,7 @@ class Blockchain {
     }
 
     // 异步挖矿（带进度回调，用于前端可视化）
-    async mineBlockAsync(minerAddress, blockDataText, onProgress) {
+    async mineBlockAsync(minerAddress, blockDataText, onProgress, externalAbortCheck) {
         // 按手续费降序排序，优先打包手续费最高的交易
         const sortedTxs = [...this.pendingTransactions].sort((a, b) => (b.fee || 0) - (a.fee || 0));
         const txsToInclude = sortedTxs.slice(0, 100);
@@ -182,7 +182,9 @@ class Blockchain {
         );
 
         // 创建 shouldAbort 函数：当链尾 hash 与开始时不一致，说明链被外部更新了
+        // ★ 修复：同时检查外部中止信号（如客户端断开连接），防止孤立挖矿进程堆积
         const shouldAbort = () => {
+            if (externalAbortCheck && externalAbortCheck()) return true;
             return this.getLatestBlock().hash !== startingLatestHash;
         };
 
@@ -190,7 +192,7 @@ class Blockchain {
         // 传入 shouldAbort，让 block.mineBlockAsync 在检测到链变化时提前中止
         const mineResult = await block.mineBlockAsync(this.difficulty, onProgress, 5000, shouldAbort);
 
-        // 如果挖矿被中止（链已更新），则丢弃当前区块，交易留在交易池，等调用者重新开始
+        // 如果挖矿被中止（链已更新 或 客户端断开），则丢弃当前区块，交易留在交易池，等调用者重新开始
         if (mineResult && mineResult.aborted) {
             console.log('🔄 [异步挖矿] 检测到链已更新，中止当前挖矿，等待在新链上重新开始');
             return { canceled: true, reason: mineResult.reason };

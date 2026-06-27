@@ -24,6 +24,9 @@ async function mineBlock() {
         await toggleAutoMine();
     }
 
+    // 重置取消标志（每次新开单次挖矿时清除之前的取消状态）
+    singleMineCancelled = false;
+
     // 禁用按钮
     btn.disabled = true;
     btn.textContent = '⛏️ 挖矿中...';
@@ -162,14 +165,22 @@ async function mineBlock() {
         } catch (err) {
             console.error('挖矿 SSE 消息处理出错:', err);
             singleMineEventSource = null;
-            // 出错时也尝试恢复按钮
-            enableMineButton();
+            // 如果是被主动取消的，不恢复按钮（由自动挖矿控制）、不显示错误
+            if (!singleMineCancelled) {
+                enableMineButton();
+            }
         }
     };
 
     eventSource.onerror = () => {
         singleMineEventSource = null;
         if (!miningCompleted) {
+            // 如果单次挖矿是被自动挖矿主动取消的，则静默关闭，不显示错误信息
+            if (singleMineCancelled) {
+                eventSource.close();
+                singleMineCancelled = false;
+                return;
+            }
             eventSource.close();
             statusText.textContent = '❌ 连接中断';
             animContainer.className = 'mining-animation mining-error';
@@ -207,6 +218,8 @@ const autoMineState = {
 
 // 跟踪单次挖矿的 SSE 连接，用于在启动自动挖矿时关闭它，防止两个 SSE 同时更新同一批 DOM 导致文字抖动
 let singleMineEventSource = null;
+// 标记单次挖矿是否被自动挖矿主动取消，用于阻止 onerror 误报错误信息
+let singleMineCancelled = false;
 
 async function toggleAutoMine() {
     const btn = document.getElementById('autoMineBtn');
@@ -263,6 +276,7 @@ async function toggleAutoMine() {
 
     // 关闭任何正在进行的单次挖矿 SSE，防止两个 SSE 同时更新同一批 DOM 导致文字抖动
     if (singleMineEventSource) {
+        singleMineCancelled = true;         // 标记单次挖矿是被主动取消的，阻止 onerror 显示错误
         singleMineEventSource.close();
         singleMineEventSource = null;
     }

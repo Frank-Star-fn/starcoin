@@ -225,7 +225,14 @@ function createRoutes(starCoin, p2p, broadcastToFrontend, PORT) {
         let keepMining = true;
         let consecutiveCancels = 0;
 
-        while (keepMining) {
+        // ★ 修复：监听客户端断开连接，及时中止后台挖矿，防止孤立挖矿进程堆积
+        let clientDisconnected = false;
+        req.on('close', () => {
+            clientDisconnected = true;
+            keepMining = false;  // 阻止启动新一轮挖矿
+        });
+
+        while (keepMining && !clientDisconnected) {
             const diffInfo = Block._parseDifficulty(starCoin.difficulty);
             const chainLength = starCoin.chain.length;
             res.write(`data: ${JSON.stringify({
@@ -247,10 +254,15 @@ function createRoutes(starCoin, p2p, broadcastToFrontend, PORT) {
                     } else {
                         res.write(`data: ${JSON.stringify(progress)}\n\n`);
                     }
-                });
+                }, () => clientDisconnected);  // ★ 修复：传递客户端断开检测，让后台能及时中止挖矿
 
-                // 如果挖矿被取消（链已更新），自动在新链上重新开始挖矿
+                // 如果挖矿被取消（链已更新 或 客户端断开），自动处理
                 if (result && result.canceled) {
+                    // ★ 修复：客户端已断开，直接退出，不再尝试写响应
+                    if (clientDisconnected) {
+                        keepMining = false;
+                        break;
+                    }
                     consecutiveCancels++;
                     // 防止无限循环：如果连续取消超过 20 次，放弃
                     if (consecutiveCancels > 20) {
@@ -306,16 +318,20 @@ function createRoutes(starCoin, p2p, broadcastToFrontend, PORT) {
 
                 keepMining = false; // 只在挖矿成功时退出循环
             } catch (err) {
-                res.write(`data: ${JSON.stringify({
-                    found: false,
-                    error: err.message,
-                    message: '❌ ' + err.message
-                })}\n\n`);
+                if (!clientDisconnected) {
+                    res.write(`data: ${JSON.stringify({
+                        found: false,
+                        error: err.message,
+                        message: '❌ ' + err.message
+                    })}\n\n`);
+                }
                 keepMining = false;
             }
         }
 
-        res.end();
+        if (!clientDisconnected) {
+            res.end();
+        }
     });
 
     // 9. 验证区块链
