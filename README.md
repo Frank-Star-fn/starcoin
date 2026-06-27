@@ -14,13 +14,13 @@ $env:PORT="3001" ; node src/server.js
 ## 代码结构
 
 前端(front)：
-app.js, wallet.js, main.js 负责可视化和交互。
+app.js, wallet.js, main.js, mining.js, 负责可视化和交互。
 
 后端：
-server.js, blockchain.js, core.js, p2p.js, p2p-core.js 负责处理请求和响应。
+server.js, blockchain.js, chain-sync.js, core.js, p2p.js, p2p-core.js, 负责处理请求和响应。
 
 测试：
-test_ecdsa.js 测试 ECDSA 签名和验证。
+test_ecdsa.js, 测试 ECDSA 签名和验证。
 
 ## 已完成功能
 
