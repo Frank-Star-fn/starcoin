@@ -173,7 +173,6 @@ async function renderWallets() {
                     <button class="secondary small" onclick="event.stopPropagation(); exportPrivateKey(${i})">🔑 导出私钥</button>
                     <button class="secondary small" onclick="event.stopPropagation(); copyWalletAddress(${i})">复制地址</button>
                     <button class="secondary small" onclick="event.stopPropagation(); setAsReceiver(${i})">设为接收方</button>
-                    <button class="secondary small" onclick="event.stopPropagation(); exportPrivateKey(${i})">🔑 导出私钥</button>
                     <button class="danger small" onclick="event.stopPropagation(); removeWallet(${i})">删除</button>
                 </div>
             </div>
