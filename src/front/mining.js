@@ -19,12 +19,20 @@ async function mineBlock() {
 
     if (!minerAddr) { showMessage('txMessage', '❌ 请先选择或填写矿工奖励地址', 'error'); return; }
 
+    // 如果自动挖矿正在运行，先停止它，防止两个挖矿模式冲突
+    if (autoMineState.active) {
+        await toggleAutoMine();
+    }
+
     // 禁用按钮
     btn.disabled = true;
     btn.textContent = '⛏️ 挖矿中...';
 
     // 显示动画区域
     animContainer.style.display = 'block';
+    // 先重置到中性状态再激活，防止从其他状态切换时 CSS 动画突变导致抖动
+    animContainer.className = 'mining-animation';
+    void animContainer.offsetWidth;
     animContainer.className = 'mining-animation mining-active';
     nonceDisplay.textContent = '0';
     hashDisplay.textContent = '计算中...';
@@ -43,6 +51,8 @@ async function mineBlock() {
     const url = `/api/mine/stream?minerAddress=${encodeURIComponent(minerAddr)}`;
     const eventSource = new EventSource(url);
     let miningCompleted = false;
+    // 保存引用到全局变量，以便自动挖矿启动时能关闭此连接
+    singleMineEventSource = eventSource;
 
     eventSource.onmessage = (event) => {
         try {
@@ -78,6 +88,9 @@ async function mineBlock() {
                     showMessage('txMessage', `🎉 挖矿成功！区块 #${data.block.index} 已生成，耗时 ${elapsed}s，nonce: ${data.nonce}`, 'success', 5000);
                 }
 
+                // 清理全局引用
+                singleMineEventSource = null;
+
                 // 恢复按钮（确保在所有路径下都执行）
                 enableMineButton();
                 btn.disabled = false;
@@ -97,6 +110,7 @@ async function mineBlock() {
             if (data.error) {
                 miningCompleted = true;
                 eventSource.close();
+                singleMineEventSource = null;
                 statusText.textContent = '❌ ' + data.error;
                 animContainer.className = 'mining-animation mining-error';
                 enableMineButton();
@@ -147,12 +161,14 @@ async function mineBlock() {
             }
         } catch (err) {
             console.error('挖矿 SSE 消息处理出错:', err);
+            singleMineEventSource = null;
             // 出错时也尝试恢复按钮
             enableMineButton();
         }
     };
 
     eventSource.onerror = () => {
+        singleMineEventSource = null;
         if (!miningCompleted) {
             eventSource.close();
             statusText.textContent = '❌ 连接中断';
@@ -188,6 +204,9 @@ const autoMineState = {
     timeoutId: null,          // 下次挖矿的延时句柄
     eventSource: null         // 当前 SSE 连接（停止时可立即关闭）
 };
+
+// 跟踪单次挖矿的 SSE 连接，用于在启动自动挖矿时关闭它，防止两个 SSE 同时更新同一批 DOM 导致文字抖动
+let singleMineEventSource = null;
 
 async function toggleAutoMine() {
     const btn = document.getElementById('autoMineBtn');
@@ -242,6 +261,12 @@ async function toggleAutoMine() {
 
     showMessage('txMessage', '🚀 自动挖矿已启动！每次挖矿成功后自动开始下一次', 'info', 3000);
 
+    // 关闭任何正在进行的单次挖矿 SSE，防止两个 SSE 同时更新同一批 DOM 导致文字抖动
+    if (singleMineEventSource) {
+        singleMineEventSource.close();
+        singleMineEventSource = null;
+    }
+
     // 立即开始第一轮
     await startNextAutoMine();
 }
@@ -263,6 +288,9 @@ async function startNextAutoMine() {
 
     // 显示/更新挖矿动画
     animContainer.style.display = 'block';
+    // 先重置到中性状态再激活，防止从 mining-success 切换时 CSS 动画突变导致抖动
+    animContainer.className = 'mining-animation';
+    void animContainer.offsetWidth;
     animContainer.className = 'mining-animation mining-active';
     nonceDisplay.textContent = '0';
     hashDisplay.textContent = '计算中...';
