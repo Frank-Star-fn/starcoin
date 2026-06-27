@@ -135,11 +135,15 @@ function createP2P(server, starCoin, PORT, options = {}) {
     }
 
     // 自动连接单个节点（与手动 connectToPeer 逻辑类似，但管理 connectingNodes）
+    // 带自动重连 + 心跳保活
     function _autoConnect(nodeUrl) {
         if (core.nodes.has(nodeUrl) || nodeUrl === core.nodeInfo.url) {
             connectingNodes.delete(nodeUrl);
             return;
         }
+
+        // 初始化重连状态
+        core.reconnect.init(nodeUrl);
 
         const ws = new WebSocket(nodeUrl);
         const connectionId = `auto_${Math.random().toString(36).substr(2, 9)}`;
@@ -148,6 +152,9 @@ function createP2P(server, starCoin, PORT, options = {}) {
             console.log(`🔗 [自动发现] 已连接到: ${nodeUrl}`);
             core.nodes.add(nodeUrl);
             connectingNodes.delete(nodeUrl);
+
+            // 连接成功 → 清除重连状态
+            core.reconnect.clear(nodeUrl);
 
             core.sendMessage(ws, {
                 type: MESSAGE_TYPES.NODE_INFO,
@@ -163,6 +170,9 @@ function createP2P(server, starCoin, PORT, options = {}) {
             });
 
             core.nodeConnections.set(connectionId, { ws, id: connectionId, url: nodeUrl });
+
+            // 启动心跳保活
+            core.heartbeat.start(ws, nodeUrl, connectionId);
         });
 
         ws.on('message', (message) => {
@@ -171,16 +181,28 @@ function createP2P(server, starCoin, PORT, options = {}) {
 
         ws.on('close', () => {
             console.log(`🔌 [自动发现] 连接已关闭: ${nodeUrl}`);
+            core.heartbeat.stop(connectionId);
             core.nodes.delete(nodeUrl);
             core.nodeConnections.delete(connectionId);
             connectingNodes.delete(nodeUrl);
+
+            // 自动重连
+            if (core.reconnect.has(nodeUrl)) {
+                core.reconnect.schedule(nodeUrl, (url) => _autoConnect(url));
+            }
         });
 
         ws.on('error', (error) => {
             console.error(`❌ [自动发现] 连接失败: ${nodeUrl}`, error.message || error);
+            core.heartbeat.stop(connectionId);
             core.nodes.delete(nodeUrl);
             core.nodeConnections.delete(connectionId);
             connectingNodes.delete(nodeUrl);
+
+            // 连接失败也触发重连
+            if (core.reconnect.has(nodeUrl)) {
+                core.reconnect.schedule(nodeUrl, (url) => _autoConnect(url));
+            }
         });
     }
 

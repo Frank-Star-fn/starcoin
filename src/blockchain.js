@@ -22,9 +22,9 @@ class Blockchain {
         this.miningAddress = 'MINER_' + (portOverride || PORT);
         this.chain = [this.createGenesisBlock()]; // 先初始化创世区块
         this.dataFile = path.join(__dirname, '..', 'data', `blockchain_${portOverride || PORT}.json`);
+        this.sync = new ChainSync(this); // 必须在 loadFromFile 前初始化（isChainValid 委托给 sync）
         // freshStart: 是否未从本地加载到数据（全新节点），用于启动时优先从其他节点同步
         this.freshStart = !this.loadFromFile();
-        this.sync = new ChainSync(this);
     }
 
     createGenesisBlock() {

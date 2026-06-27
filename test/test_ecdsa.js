@@ -137,7 +137,10 @@ console.log('============================================================');
 
 // 用一个不存在的端口号创建全新链，避免加载本地旧数据
 function newFreshChain() {
-    return new Blockchain(99999);
+    const chain = new Blockchain(99999);
+    // 测试环境下关闭 coinbase 成熟期锁，让奖励立即可用
+    chain.coinbaseMaturity = 0;
+    return chain;
 }
 
 test('addTransaction 接受已正确签名的交易', () => {

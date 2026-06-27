@@ -6,7 +6,7 @@
     "start": "node src/server.js",
     "start:node1": "set PORT=3000 && node src/server.js",
     "start:node2": "set PORT=3001 && node src/server.js",
-    "test": "node src/test_ecdsa.js"
+    "test": "node test/test_ecdsa.js"
   },
   "keywords": [],
   "author": "",
