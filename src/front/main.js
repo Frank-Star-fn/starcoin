@@ -129,7 +129,7 @@ async function refreshMempool() {
                 <div class="mempool-item">
                     <div style="font-weight:bold; color:#60a5fa;">
                         ${shortAddr(tx.from, 10)} → ${shortAddr(tx.to, 10)}: <b>${tx.amount} STC</b>
-                        ${tx.fee ? '(+ 费 ' + tx.fee + ')' : ''}
+                        ${tx.fee ? ' <span style="color:#f87171;">🔥 手续费 ' + tx.fee + ' STC（即将燃烧）</span>' : ''}
                     </div>
                     ${tx.note ? '<div style="color:#888; font-size:11px; margin-top:3px;">备注: ' + escapeHtml(tx.note) + '</div>' : ''}
                     <div style="color:#666; font-size:10px; margin-top:3px; font-family:monospace;">txid: ${shortAddr(tx.id, 20)}</div>
@@ -162,6 +162,49 @@ async function refreshAddressRank() {
     }
 }
 
+/* ============================================================
+   燃烧手续费图表渲染
+   ============================================================ */
+function renderFeeBurnChart(recentFees) {
+    const chartEl = document.getElementById('feeBurnChart');
+    if (!chartEl) return;
+
+    if (!recentFees || recentFees.length === 0) {
+        chartEl.innerHTML = '<div class="mempool-empty">暂无数据</div>';
+        return;
+    }
+
+    // 找最大值用于归一化高度
+    const maxFee = Math.max(1, ...recentFees.map(r => r.totalFees));
+
+    // 计算累计燃烧值
+    let cumulative = 0;
+    const feeData = recentFees.map(r => {
+        cumulative += r.totalFees;
+        return { ...r, cumulative };
+    });
+    const maxCumulative = cumulative || 1;
+
+    // 生成柱状图 HTML
+    chartEl.innerHTML = feeData.map(r => {
+        const barHeight = Math.max(2, (r.totalFees / maxFee) * 80); // 最大 80px
+        const cumulPct = (r.cumulative / maxCumulative) * 100;
+        return `
+            <div class="fee-bar-wrapper">
+                <div class="fee-bar-tooltip">
+                    <div style="font-weight:bold;color:#f87171;">区块 #${r.blockIndex}</div>
+                    <div>🔥 燃烧: <b>${r.totalFees} STC</b></div>
+                    <div>📦 含费交易: ${r.txWithFeeCount}/${r.totalTxCount} 笔</div>
+                    <div style="color:#fbbf24;">📈 累计: ${r.cumulative} STC</div>
+                </div>
+                <div class="fee-bar" style="height:${barHeight}px;background:linear-gradient(180deg,#f87171,#dc2626);"
+                     title="区块 #${r.blockIndex}: ${r.totalFees} STC"></div>
+                <div class="fee-bar-label">#${r.blockIndex}</div>
+            </div>
+        `;
+    }).join('');
+}
+
 async function refreshChain() {
     try {
         const data = await api('/api/blockchain');
@@ -170,6 +213,27 @@ async function refreshChain() {
         validStat.textContent = data.isValid ? '✓ 有效' : '✗ 无效';
         validStat.className = 'stat-value ' + (data.isValid ? 'valid' : 'invalid');
         document.getElementById('statPort').textContent = data.port || '--';
+
+        // ---- 燃烧手续费统计 ----
+        const totalBurned = data.stats ? (data.stats.totalBurnedFees || 0) : 0;
+        const statBurnedEl = document.getElementById('statBurnedFees');
+        if (statBurnedEl) {
+            statBurnedEl.textContent = totalBurned + ' STC';
+            // 数值大时用红色粗体
+            if (totalBurned > 0) {
+                statBurnedEl.style.color = '#f87171';
+            }
+        }
+        // 燃烧详情面板中的总计
+        const totalBurnedDisplay = document.getElementById('totalBurnedDisplay');
+        if (totalBurnedDisplay) {
+            totalBurnedDisplay.textContent = totalBurned;
+        }
+
+        // ---- 渲染燃烧图表 ----
+        if (data.stats && data.stats.recentBurnedFees) {
+            renderFeeBurnChart(data.stats.recentBurnedFees);
+        }
 
         // 难度信息（支持小数难度）
         const difficultyEl = document.getElementById('statDifficulty');
@@ -200,6 +264,9 @@ async function refreshChain() {
         }
         el.innerHTML = chain.slice().reverse().map(b => {
             const isGenesis = b.index === 0;
+            // 计算本块总燃烧手续费
+            let blockBurnedFees = 0;
+            let feeTxCount = 0;
             const txList = (b.transactions || []).map(tx => {
                 let cls = 'block-tx ';
                 let prefix = '';
@@ -207,14 +274,30 @@ async function refreshChain() {
                 else if (tx.signature) { cls += 'signed'; prefix = '✍️ '; }
                 else { cls += 'unsigned'; prefix = '⚠ '; }
 
+                const fee = Number(tx.fee) || 0;
+                if (fee > 0) {
+                    blockBurnedFees += fee;
+                    feeTxCount++;
+                }
+
                 if (tx.from === 'SYSTEM') {
                     return `<div class="${cls}">${prefix}奖励 → ${shortAddr(tx.to, 10)}: ${tx.amount} STC</div>`;
                 }
                 if (!tx.from) {
                     return `<div class="${cls}">${prefix}备注: ${escapeHtml(tx.note || tx.to || '')}</div>`;
                 }
-                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${tx.amount} STC${tx.fee ? '(费'+tx.fee+')':''}</div>`;
+                // 普通交易：显示手续费标签
+                const feeTag = fee > 0 ? `<span class="fee-tag">🔥${fee}</span>` : '';
+                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${tx.amount} STC${tx.fee ? '(费'+tx.fee+')':''}${feeTag}</div>`;
             }).join('');
+
+            // 本块燃烧手续费汇总
+            const feeSummary = (!isGenesis && blockBurnedFees > 0)
+                ? `<div class="block-fee-summary">
+                        <span>🔥 本块燃烧: <b>${blockBurnedFees} STC</b></span>
+                        <span style="color:#888;">${feeTxCount} 笔含费交易</span>
+                   </div>`
+                : '';
 
             return `
                 <div class="block-card ${isGenesis ? 'genesis' : ''}" title="区块 #${b.index}">
@@ -226,6 +309,7 @@ async function refreshChain() {
                         <div style="color:#ffd700; font-size:11px; margin-bottom:4px;">包含交易:</div>
                         ${txList || '<div style="color:#666;font-size:10px;">无交易</div>'}
                     </div>
+                    ${feeSummary}
                 </div>
             `;
         }).join('');

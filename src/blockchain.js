@@ -401,6 +401,44 @@ class Blockchain {
         return history.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
     }
 
+    // 计算全链总燃烧手续费（所有交易的 fee 总和）
+    getTotalBurnedFees() {
+        let totalFees = 0;
+        for (const block of this.chain) {
+            if (!block.transactions || !Array.isArray(block.transactions)) continue;
+            for (const tx of block.transactions) {
+                totalFees += Number(tx.fee) || 0;
+            }
+        }
+        return totalFees;
+    }
+
+    // 获取最新 N 个区块的燃烧手续费详情（用于前端图表展示）
+    getRecentBurnedFees(count = 20) {
+        const result = [];
+        const startIdx = Math.max(0, this.chain.length - count);
+        for (let i = startIdx; i < this.chain.length; i++) {
+            const block = this.chain[i];
+            let blockFees = 0;
+            let txCount = 0;
+            if (block.transactions && Array.isArray(block.transactions)) {
+                for (const tx of block.transactions) {
+                    const fee = Number(tx.fee) || 0;
+                    blockFees += fee;
+                    if (fee > 0) txCount++;
+                }
+            }
+            result.push({
+                blockIndex: block.index,
+                blockHash: block.hash ? block.hash.substring(0, 16) : '',
+                totalFees: blockFees,
+                txWithFeeCount: txCount,
+                totalTxCount: (block.transactions || []).length
+            });
+        }
+        return result;
+    }
+
     // 获取所有地址及其余额（用于排名展示）
     getAllAddresses() {
         const map = new Map();
@@ -446,6 +484,7 @@ class Blockchain {
                         const block = new Block(b.index, b.timestamp, [], b.previousHash);
                         block.nonce = b.nonce;
                         block.hash = b.hash;
+                        block.merkleRoot = b.merkleRoot || null;  // 恢复 merkleRoot（旧数据为 null，兼容旧链）
                         // 保留原始 transactions 数组（包含 signature/publicKey 等字段）
                         if (b.transactions && Array.isArray(b.transactions)) {
                             block.transactions = b.transactions;

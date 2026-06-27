@@ -33,7 +33,9 @@ app.get('/api/blockchain', (req, res) => {
             targetBlockTime: starCoin.targetBlockTime,
             difficultyHistory: starCoin.difficultyHistory.slice(-10), // 最近10次调整
             genesisBlock: starCoin.chain[0].hash.substring(0, 16) + '...',
-            connectedNodes: p2p.getConnectedCount()
+            connectedNodes: p2p.getConnectedCount(),
+            totalBurnedFees: starCoin.getTotalBurnedFees(),
+            recentBurnedFees: starCoin.getRecentBurnedFees(20)
         },
         port: PORT,
         nodeInfo: p2p.nodeInfo

@@ -122,7 +122,39 @@ function generateWallet() {
 }
 
 // ============================================================
-// Block 类 - 现在包含 transactions 数组
+// Merkle 树：计算交易列表的 Merkle 根
+// ============================================================
+function calculateMerkleRoot(transactions) {
+    if (!transactions || transactions.length === 0) {
+        return crypto.createHash('sha256').update('').digest('hex');
+    }
+
+    // 第一层：每笔交易算自己的哈希
+    let layer = transactions.map(tx => tx.calculateHash());
+
+    // 逐层向上合并，直到只剩一个根
+    while (layer.length > 1) {
+        // 如果奇数个，复制最后一个凑成偶数
+        if (layer.length % 2 !== 0) {
+            layer.push(layer[layer.length - 1]);
+        }
+
+        const newLayer = [];
+        for (let i = 0; i < layer.length; i += 2) {
+            newLayer.push(
+                crypto.createHash('sha256')
+                    .update(layer[i] + layer[i + 1])
+                    .digest('hex')
+            );
+        }
+        layer = newLayer;
+    }
+
+    return layer[0];
+}
+
+// ============================================================
+// Block 类 - 现在包含 transactions 数组 和 Merkle 根
 // ============================================================
 class Block {
     constructor(index, timestamp, dataOrTransactions, previousHash = '') {
@@ -130,6 +162,7 @@ class Block {
         this.timestamp = timestamp;
         this.previousHash = previousHash;
         this.nonce = 0;
+        this.merkleRoot = null;  // 默认为 null，兼容旧区块
 
         if (!Array.isArray(dataOrTransactions) && dataOrTransactions &&
             typeof dataOrTransactions === 'object' && dataOrTransactions.data &&
@@ -151,14 +184,23 @@ class Block {
             this.transactions = [];
         }
 
+        // 设置完交易后计算 Merkle 根
+        this.updateMerkleRoot();
         this.hash = this.calculateHash();
+    }
+
+    // 计算并更新 Merkle 根
+    updateMerkleRoot() {
+        this.merkleRoot = calculateMerkleRoot(this.transactions);
     }
 
     calculateHash() {
         let dataForHash;
-        if (this.data !== undefined) {
-            dataForHash = JSON.stringify(this.data);
+        if (this.merkleRoot) {
+            // 新区块：使用 Merkle 根作为数据指纹
+            dataForHash = this.merkleRoot;
         } else {
+            // 兼容旧区块（没有 merkleRoot 字段）：直接序列化交易数组
             dataForHash = JSON.stringify(this.transactions || []);
         }
         return crypto.createHash('sha256').update(
@@ -250,6 +292,6 @@ class Block {
     }
 }
 
-module.exports = { Block, Transaction, generateWallet,
+module.exports = { Block, Transaction, generateWallet, calculateMerkleRoot,
                    getPublicKeyFromPrivateKeyPem, publicKeyToAddress,
                    verifyPublicKeyMatchesAddress, signWithECDSA, verifyWithECDSA };
