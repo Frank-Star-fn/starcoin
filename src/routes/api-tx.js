@@ -17,7 +17,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     // ============================================================
     // 1. 创建新钱包（生成地址和私钥）
     // ============================================================
-    router.post('/api/wallet/new', (req, res) => {
+    router.post('/wallet/new', (req, res) => {
         const wallet = generateWallet();
         res.json({
             success: true,
@@ -28,7 +28,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     // ============================================================
     // 1b. 从 PEM 私钥导入钱包（恢复地址和公钥）
     // ============================================================
-    router.post('/api/wallet/import', (req, res) => {
+    router.post('/wallet/import', (req, res) => {
         try {
             const { privateKeyPem } = req.body;
             if (!privateKeyPem) {
@@ -54,7 +54,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     // ============================================================
     // 1c. 验证 PEM 私钥是否有效（仅验证，不返回完整私钥）
     // ============================================================
-    router.post('/api/wallet/verify-pem', (req, res) => {
+    router.post('/wallet/verify-pem', (req, res) => {
         try {
             const { privateKeyPem } = req.body;
             if (!privateKeyPem) {
@@ -81,7 +81,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     // ============================================================
     // 2. 提交一笔转账到交易池（需要 ECDSA 签名）
     // ============================================================
-    router.post('/api/transaction', (req, res) => {
+    router.post('/transaction', (req, res) => {
         try {
             const { from, to, amount, fee, note, privateKey, publicKey } = req.body;
             if (!from || !to || !amount) {
@@ -123,7 +123,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     // ============================================================
     // 3. 查询地址余额
     // ============================================================
-    router.get('/api/balance/:address', (req, res) => {
+    router.get('/balance/:address', (req, res) => {
         const address = req.params.address;
         const balance = starCoin.getBalance(address);
         const totalBalance = starCoin.getBalance(address, true);
@@ -146,7 +146,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     // ============================================================
     // 4. 查询地址交易历史
     // ============================================================
-    router.get('/api/transactions/:address', (req, res) => {
+    router.get('/transactions/:address', (req, res) => {
         const history = starCoin.getTransactionHistory(req.params.address);
         res.json({
             success: true,
@@ -159,7 +159,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     // ============================================================
     // 5. 查看交易池 (Mempool)
     // ============================================================
-    router.get('/api/mempool', (req, res) => {
+    router.get('/mempool', (req, res) => {
         res.json({
             success: true,
             count: starCoin.pendingTransactions.length,
@@ -170,7 +170,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     // ============================================================
     // 6. 清空交易池
     // ============================================================
-    router.delete('/api/mempool', (req, res) => {
+    router.delete('/mempool', (req, res) => {
         const count = starCoin.pendingTransactions.length;
         starCoin.pendingTransactions = [];
         res.json({
@@ -183,7 +183,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     // ============================================================
     // 7. 所有地址排行榜
     // ============================================================
-    router.get('/api/addresses', (req, res) => {
+    router.get('/addresses', (req, res) => {
         const addresses = starCoin.getAllAddresses();
         res.json({
             success: true,

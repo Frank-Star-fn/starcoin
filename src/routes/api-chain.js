@@ -16,7 +16,7 @@ function createChainRoutes(starCoin, p2p, PORT) {
     // ============================================================
     // 区块链概览信息
     // ============================================================
-    router.get('/api/blockchain', (req, res) => {
+    router.get('/blockchain', (req, res) => {
         res.json({
             chain: starCoin.chain,
             isValid: starCoin.isChainValid(),
@@ -38,7 +38,7 @@ function createChainRoutes(starCoin, p2p, PORT) {
     // ============================================================
     // 验证区块链完整性
     // ============================================================
-    router.get('/api/validate', (req, res) => {
+    router.get('/validate', (req, res) => {
         res.json({
             success: true,
             isValid: starCoin.isChainValid(),

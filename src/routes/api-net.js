@@ -18,7 +18,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
     // 节点同步
     // ============================================================
 
-    router.post('/api/sync', (req, res) => {
+    router.post('/sync', (req, res) => {
         const result = p2p.syncWithPeers();
         res.json({
             ...result,
@@ -27,7 +27,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         });
     });
 
-    router.get('/api/sync/status', (req, res) => {
+    router.get('/sync/status', (req, res) => {
         const syncData = p2p.getSyncState();
         const peerSummary = syncData.candidates.map(c => ({
             node: c.fromNode,
@@ -54,7 +54,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
     // 交易池同步
     // ============================================================
 
-    router.post('/api/mempool/sync', (req, res) => {
+    router.post('/mempool/sync', (req, res) => {
         const result = p2p.syncPendingTxs();
         res.json({
             success: result.success,
@@ -64,7 +64,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         });
     });
 
-    router.post('/api/mempool/broadcast', (req, res) => {
+    router.post('/mempool/broadcast', (req, res) => {
         const count = starCoin.pendingTransactions.length;
         p2p.broadcastPendingTxs();
         res.json({
@@ -79,7 +79,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
     // 数据持久化
     // ============================================================
 
-    router.get('/api/storage/status', (req, res) => {
+    router.get('/storage/status', (req, res) => {
         try {
             const fs = require('fs');
             const filePath = starCoin.dataFile;
@@ -105,7 +105,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         }
     });
 
-    router.post('/api/storage/save', (req, res) => {
+    router.post('/storage/save', (req, res) => {
         const success = starCoin.saveToFile();
         res.json({
             success: success,
@@ -115,7 +115,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         });
     });
 
-    router.post('/api/storage/reload', (req, res) => {
+    router.post('/storage/reload', (req, res) => {
         const success = starCoin.loadFromFile();
         res.json({
             success: success,
@@ -124,7 +124,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         });
     });
 
-    router.post('/api/storage/reset', (req, res) => {
+    router.post('/storage/reset', (req, res) => {
         const success = starCoin.clearDataFile();
         p2p.broadcastLatest();
         res.json({
@@ -134,7 +134,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         });
     });
 
-    router.get('/api/storage/export', (req, res) => {
+    router.get('/storage/export', (req, res) => {
         try {
             const data = {
                 chain: starCoin.chain,
@@ -150,7 +150,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         }
     });
 
-    router.post('/api/storage/import', (req, res) => {
+    router.post('/storage/import', (req, res) => {
         try {
             const { chain } = req.body;
             if (!chain || !Array.isArray(chain) || chain.length === 0) {
@@ -182,7 +182,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
     // 节点连接
     // ============================================================
 
-    router.post('/api/connect', (req, res) => {
+    router.post('/connect', (req, res) => {
         const { peerUrl } = req.body;
         if (!peerUrl) {
             return res.status(400).json({ error: '节点URL不能为空' });
@@ -194,7 +194,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         });
     });
 
-    router.post('/api/disconnect', (req, res) => {
+    router.post('/disconnect', (req, res) => {
         const { peerUrl } = req.body;
         if (!peerUrl) {
             return res.status(400).json({ error: '节点URL不能为空' });
@@ -206,7 +206,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         });
     });
 
-    router.get('/api/nodes', (req, res) => {
+    router.get('/nodes', (req, res) => {
         res.json({
             nodes: p2p.getNodeUrls(),
             count: p2p.getConnectedCount(),
@@ -214,7 +214,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         });
     });
 
-    router.get('/api/all-nodes', async (req, res) => {
+    router.get('/all-nodes', async (req, res) => {
         const allNodes = await p2p.getAllNodeInfo();
         res.json({
             nodes: allNodes,
@@ -226,14 +226,14 @@ function createNetRoutes(starCoin, p2p, PORT) {
     // 自动节点发现
     // ============================================================
 
-    router.get('/api/discovery/status', (req, res) => {
+    router.get('/discovery/status', (req, res) => {
         res.json({
             success: true,
             discovery: p2p.getDiscoveryStatus()
         });
     });
 
-    router.post('/api/discovery/start', (req, res) => {
+    router.post('/discovery/start', (req, res) => {
         p2p.startDiscovery();
         res.json({
             success: true,
@@ -242,7 +242,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         });
     });
 
-    router.post('/api/discovery/stop', (req, res) => {
+    router.post('/discovery/stop', (req, res) => {
         p2p.stopDiscovery();
         res.json({
             success: true,
@@ -251,7 +251,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         });
     });
 
-    router.post('/api/discovery/scan', (req, res) => {
+    router.post('/discovery/scan', (req, res) => {
         p2p.requestNodeLists();
         res.json({
             success: true,

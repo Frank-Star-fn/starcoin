@@ -17,7 +17,7 @@ function createMiningRoutes(starCoin, p2p, broadcastToFrontend) {
     // ============================================================
     // 8. 挖矿（从交易池打包交易）
     // ============================================================
-    router.post('/api/mine', (req, res) => {
+    router.post('/mine', (req, res) => {
         const { minerAddress, data } = req.body;
         const startTime = Date.now();
         try {
@@ -55,7 +55,7 @@ function createMiningRoutes(starCoin, p2p, broadcastToFrontend) {
     // ============================================================
     // 8b. SSE 挖矿进度流（带可视化动画）
     // ============================================================
-    router.get('/api/mine/stream', async (req, res) => {
+    router.get('/mine/stream', async (req, res) => {
         const minerAddress = req.query.minerAddress || starCoin.miningAddress;
 
         // 设置 SSE 响应头
