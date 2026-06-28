@@ -3,6 +3,7 @@
 // ============================================================
 const express = require('express');
 const { Block } = require('../blockchain');
+const { AppError, wrapAsync } = require('./error-handler');
 
 /**
  * 创建挖矿相关的路由
@@ -17,40 +18,39 @@ function createMiningRoutes(starCoin, p2p, broadcastToFrontend) {
     // ============================================================
     // 8. 挖矿（从交易池打包交易）
     // ============================================================
-    router.post('/mine', (req, res) => {
+    router.post('/mine', wrapAsync(async (req, res) => {
         const { minerAddress, data } = req.body;
-        const startTime = Date.now();
-        try {
-            const newBlock = starCoin.mineBlock(minerAddress || starCoin.miningAddress, data);
-            const miningTime = Date.now() - startTime;
-
-            // 广播新区块到其他节点
-            p2p.broadcastLatest();
-            p2p.broadcastPendingTxs();
-            p2p.updateNodeInfo();
-
-            // WebSocket 推送：新区块诞生
-            broadcastToFrontend('newBlock', {
-                blockIndex: newBlock.index,
-                blockHash: newBlock.hash,
-                transactionCount: newBlock.transactions.length,
-                difficulty: starCoin.difficulty
-            });
-
-            res.json({
-                success: true,
-                block: newBlock,
-                transactionCount: newBlock.transactions.length,
-                reward: starCoin.miningReward,
-                miningTime: miningTime + 'ms'
-            });
-        } catch (err) {
-            res.status(400).json({
-                success: false,
-                error: err.message
-            });
+        if (!minerAddress && !starCoin.miningAddress) {
+            throw new AppError(400, '必须提供 minerAddress 参数，或先配置 miningAddress', 'MISSING_MINER');
         }
-    });
+        const startTime = Date.now();
+        const newBlock = starCoin.mineBlock(minerAddress || starCoin.miningAddress, data);
+        if (!newBlock || !newBlock.hash) {
+            throw new AppError(500, '挖矿失败，未返回有效区块', 'MINE_FAILED');
+        }
+        const miningTime = Date.now() - startTime;
+
+        // 广播新区块到其他节点
+        p2p.broadcastLatest();
+        p2p.broadcastPendingTxs();
+        p2p.updateNodeInfo();
+
+        // WebSocket 推送：新区块诞生
+        broadcastToFrontend('newBlock', {
+            blockIndex: newBlock.index,
+            blockHash: newBlock.hash,
+            transactionCount: newBlock.transactions.length,
+            difficulty: starCoin.difficulty
+        });
+
+        res.json({
+            success: true,
+            block: newBlock,
+            transactionCount: newBlock.transactions.length,
+            reward: starCoin.miningReward,
+            miningTime: miningTime + 'ms'
+        });
+    }));
 
     // ============================================================
     // 8b. SSE 挖矿进度流（带可视化动画）

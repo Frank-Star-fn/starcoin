@@ -5,6 +5,10 @@ const WebSocket = require('ws');
 const { Blockchain, Block, Transaction, generateWallet, importWalletFromPem } = require('./blockchain');
 const { createP2P } = require('./p2p/p2p');
 const createRoutes = require('./routes');
+const {
+    createNotFoundMiddleware,
+    createErrorMiddleware
+} = require('./routes/error-handler');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -73,6 +77,14 @@ app.use('/api', createRoutes(starCoin, p2p, broadcastToFrontend, PORT));
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
+
+// ============================================================
+// 应用级错误处理
+// ============================================================
+// 404 兜底（捕获未匹配的任意请求路径）
+app.use(createNotFoundMiddleware());
+// 统一错误响应
+app.use(createErrorMiddleware());
 
 // 启动服务器
 server.listen(PORT, () => {
