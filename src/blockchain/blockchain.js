@@ -72,7 +72,7 @@ class Blockchain {
         return block;
     }
 
-    // 添加交易到交易池（多币种支持：amount/fee 币种 = transaction.currency || 'STC'）
+    // 添加交易到交易池（支持多币种，但矿工费始终以 STC 支付）
     addTransaction(tx) {
         // 校验基本字段
         if (!tx.from || !tx.to || tx.amount <= 0) {
@@ -103,22 +103,63 @@ class Blockchain {
         }
 
         // ============================================
-        // 多币种余额检查：按 tx 的币种隔离
+        // 多币种余额检查
+        // amount 使用交易币种支付，fee 始终使用 STC 支付
         // ============================================
         const txCurrency = effectiveCurrency(transaction);
-        const senderBalance = this.getBalance(transaction.from, false, txCurrency);
-        const pendingOutgoing = this.pendingTransactions
-            .filter(t => t.from === transaction.from && effectiveCurrency(t) === txCurrency)
-            .reduce((sum, t) => sum + (Number(t.amount) || 0) + (Number(t.fee) || 0), 0);
-        const availableBalance = senderBalance - pendingOutgoing;
+        const fee = Number(transaction.fee) || 0;
 
-        if (availableBalance < transaction.amount + transaction.fee) {
-            throw new Error(
-                `[${txCurrency}] 余额不足！已确认余额: ${senderBalance}, ` +
-                `交易池中待打包出账: ${pendingOutgoing}, ` +
-                `可用余额: ${availableBalance}, ` +
-                `当前转账所需: ${transaction.amount + transaction.fee}`
-            );
+        if (txCurrency === DEFAULT_CURRENCY) {
+            // STC 交易：amount + fee 都从 STC 余额扣
+            const senderBalance = this.getBalance(transaction.from, false, DEFAULT_CURRENCY);
+            const pendingOutgoing = this.pendingTransactions
+                .filter(t => t.from === transaction.from && effectiveCurrency(t) === DEFAULT_CURRENCY)
+                .reduce((sum, t) => sum + (Number(t.amount) || 0) + (Number(t.fee) || 0), 0);
+            const availableBalance = senderBalance - pendingOutgoing;
+
+            if (availableBalance < transaction.amount + fee) {
+                throw new Error(
+                    `[STC] 余额不足！已确认余额: ${senderBalance}, ` +
+                    `交易池中待打包出账: ${pendingOutgoing}, ` +
+                    `可用余额: ${availableBalance}, ` +
+                    `当前转账所需: ${transaction.amount + fee}`
+                );
+            }
+        } else {
+            // 非 STC 交易：amount 从交易币种余额扣，fee 从 STC 余额扣
+            // 1) 检查 amount 余额
+            const curBalance = this.getBalance(transaction.from, false, txCurrency);
+            const pendingCur = this.pendingTransactions
+                .filter(t => t.from === transaction.from && effectiveCurrency(t) === txCurrency)
+                .reduce((sum, t) => sum + (Number(t.amount) || 0), 0); // 只累加 amount（fee 已归入 STC）
+            const availableCur = curBalance - pendingCur;
+
+            if (availableCur < transaction.amount) {
+                throw new Error(
+                    `[${txCurrency}] 余额不足！已确认余额: ${curBalance}, ` +
+                    `交易池中待打包出账: ${pendingCur}, ` +
+                    `可用余额: ${availableCur}, ` +
+                    `当前转账所需: ${transaction.amount} ${txCurrency}`
+                );
+            }
+
+            // 2) 检查 fee 的 STC 余额
+            if (fee > 0) {
+                const stcBalance = this.getBalance(transaction.from, false, DEFAULT_CURRENCY);
+                const pendingStcFee = this.pendingTransactions
+                    .filter(t => t.from === transaction.from)
+                    .reduce((sum, t) => sum + (Number(t.fee) || 0), 0); // 所有待打包交易的 fee 合计（STC）
+                const availableStc = stcBalance - pendingStcFee;
+
+                if (availableStc < fee) {
+                    throw new Error(
+                        `[STC] 矿工费不足！STC 已确认余额: ${stcBalance}, ` +
+                        `交易池中待打包 fee: ${pendingStcFee}, ` +
+                        `可用 STC: ${availableStc}, ` +
+                        `所需矿工费: ${fee} STC`
+                    );
+                }
+            }
         }
 
         this.pendingTransactions.push(transaction);
@@ -182,15 +223,41 @@ class Blockchain {
         }
 
         // 多币种余额检查（可选跳过；备注交易和 SYSTEM 交易无需检查余额）
+        // amount 使用交易币种支付，fee 始终使用 STC 支付
         if (!skipBalanceCheck && !isSpecialTx) {
             const txCurrency = effectiveCurrency(tx);
-            const senderBalance = this.getBalance(tx.from, false, txCurrency);
-            const pendingOutgoing = this.pendingTransactions
-                .filter(t => t.from === tx.from && effectiveCurrency(t) === txCurrency)
-                .reduce((sum, t) => sum + (Number(t.amount) || 0) + (Number(t.fee) || 0), 0);
-            const availableBalance = senderBalance - pendingOutgoing;
-            if (availableBalance < tx.amount + tx.fee) {
-                return { success: false, error: `[${txCurrency}] 余额不足：可用 ${availableBalance}，需要 ${tx.amount + tx.fee}` };
+            const fee = Number(tx.fee) || 0;
+
+            if (txCurrency === DEFAULT_CURRENCY) {
+                // STC 交易：amount + fee 都从 STC 余额扣
+                const senderBalance = this.getBalance(tx.from, false, DEFAULT_CURRENCY);
+                const pendingOutgoing = this.pendingTransactions
+                    .filter(t => t.from === tx.from && effectiveCurrency(t) === DEFAULT_CURRENCY)
+                    .reduce((sum, t) => sum + (Number(t.amount) || 0) + (Number(t.fee) || 0), 0);
+                const availableBalance = senderBalance - pendingOutgoing;
+                if (availableBalance < tx.amount + fee) {
+                    return { success: false, error: `[STC] 余额不足：可用 ${availableBalance}，需要 ${tx.amount + fee}` };
+                }
+            } else {
+                // 非 STC 交易：amount 从交易币种余额扣，fee 从 STC 余额扣
+                const curBalance = this.getBalance(tx.from, false, txCurrency);
+                const pendingCur = this.pendingTransactions
+                    .filter(t => t.from === tx.from && effectiveCurrency(t) === txCurrency)
+                    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+                const availableCur = curBalance - pendingCur;
+                if (availableCur < tx.amount) {
+                    return { success: false, error: `[${txCurrency}] 余额不足：可用 ${availableCur}，需要 ${tx.amount} ${txCurrency}` };
+                }
+                if (fee > 0) {
+                    const stcBalance = this.getBalance(tx.from, false, DEFAULT_CURRENCY);
+                    const pendingStcFee = this.pendingTransactions
+                        .filter(t => t.from === tx.from)
+                        .reduce((sum, t) => sum + (Number(t.fee) || 0), 0);
+                    const availableStc = stcBalance - pendingStcFee;
+                    if (availableStc < fee) {
+                        return { success: false, error: `[STC] 矿工费不足：可用 STC ${availableStc}，需要 ${fee} STC` };
+                    }
+                }
             }
         }
 
@@ -342,12 +409,20 @@ class Blockchain {
         let balance = 0;
         for (const block of this.chain) {
             for (const tx of block.transactions) {
-                if (effectiveCurrency(tx) !== targetCurrency) continue;
+                const c = effectiveCurrency(tx);
+
                 if (tx.from === address) {
-                    balance -= Number(tx.amount) || 0;
-                    balance -= Number(tx.fee) || 0;
+                    // amount 始终按交易币种扣除
+                    if (c === targetCurrency) {
+                        balance -= Number(tx.amount) || 0;
+                    }
+                    // fee 始终从 STC 扣除（无论交易币种）
+                    if (targetCurrency === DEFAULT_CURRENCY) {
+                        balance -= Number(tx.fee) || 0;
+                    }
                 }
                 if (tx.to === address) {
+                    if (c !== targetCurrency) continue;
                     if (tx.from === 'SYSTEM' && !includeImmature) {
                         if (!this._isCoinbaseMature(block.index)) continue;
                     }
@@ -367,6 +442,7 @@ class Blockchain {
 
     /**
      * 获取全币种余额对象（一次性遍历链，返回 { STC, cBTC, cETH }）。
+     * amount 按交易币种扣除，fee 始终从 STC 扣除。
      */
     getAllBalances(address, includeImmature = false) {
         if (!address) return this._emptyBalances();
@@ -376,8 +452,10 @@ class Blockchain {
                 const c = effectiveCurrency(tx);
                 if (!balances.hasOwnProperty(c)) continue;
                 if (tx.from === address) {
+                    // amount 按交易币种扣除
                     balances[c] -= Number(tx.amount) || 0;
-                    balances[c] -= Number(tx.fee) || 0;
+                    // fee 始终从 STC 扣除
+                    balances[DEFAULT_CURRENCY] -= Number(tx.fee) || 0;
                 }
                 if (tx.to === address) {
                     if (tx.from === 'SYSTEM' && !includeImmature) {

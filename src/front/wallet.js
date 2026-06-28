@@ -98,28 +98,6 @@ function copySelectedAddress() {
    ============================================================ */
 
 /**
- * 导出指定钱包的私钥（下载为 .pem 文件）
- */
-function exportPrivateKey(index) {
-    const w = state.wallets[index];
-    if (!w) return;
-    if (!confirm(`⚠️ 即将导出「${w.label}」的私钥。\n私钥可完全控制该钱包资产，请妥善保管，切勿泄露！\n\n确定导出吗？`)) return;
-
-    // 构造 .pem 文件内容并下载
-    const blob = new Blob([w.privateKey], { type: 'application/x-pem-file' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `starcoin_${w.label.replace(/[^a-zA-Z0-9_#]/g, '_')}_${w.address.substring(0, 8)}.pem`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-
-    showMessage('txMessage', `✅ 私钥已导出为文件：${a.download}`, 'success', 5000);
-}
-
-/**
  * 切换私钥导入区域的显示/隐藏
  */
 function toggleImportArea() {
@@ -294,6 +272,51 @@ async function refreshSelectedWalletDetails() {
         }
     } catch (e) {
         document.getElementById('selectedWalletHistory').textContent = '查询失败';
+    }
+}
+
+/* ============================================================
+   Faucet：领取 cBTC / cETH 测试代币
+   ============================================================ */
+async function requestAirdrop(currency) {
+    const w = state.wallets[state.selectedWallet];
+    if (!w) {
+        showMessage('txMessage', '❌ 请先选择或生成一个钱包', 'error');
+        return;
+    }
+    const msgEl = document.getElementById('airdropMessage');
+    if (!msgEl) return;
+
+    const defaultAmounts = { cBTC: 100, cETH: 500 };
+    const amount = defaultAmounts[currency] || 100;
+
+    msgEl.textContent = `⏳ 正在领取 ${amount} ${currency} ...`;
+    msgEl.style.color = '#fbbf24';
+
+    try {
+        const data = await api('/api/token/airdrop', 'POST', {
+            address: w.address,
+            currency: currency,
+            amount: amount
+        });
+        if (data.success) {
+            msgEl.textContent = `✅ 已领取 ${amount} ${currency}，请挖矿打包后到账`;
+            msgEl.style.color = '#4ade80';
+            // 刷新钱包列表和详情中的余额显示
+            refreshSelectedWalletDetails();
+            renderWallets();
+            // 1.5 秒后清除消息
+            setTimeout(() => {
+                msgEl.textContent = '';
+                msgEl.style.color = '#888';
+            }, 5000);
+        } else {
+            msgEl.textContent = '❌ ' + (data.error || '领取失败');
+            msgEl.style.color = '#f87171';
+        }
+    } catch (err) {
+        msgEl.textContent = '❌ ' + (err.message || '网络错误');
+        msgEl.style.color = '#f87171';
     }
 }
 
