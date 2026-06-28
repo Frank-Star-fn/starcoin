@@ -109,6 +109,121 @@ describe('api-tx 路由 — 钱包、交易、余额、交易池', () => {
   });
 
   // ============================================================
+  // POST /wallet/new-with-mnemonic
+  // ============================================================
+  describe('POST /wallet/new-with-mnemonic', () => {
+    it('返回 200 并生成包含助记词和钱包信息的响应', async () => {
+      const res = await request(app).post('/wallet/new-with-mnemonic');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.mnemonic).toBeTruthy();
+      expect(res.body.wallet.privateKey).toBeTruthy();
+      expect(res.body.wallet.publicKey).toBeTruthy();
+      expect(res.body.wallet.address).toBeTruthy();
+    });
+
+    it('助记词为 12 个英文单词（默认 128 位强度）', async () => {
+      const res = await request(app).post('/wallet/new-with-mnemonic');
+      const words = res.body.mnemonic.split(' ');
+      expect(words.length).toBe(12);
+    });
+
+    it('助记词 + 派生出的私钥 + 公钥 + 地址均互相关联', async () => {
+      const res = await request(app).post('/wallet/new-with-mnemonic');
+      const { mnemonic, wallet } = res.body;
+
+      // 用同一个助记词再次导入，应得到相同的钱包
+      const importRes = await request(app)
+        .post('/wallet/import-mnemonic')
+        .send({ mnemonic });
+      expect(importRes.status).toBe(200);
+      expect(importRes.body.wallet.privateKey).toBe(wallet.privateKey);
+      expect(importRes.body.wallet.publicKey).toBe(wallet.publicKey);
+      expect(importRes.body.wallet.address).toBe(wallet.address);
+    });
+
+    it('支持 24 词助记词（256 位强度）', async () => {
+      const res = await request(app)
+        .post('/wallet/new-with-mnemonic')
+        .send({ strength: 256 });
+      const words = res.body.mnemonic.split(' ');
+      expect(words.length).toBe(24);
+    });
+
+    it('PEM 私钥格式有效', async () => {
+      const res = await request(app).post('/wallet/new-with-mnemonic');
+      expect(res.body.wallet.privateKey.startsWith('-----BEGIN')).toBe(true);
+      expect(res.body.wallet.privateKey.includes('PRIVATE KEY')).toBe(true);
+    });
+  });
+
+  // ============================================================
+  // POST /wallet/import-mnemonic
+  // ============================================================
+  describe('POST /wallet/import-mnemonic', () => {
+    let mnemonic, wallet;
+
+    beforeEach(async () => {
+      const res = await request(app).post('/wallet/new-with-mnemonic');
+      mnemonic = res.body.mnemonic;
+      wallet = res.body.wallet;
+    });
+
+    it('用有效助记词导入返回 200 和正确的钱包信息', async () => {
+      const res = await request(app)
+        .post('/wallet/import-mnemonic')
+        .send({ mnemonic });
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.wallet.address).toBe(wallet.address);
+      expect(res.body.wallet.publicKey).toBe(wallet.publicKey);
+      expect(res.body.wallet.privateKey).toBe(wallet.privateKey);
+    });
+
+    it('缺少 mnemonic 返回 400', async () => {
+      const res = await request(app).post('/wallet/import-mnemonic').send({});
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toContain('必须提供 mnemonic');
+    });
+
+    it('无效的助记词（错误单词）返回 400', async () => {
+      const res = await request(app)
+        .post('/wallet/import-mnemonic')
+        .send({ mnemonic: 'apple banana cherry dragon elephant fox grape horse igloo jack king lion' });
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.error).toContain('助记词无效');
+    });
+
+    it('错误的单词数量（非 12 或 24）返回 400', async () => {
+      const res = await request(app)
+        .post('/wallet/import-mnemonic')
+        .send({ mnemonic: 'word1 word2 word3' });
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+    });
+
+    it('大小写不敏感，导入时自动转小写', async () => {
+      const upperMnemonic = mnemonic.toUpperCase();
+      const res = await request(app)
+        .post('/wallet/import-mnemonic')
+        .send({ mnemonic: upperMnemonic });
+      expect(res.status).toBe(200);
+      expect(res.body.wallet.address).toBe(wallet.address);
+    });
+
+    it('多余空格自动清理', async () => {
+      const spacedMnemonic = '  ' + mnemonic.split(' ').join('   ') + '  ';
+      const res = await request(app)
+        .post('/wallet/import-mnemonic')
+        .send({ mnemonic: spacedMnemonic });
+      expect(res.status).toBe(200);
+      expect(res.body.wallet.address).toBe(wallet.address);
+    });
+  });
+
+  // ============================================================
   // POST /transaction
   // ============================================================
   describe('POST /transaction', () => {

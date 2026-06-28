@@ -2,7 +2,8 @@
 // routes/api-tx.js — 钱包 + 交易 + 余额 + 交易池路由
 // ============================================================
 const express = require('express');
-const { Transaction, generateWallet, importWalletFromPem, normalizeCurrency } = require('../blockchain/blockchain');
+const { Transaction, generateWallet, importWalletFromPem,
+        generateMnemonic, validateMnemonic, mnemonicToWallet, normalizeCurrency } = require('../blockchain/blockchain');
 const { AppError, wrapAsync } = require('./error-handler');
 
 /**
@@ -73,7 +74,58 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     }));
 
     // ============================================================
-    // [已注释] 1d. 获取 cBTC/cETH 测试代币（空投到指定地址）
+    // 1d. 生成新钱包并返回 BIP39 助记词
+    // ============================================================
+    router.post('/wallet/new-with-mnemonic', wrapAsync(async (req, res) => {
+        const strength = req.body.strength || 128;
+        const mnemonic = generateMnemonic(strength);
+        const wallet = mnemonicToWallet(mnemonic);
+        if (!wallet || !wallet.address) {
+            throw new AppError(500, '钱包生成失败，请重试', 'WALLET_GEN_FAILED');
+        }
+        res.json({
+            success: true,
+            mnemonic: wallet.mnemonic,
+            wallet: {
+                privateKey: wallet.privateKey,
+                publicKey: wallet.publicKey,
+                address: wallet.address
+            }
+        });
+    }));
+
+    // ============================================================
+    // 1e. 从 BIP39 助记词导入钱包
+    // ============================================================
+    router.post('/wallet/import-mnemonic', wrapAsync(async (req, res) => {
+        const { mnemonic, passphrase } = req.body;
+        if (!mnemonic || typeof mnemonic !== 'string' || !mnemonic.trim()) {
+            throw new AppError(400, '必须提供 mnemonic 字段（助记词短语）', 'MISSING_PARAM');
+        }
+        // 规范化：合并空格、转小写（bip39 词库全小写）
+        const cleaned = mnemonic.trim().replace(/\s+/g, ' ').toLowerCase();
+        if (!validateMnemonic(cleaned)) {
+            throw new AppError(400, '助记词无效：校验和验证失败，请检查单词拼写', 'INVALID_MNEMONIC');
+        }
+        let wallet;
+        try {
+            wallet = mnemonicToWallet(cleaned, passphrase || '');
+        } catch (err) {
+            throw new AppError(400, '助记词导入失败: ' + err.message, 'MNEMONIC_IMPORT_FAILED');
+        }
+        res.json({
+            success: true,
+            message: '✅ 助记词验证有效，已恢复钱包',
+            wallet: {
+                privateKey: wallet.privateKey,
+                publicKey: wallet.publicKey,
+                address: wallet.address
+            }
+        });
+    }));
+
+    // ============================================================
+    // [已注释] 1f. 获取 cBTC/cETH 测试代币（空投到指定地址）
     // 前端入口已移除，如需恢复请取消注释
     // ============================================================
     // router.post('/token/airdrop', wrapAsync(async (req, res) => {

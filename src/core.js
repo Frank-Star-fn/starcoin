@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const bip39 = require('bip39');
 
 // ============================================================
 // ECDSA 工具函数 - 使用 secp256k1 椭圆曲线
@@ -421,9 +422,78 @@ function importWalletFromPem(privateKeyPem) {
     return { privateKey: privateKeyPem, publicKey: publicKeyHex, address };
 }
 
+// ============================================================
+// BIP39 助记词支持
+// ============================================================
+
+/**
+ * 生成 BIP39 助记词短语
+ * @param {number} [strength=128] - 熵强度：128=12词, 256=24词
+ * @returns {string} 空格分隔的助记词（英文）
+ */
+function generateMnemonic(strength = 128) {
+    return bip39.generateMnemonic(strength);
+}
+
+/**
+ * 验证 BIP39 助记词是否合法（含校验和检查）
+ * @param {string} mnemonic - 助记词短语
+ * @returns {boolean}
+ */
+function validateMnemonic(mnemonic) {
+    return bip39.validateMnemonic(mnemonic);
+}
+
+/**
+ * 将原始 32 字节 secp256k1 私钥编码为 PKCS#8 PEM 格式
+ * @param {Buffer} privateKeyBytes - 32 字节私钥
+ * @returns {string} PKCS#8 PEM 格式私钥
+ */
+function _rawPrivateKeyToPEM(privateKeyBytes) {
+    // SEC1 ECPrivateKey (RFC 5915) for secp256k1:
+    //   SEQUENCE {
+    //     INTEGER 1,
+    //     OCTET STRING (32 bytes privateKey),
+    //     [0] { OID 1.3.132.0.10 (secp256k1) }
+    //   }
+    const sec1Der = Buffer.concat([
+        Buffer.from('302e0201010420', 'hex'),
+        privateKeyBytes,
+        Buffer.from('a00706052b8104000a', 'hex')
+    ]);
+    const key = crypto.createPrivateKey({ key: sec1Der, format: 'der', type: 'sec1' });
+    return key.export({ format: 'pem', type: 'pkcs8' });
+}
+
+/**
+ * 从助记词恢复完整的钱包（助记词 → seed → ECDSA 密钥对）
+ *
+ * @param {string} mnemonic  - BIP39 助记词（12/24 词，空格分隔，大小写不敏感）
+ * @param {string} [passphrase=''] - 可选的 BIP39 密码（第 25 个词）
+ * @returns {{ mnemonic: string, privateKey: string, publicKey: string, address: string }}
+ * @throws {Error} 助记词无效时抛出
+ */
+function mnemonicToWallet(mnemonic, passphrase = '') {
+    // 规范化：合并连续空格、转小写（bip39 词库全小写）
+    const trimmed = mnemonic.trim().replace(/\s+/g, ' ').toLowerCase();
+    if (!bip39.validateMnemonic(trimmed)) {
+        throw new Error('无效的助记词：校验和验证失败，请检查单词拼写');
+    }
+    // 助记词 + passphrase → 64 字节种子 (PBKDF2-SHA256, 2048 轮)
+    const seed = bip39.mnemonicToSeedSync(trimmed, passphrase);
+    // 取前 32 字节作为 ECDSA secp256k1 私钥
+    const privateKeyBytes = seed.subarray(0, 32);
+    const privateKeyPem = _rawPrivateKeyToPEM(privateKeyBytes);
+    // 推导公钥和地址（复用已有函数）
+    const publicKey = getPublicKeyFromPrivateKeyPem(privateKeyPem);
+    const address = publicKeyToAddress(publicKey);
+    return { mnemonic: trimmed, privateKey: privateKeyPem, publicKey, address };
+}
+
 module.exports = { Block, Transaction, generateWallet, calculateMerkleRoot,
                    getPublicKeyFromPrivateKeyPem, publicKeyToAddress,
                    verifyPublicKeyMatchesAddress, signWithECDSA, verifyWithECDSA,
                    importWalletFromPem,
+                   generateMnemonic, validateMnemonic, mnemonicToWallet,
                    SUPPORTED_CURRENCIES, DEFAULT_CURRENCY,
                    normalizeCurrency, effectiveCurrency };

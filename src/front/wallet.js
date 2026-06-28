@@ -463,3 +463,175 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 });
+
+/* ============================================================
+   助记词：生成带助记词的钱包
+   ============================================================ */
+
+/**
+ * 生成带 BIP39 助记词的新钱包
+ * 调用后端生成助记词 → 派生密钥对，然后将助记词存入钱包对象
+ */
+async function generateWalletWithMnemonic() {
+    try {
+        const data = await api('/api/wallet/new-with-mnemonic', 'POST');
+        if (!data.wallet || !data.mnemonic) throw new Error('生成失败');
+        const w = {
+            label: '钱包 #' + (state.wallets.length + 1),
+            privateKey: data.wallet.privateKey,
+            publicKey: data.wallet.publicKey,
+            address: data.wallet.address,
+            mnemonic: data.mnemonic  // 存储助记词（敏感，仅 localStorage）
+        };
+        state.wallets.push(w);
+        state.selectedWallet = state.wallets.length - 1;
+        renderWallets();
+        renderTransfer();
+        saveWallets();
+        await refreshAll();
+
+        // 弹出助记词显示对话框，提醒用户抄写
+        showMnemonicDisplay(data.mnemonic);
+        showMessage('txMessage', '✅ 助记词钱包已生成！请立即抄写助记词并安全保管', 'success', 8000);
+    } catch (err) {
+        showMessage('txMessage', '❌ 生成助记词钱包失败：' + err.message, 'error');
+    }
+}
+
+/**
+ * 弹出助记词显示对话框（生成后自动弹出，或点击"显示助记词"时调用）
+ * @param {string} mnemonic - 助记词文本
+ */
+function showMnemonicDisplay(mnemonic) {
+    const dialog = document.getElementById('mnemonicDisplayDialog');
+    const wordsEl = document.getElementById('mnemonicWords');
+    if (wordsEl) {
+        // 将助记词渲染为带编号的单词网格，方便抄写
+        const wordList = mnemonic.split(' ');
+        wordsEl.innerHTML = wordList.map((word, i) =>
+            `<span style="display:inline-block; margin:4px 6px; background:rgba(255,255,255,0.08); padding:4px 10px; border-radius:4px; font-size:15px;">
+                <span style="color:#888; font-size:11px; margin-right:4px;">${i + 1}.</span>${word}
+            </span>`
+        ).join('');
+    }
+    dialog.style.display = 'block';
+}
+
+function hideMnemonicDisplayDialog() {
+    document.getElementById('mnemonicDisplayDialog').style.display = 'none';
+}
+
+/**
+ * 复制助记词到剪贴板
+ */
+function copyMnemonicToClipboard() {
+    const wordsEl = document.getElementById('mnemonicWords');
+    // 从单词网格中提取纯文本
+    const text = wordsEl.textContent.replace(/\d+\./g, '').replace(/\s+/g, ' ').trim();
+    navigator.clipboard.writeText(text).then(() => {
+        showMessage('txMessage', '📋 助记词已复制到剪贴板', 'success', 2000);
+    });
+}
+
+/* ============================================================
+   助记词：显示当前选中钱包的助记词
+   ============================================================ */
+function showMnemonic() {
+    const w = state.wallets[state.selectedWallet];
+    if (!w) return;
+    if (!w.mnemonic) {
+        showMessage('txMessage', 'ℹ️ 该钱包不是通过助记词生成的，没有助记词', 'info', 3000);
+        return;
+    }
+    // 安全确认
+    if (!confirm(`⚠️  即将显示助记词！\n\n钱包: ${w.label}\n地址: ${shortAddr(w.address, 20)}\n\n持有助记词即可完全控制该钱包。\n请确保周围无人偷窥！\n\n确认显示吗？`)) return;
+    showMnemonicDisplay(w.mnemonic);
+}
+
+/* ============================================================
+   助记词：导入对话框
+   ============================================================ */
+function showImportMnemonicDialog() {
+    const dialog = document.getElementById('importMnemonicDialog');
+    dialog.style.display = 'block';
+    document.getElementById('importMnemonicInput').value = '';
+    document.getElementById('importMnemonicMessage').className = 'message';
+    document.getElementById('importMnemonicMessage').textContent = '';
+    document.getElementById('importMnemonicBtn').disabled = false;
+    document.getElementById('importMnemonicBtn').textContent = '✅ 导入助记词';
+}
+
+function hideImportMnemonicDialog() {
+    document.getElementById('importMnemonicDialog').style.display = 'none';
+}
+
+/**
+ * 从 BIP39 助记词导入钱包
+ */
+async function importWalletFromMnemonic() {
+    const btn = document.getElementById('importMnemonicBtn');
+    const input = document.getElementById('importMnemonicInput');
+    const msgEl = document.getElementById('importMnemonicMessage');
+
+    const mnemonic = input.value.trim();
+    if (!mnemonic) {
+        msgEl.className = 'message error';
+        msgEl.textContent = '❌ 请粘贴助记词';
+        return;
+    }
+
+    // 清理单词：合并空格、去除多余空格
+    const cleaned = mnemonic.replace(/\s+/g, ' ').trim();
+    const wordCount = cleaned.split(' ').length;
+    if (wordCount !== 12 && wordCount !== 24) {
+        msgEl.className = 'message error';
+        msgEl.textContent = `❌ 助记词应为 12 或 24 个单词，当前为 ${wordCount} 个`;
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ 验证中...';
+    }
+    msgEl.className = 'message info';
+    msgEl.textContent = '🔑 正在验证助记词...';
+
+    try {
+        const result = await api('/api/wallet/import-mnemonic', 'POST', { mnemonic: cleaned });
+
+        if (result.success) {
+            const w = result.wallet;
+            // 检查是否已存在相同地址的钱包
+            const exists = state.wallets.some(ex => ex.address === w.address);
+            if (exists) {
+                msgEl.className = 'message warning';
+                msgEl.textContent = '⚠️ 该助记词对应的钱包已存在，无需重复导入';
+                if (btn) { btn.disabled = false; btn.textContent = '✅ 导入助记词'; }
+                return;
+            }
+
+            state.wallets.push({
+                label: '钱包 #' + (state.wallets.length + 1) + '（助记词）',
+                privateKey: w.privateKey,
+                publicKey: w.publicKey,
+                address: w.address,
+                mnemonic: cleaned
+            });
+            state.selectedWallet = state.wallets.length - 1;
+            saveWallets();
+            renderWallets();
+            renderTransfer();
+            hideImportMnemonicDialog();
+            showMessage('txMessage', `✅ 助记词导入成功！地址: ${shortAddr(w.address, 20)}`, 'success', 5000);
+            await refreshAll();
+        } else {
+            msgEl.className = 'message error';
+            msgEl.textContent = '❌ ' + (result.error || '导入失败');
+            if (btn) { btn.disabled = false; btn.textContent = '✅ 导入助记词'; }
+        }
+    } catch (err) {
+        msgEl.className = 'message error';
+        msgEl.textContent = '❌ 导入失败: ' + err.message;
+        if (btn) { btn.disabled = false; btn.textContent = '✅ 导入助记词'; }
+    }
+}

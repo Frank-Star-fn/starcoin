@@ -51,7 +51,9 @@
         <div class="panel">
             <h2>💼 我的钱包</h2>
             <button onclick="generateWallet()">＋ 生成新钱包</button>
+            <button onclick="generateWalletWithMnemonic()" class="secondary" style="margin-top:6px;">🔑 助记词生成</button>
             <button onclick="showImportKeyDialog()" class="secondary" style="margin-top:6px;">📥 导入私钥</button>
+            <button onclick="showImportMnemonicDialog()" class="secondary" style="margin-top:6px;">🔤 导入助记词</button>
             <hr class="section-divider">
             <div id="walletList"></div>
 
@@ -70,6 +72,34 @@
                 </div>
             </div>
 
+            <!-- 助记词导入对话框 -->
+            <div id="importMnemonicDialog" style="display:none; margin-top:15px; padding:15px; background:rgba(74,222,128,0.08); border:1px solid rgba(74,222,128,0.25); border-radius:8px;">
+                <div style="font-size:13px; color:#4ade80; font-weight:bold; margin-bottom:8px;">🔤 导入 BIP39 助记词</div>
+                <textarea id="importMnemonicInput" rows="4" style="width:100%; font-family:monospace; font-size:13px; resize:vertical;" placeholder="在此粘贴 12 或 24 个助记词...&#10;例如:&#10;abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"></textarea>
+                <div class="message" id="importMnemonicMessage"></div>
+                <div style="display:flex; gap:8px; margin-top:8px;">
+                    <button onclick="importWalletFromMnemonic()" id="importMnemonicBtn" style="flex:1;">✅ 导入助记词</button>
+                    <button onclick="hideImportMnemonicDialog()" class="secondary" style="flex:1;">取消</button>
+                </div>
+                <div style="font-size:10px; color:#888; margin-top:6px;">
+                    💡 BIP39 标准助记词，12 或 24 个英文单词，空格分隔
+                </div>
+            </div>
+
+            <!-- 助记词显示对话框 -->
+            <div id="mnemonicDisplayDialog" style="display:none; margin-top:15px; padding:15px; background:rgba(251,191,36,0.1); border:1px solid rgba(251,191,36,0.3); border-radius:8px;">
+                <div style="font-size:13px; color:#fbbf24; font-weight:bold; margin-bottom:8px;">🔑 钱包助记词</div>
+                <div style="font-size:11px; color:#f87171; margin-bottom:8px; padding:8px; background:rgba(248,113,113,0.1); border-radius:4px;">
+                    ⚠️ 请勿泄露！拥有助记词即可完全控制该钱包。请离线安全保管。
+                </div>
+                <div id="mnemonicWords" style="font-size:16px; font-weight:bold; color:#fbbf24; line-height:1.8; padding:12px; background:rgba(0,0,0,0.2); border-radius:6px; text-align:center; word-spacing:6px;"></div>
+                <div style="display:flex; gap:8px; margin-top:10px;">
+                    <button onclick="copyMnemonicToClipboard()" class="secondary small" style="flex:1;">📋 复制助记词</button>
+                    <button onclick="hideMnemonicDisplayDialog()" class="secondary small" style="flex:1;">关闭</button>
+                </div>
+                <div style="font-size:10px; color:#888; margin-top:6px; text-align:center;">BIP39 标准 | 请在安全环境下查看</div>
+            </div>
+
             <div id="selectedWalletInfo" style="display:none; margin-top:15px; padding-top:15px; border-top:1px dashed rgba(255,255,255,0.1);">
                 <div style="font-size:12px; color:#ffd700; margin-bottom:6px;">📌 当前选中钱包</div>
                 <div class="code-box" id="selectedWalletAddress"></div>
@@ -78,6 +108,7 @@
                 </div>
                 <div id="maturityHint" style="font-size:10px; color:#fbbf24; margin-top:3px;"></div>
                 <button class="secondary small" style="margin-top:8px;" onclick="copySelectedAddress()">复制地址</button>
+                <button class="secondary small" style="margin-top:8px;" onclick="showMnemonic()">🔤 显示助记词</button>
 
                 <div style="margin-top:12px;">
                     <div style="font-size:11px; color:#aaa; margin-bottom:4px;">交易历史</div>

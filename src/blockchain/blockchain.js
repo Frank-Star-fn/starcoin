@@ -3,6 +3,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const config = require('../config');
 const { Block, Transaction, generateWallet, importWalletFromPem,
+        generateMnemonic, validateMnemonic, mnemonicToWallet,
         SUPPORTED_CURRENCIES, DEFAULT_CURRENCY, effectiveCurrency, normalizeCurrency } = require('../core');
 const { ChainSync } = require('../chain-sync');
 const { DifficultyManager } = require('../difficulty-manager');
@@ -662,4 +663,5 @@ class Blockchain {
     }
 }
 
-module.exports = { Blockchain, Block, Transaction, generateWallet, importWalletFromPem, normalizeCurrency };
+module.exports = { Blockchain, Block, Transaction, generateWallet, importWalletFromPem,
+                    generateMnemonic, validateMnemonic, mnemonicToWallet, normalizeCurrency };
