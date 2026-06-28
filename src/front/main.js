@@ -105,6 +105,8 @@ async function submitTransaction() {
             showMessage('txMessage', '✅ 交易已提交到交易池！（txid: ' + (result.transaction && result.transaction.id ? shortAddr(result.transaction.id, 16) : '') + '）下一步点击"挖矿"来打包这笔交易', 'success', 6000);
             document.getElementById('amount').value = 10;
             document.getElementById('note').value = '';
+            // 主动刷新期间，短暂忽略 WebSocket 推送（新交易到达会触发重复刷新）
+            if (typeof setIgnoreWs === 'function') setIgnoreWs(2000);
             await refreshAll();
         } else {
             showMessage('txMessage', '❌ ' + (result.error || '提交失败'), 'error');
@@ -137,7 +139,7 @@ async function refreshMempool() {
                 <div class="mempool-item">
                     <div style="font-weight:bold; color:#60a5fa;">
                         ${shortAddr(tx.from, 10)} → ${shortAddr(tx.to, 10)}: <b>${tx.amount} STC</b>
-                        ${tx.fee ? ' <span style="color:#f87171;">🔥 手续费 ' + tx.fee + ' STC（即将燃烧）</span>' : ''}
+                        ${tx.fee ? ' <span style="color:#f87171;">🔥 手续费 ' + formatBalance(tx.fee) + ' STC（即将燃烧）</span>' : ''}
                     </div>
                     ${tx.note ? '<div style="color:#888; font-size:11px; margin-top:3px;">备注: ' + escapeHtml(tx.note) + '</div>' : ''}
                     <div style="color:#666; font-size:10px; margin-top:3px; font-family:monospace;">txid: ${shortAddr(tx.id, 20)}</div>
@@ -184,7 +186,7 @@ async function refreshChain() {
         const totalBurned = data.stats ? (data.stats.totalBurnedFees || 0) : 0;
         const statBurnedEl = document.getElementById('statBurnedFees');
         if (statBurnedEl) {
-            statBurnedEl.textContent = totalBurned + ' STC';
+            statBurnedEl.textContent = formatBalance(totalBurned) + ' STC';
             // 数值大时用红色粗体
             if (totalBurned > 0) {
                 statBurnedEl.style.color = '#f87171';
@@ -242,14 +244,14 @@ async function refreshChain() {
                     return `<div class="${cls}">${prefix}备注: ${escapeHtml(tx.note || tx.to || '')}</div>`;
                 }
                 // 普通交易：显示手续费标签
-                const feeTag = fee > 0 ? `<span class="fee-tag">🔥${fee}</span>` : '';
-                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${tx.amount} STC${tx.fee ? '(费'+tx.fee+')':''}${feeTag}</div>`;
+                const feeTag = fee > 0 ? `<span class="fee-tag">🔥${formatBalance(fee)}</span>` : '';
+                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${tx.amount} STC${tx.fee ? '(费'+formatBalance(tx.fee)+')':''}${feeTag}</div>`;
             }).join('');
 
             // 本块燃烧手续费汇总
             const feeSummary = (!isGenesis && blockBurnedFees > 0)
                 ? `<div class="block-fee-summary">
-                        <span>🔥 本块燃烧: <b>${blockBurnedFees} STC</b></span>
+                        <span>🔥 本块燃烧: <b>${formatBalance(blockBurnedFees)} STC</b></span>
                         <span style="color:#888;">${feeTxCount} 笔含费交易</span>
                    </div>`
                 : '';
@@ -430,7 +432,7 @@ function renderBlockResult(content, result, query) {
                     prefix = '✍️ 转账';
                 }
                 return `<div class="${cls}">
-                    <div>${prefix}: ${tx.from !== 'SYSTEM' ? shortAddr(tx.from, 10) + ' → ' : ''}${shortAddr(tx.to, 10)}: <b>${tx.amount} STC</b>${tx.fee ? ' <span style="color:#f87171;">🔥手续费 ' + tx.fee + '</span>' : ''}</div>
+                    <div>${prefix}: ${tx.from !== 'SYSTEM' ? shortAddr(tx.from, 10) + ' → ' : ''}${shortAddr(tx.to, 10)}: <b>${tx.amount} STC</b>${tx.fee ? ' <span style="color:#f87171;">🔥手续费 ' + formatBalance(tx.fee) + '</span>' : ''}</div>
                     <div class="tx-id" onclick="searchTxId('${tx.id}')">${shortAddr(tx.id, 24)}</div>
                     ${tx.note ? '<div style="color:#888;">备注: ' + escapeHtml(tx.note) + '</div>' : ''}
                 </div>`;
@@ -469,7 +471,7 @@ function renderBlockResult(content, result, query) {
         </div>
         ${result.totalBurnedFees > 0 ? `<div class="search-result-row">
             <span class="search-result-label">🔥 本块燃烧手续费</span>
-            <span class="search-result-value" style="color:#f87171;">${result.totalBurnedFees} STC</span>
+            <span class="search-result-value" style="color:#f87171;">${formatBalance(result.totalBurnedFees)} STC</span>
         </div>` : ''}
         <div style="margin-top:10px; padding-top:10px; border-top:1px dashed rgba(255,255,255,0.1);">
             <div style="font-size:12px; color:#ffd700; margin-bottom:6px;">交易列表:</div>
@@ -521,7 +523,7 @@ function renderTxResult(content, result, query) {
         </div>
         ${tx.fee ? `<div class="search-result-row">
             <span class="search-result-label">🔥 手续费</span>
-            <span class="search-result-value" style="color:#f87171;">${tx.fee} STC（已燃烧）</span>
+            <span class="search-result-value" style="color:#f87171;">${formatBalance(tx.fee)} STC（已燃烧）</span>
         </div>` : ''}
         ${tx.note ? `<div class="search-result-row">
             <span class="search-result-label">备注</span>
@@ -541,7 +543,7 @@ function renderAddressResult(content, result, query) {
             const isReward = tx.from === 'SYSTEM' || !tx.from;
             const cls = isReward ? 'tx-reward' : 'tx-signed';
             return `<div class="search-tx-item ${cls}">
-                <div>${isReward ? '🎁 奖励' : '✍️ 转账'}: ${!isReward ? shortAddr(tx.from, 10) + ' → ' : ''}${shortAddr(tx.to, 10)}: <b>${tx.amount} STC</b>${tx.fee ? ' 🔥费' + tx.fee : ''}</div>
+                <div>${isReward ? '🎁 奖励' : '✍️ 转账'}: ${!isReward ? shortAddr(tx.from, 10) + ' → ' : ''}${shortAddr(tx.to, 10)}: <b>${tx.amount} STC</b>${tx.fee ? ' 🔥费' + formatBalance(tx.fee) : ''}</div>
                 <div class="tx-id" onclick="searchTxId('${tx.id}')">${shortAddr(tx.id, 24)}</div>
                 ${tx.note ? '<div style="color:#888;">' + escapeHtml(tx.note) + '</div>' : ''}
             </div>`;
@@ -606,7 +608,7 @@ function renderAddressListResult(content, result, query) {
 function renderNoteResult(content, result, query) {
     const txHtml = result.transactions.map(tx =>
         `<div class="search-tx-item tx-signed">
-            <div>${shortAddr(tx.from, 10)} → ${shortAddr(tx.to, 10)}: <b>${tx.amount} STC</b>${tx.fee ? ' <span style="color:#f87171;">🔥费' + tx.fee + '</span>' : ''}</div>
+            <div>${shortAddr(tx.from, 10)} → ${shortAddr(tx.to, 10)}: <b>${tx.amount} STC</b>${tx.fee ? ' <span style="color:#f87171;">🔥费' + formatBalance(tx.fee) + '</span>' : ''}</div>
             <div>区块 <a onclick="searchBlock('${tx.blockIndex}')" style="color:#60a5fa;cursor:pointer;">#${tx.blockIndex}</a> · <span class="tx-id" onclick="searchTxId('${tx.id}')">${shortAddr(tx.id, 20)}</span></div>
             <div style="color:#a855f7;">📝 ${escapeHtml(tx.note)}</div>
         </div>`
@@ -626,7 +628,7 @@ function renderNoteResult(content, result, query) {
 function renderMempoolResult(content, result, query) {
     const txHtml = result.transactions.map(tx =>
         `<div class="search-tx-item tx-pending">
-            <div>⏳ ${shortAddr(tx.from, 10)} → ${shortAddr(tx.to, 10)}: <b>${tx.amount} STC</b>${tx.fee ? ' <span style="color:#f87171;">🔥费' + tx.fee + '</span>' : ''}</div>
+            <div>⏳ ${shortAddr(tx.from, 10)} → ${shortAddr(tx.to, 10)}: <b>${tx.amount} STC</b>${tx.fee ? ' <span style="color:#f87171;">🔥费' + formatBalance(tx.fee) + '</span>' : ''}</div>
             <div class="tx-id" onclick="searchTxId('${tx.id}')">${shortAddr(tx.id, 20)}</div>
             ${tx.note ? '<div style="color:#888;">📝 ' + escapeHtml(tx.note) + '</div>' : ''}
         </div>`

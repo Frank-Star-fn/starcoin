@@ -54,15 +54,23 @@ function createRoutes(starCoin, p2p, broadcastToFrontend, PORT) {
     router.use(globalLimiter);
 
     // 2. 写操作限流（对以下子路由额外使用更严格的限制）
-    router.use('/wallet', writeLimiter);
-    router.use('/transaction', writeLimiter);
-    router.use('/mine', writeLimiter);
-    router.use('/mempool', writeLimiter);
-    router.use('/storage', writeLimiter);
-    router.use('/sync', writeLimiter);
-    router.use('/connect', writeLimiter);
-    router.use('/disconnect', writeLimiter);
-    router.use('/discovery', writeLimiter);
+    //    注意：仅对"写入型"HTTP 方法（POST/PUT/PATCH/DELETE）应用写操作限流
+    //    避免误伤 GET /mine/stream（SSE 长连接是读操作，用于接收挖矿进度）
+    const writeMethodLimiter = (req, res, next) => {
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+            return writeLimiter(req, res, next);
+        }
+        next();
+    };
+    router.use('/wallet', writeMethodLimiter);
+    router.use('/transaction', writeMethodLimiter);
+    router.use('/mine', writeMethodLimiter);
+    router.use('/mempool', writeMethodLimiter);
+    router.use('/storage', writeMethodLimiter);
+    router.use('/sync', writeMethodLimiter);
+    router.use('/connect', writeMethodLimiter);
+    router.use('/disconnect', writeMethodLimiter);
+    router.use('/discovery', writeMethodLimiter);
 
     // 3. 搜索限流（中等限制）
     router.use('/search', searchLimiter);

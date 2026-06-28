@@ -106,6 +106,8 @@ async function mineBlock() {
                     animContainer.className = 'mining-animation';
                 }, 8000);
 
+                // 主动刷新期间，短暂忽略 WebSocket 推送，避免重复 API 调用
+                if (typeof setIgnoreWs === 'function') setIgnoreWs(3000);
                 refreshAll();
                 return;
             }
@@ -365,11 +367,13 @@ async function startNextAutoMine() {
                 animContainer.className = 'mining-animation mining-success';
                 statusText.textContent = data.message || '🎉 挖矿成功！';
 
-                // 刷新数据
+                // 刷新数据（主动刷新期间，短暂忽略 WebSocket 推送，避免重复 API 调用）
+                if (typeof setIgnoreWs === 'function') setIgnoreWs(3000);
                 refreshAll();
 
-                // 计数
+                // 计数 + 重置连续失败计数（成功说明链路恢复正常）
                 autoMineState.blocksMined++;
+                autoMineState.consecutiveFailures = 0;
 
                 // 如果仍然活跃，等 500ms 后自动开始下一次
                 if (autoMineState.active) {
@@ -455,7 +459,20 @@ async function startNextAutoMine() {
         }
         if (!miningCompleted && autoMineState.active) {
             eventSource.close();
-            stopAutoMineOnError('连接中断');
+            // EventSource 在网络异常/限流（429）时都会触发 onerror，
+            // 此时不直接永久停止，而是退避重试。累计失败过多才停止。
+            autoMineState.consecutiveFailures = (autoMineState.consecutiveFailures || 0) + 1;
+            const maxFailures = 5;
+            if (autoMineState.consecutiveFailures >= maxFailures) {
+                stopAutoMineOnError('连续失败，已停止');
+                return;
+            }
+            const delay = Math.min(500 * Math.pow(2, autoMineState.consecutiveFailures - 1), 5000);
+            statusText.textContent = `⚠️ 连接中断，${Math.round(delay / 1000)}s 后重试（${autoMineState.consecutiveFailures}/${maxFailures}）`;
+            animContainer.className = 'mining-animation mining-error';
+            autoMineState.timeoutId = setTimeout(() => {
+                if (autoMineState.active) startNextAutoMine();
+            }, delay);
         }
     };
 }
