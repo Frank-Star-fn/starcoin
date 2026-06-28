@@ -73,43 +73,42 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     }));
 
     // ============================================================
-    // 1d. 获取 cBTC/cETH 测试代币（空投到指定地址）
-    // 这会构造一笔 SYSTEM → targetAddress 的特殊交易，
-    // 添加到交易池，在下次挖矿时被打包。
+    // [已注释] 1d. 获取 cBTC/cETH 测试代币（空投到指定地址）
+    // 前端入口已移除，如需恢复请取消注释
     // ============================================================
-    router.post('/token/airdrop', wrapAsync(async (req, res) => {
-        const { address, currency, amount } = req.body;
-        if (!address) {
-            throw new AppError(400, '必须提供 address 字段（接收方地址）', 'MISSING_PARAM');
-        }
-        const rawCur = currency || 'cBTC';
-        const cur = normalizeCurrency(rawCur);
-        if (!cur || cur === 'STC') {
-            throw new AppError(400, 'currency 仅支持 cBTC 或 cETH', 'INVALID_CURRENCY');
-        }
-        const amt = parseFloat(amount) || 0.01;
-        if (amt <= 0) throw new AppError(400, 'amount 必须大于 0', 'INVALID_AMOUNT');
+    // router.post('/token/airdrop', wrapAsync(async (req, res) => {
+    //     const { address, currency, amount } = req.body;
+    //     if (!address) {
+    //         throw new AppError(400, '必须提供 address 字段（接收方地址）', 'MISSING_PARAM');
+    //     }
+    //     const rawCur = currency || 'cBTC';
+    //     const cur = normalizeCurrency(rawCur);
+    //     if (!cur || cur === 'STC') {
+    //         throw new AppError(400, 'currency 仅支持 cBTC 或 cETH', 'INVALID_CURRENCY');
+    //     }
+    //     const amt = parseFloat(amount) || 0.01;
+    //     if (amt <= 0) throw new AppError(400, 'amount 必须大于 0', 'INVALID_AMOUNT');
 
-        // 构造 SYSTEM 交易（无需签名）
-        const airdropTx = new Transaction('SYSTEM', address, amt, 0, `${cur} Airdrop`, cur);
-        // 直接加入 pendingTransactions
-        starCoin.pendingTransactions.push(airdropTx);
+    //     // 构造 SYSTEM 交易（无需签名）
+    //     const airdropTx = new Transaction('SYSTEM', address, amt, 0, `${cur} Airdrop`, cur);
+    //     // 直接加入 pendingTransactions
+    //     starCoin.pendingTransactions.push(airdropTx);
 
-        // P2P 广播（让其他节点也收到这笔空投）
-        if (p2p && p2p.broadcastTransaction) p2p.broadcastTransaction(airdropTx);
+    //     // P2P 广播（让其他节点也收到这笔空投）
+    //     if (p2p && p2p.broadcastTransaction) p2p.broadcastTransaction(airdropTx);
 
-        broadcastToFrontend('newTransaction', {
-            poolCount: starCoin.pendingTransactions.length,
-            txId: airdropTx.id
-        });
+    //     broadcastToFrontend('newTransaction', {
+    //         poolCount: starCoin.pendingTransactions.length,
+    //         txId: airdropTx.id
+    //     });
 
-        res.json({
-            success: true,
-            message: `🎉 已向 ${address.substring(0, 16)}... 发放 ${amt} ${cur}（已加入交易池，下次挖矿时打包）`,
-            transaction: airdropTx,
-            poolCount: starCoin.pendingTransactions.length
-        });
-    }));
+    //     res.json({
+    //         success: true,
+    //         message: `🎉 已向 ${address.substring(0, 16)}... 发放 ${amt} ${cur}（已加入交易池，下次挖矿时打包）`,
+    //         transaction: airdropTx,
+    //         poolCount: starCoin.pendingTransactions.length
+    //     });
+    // }));
 
     // ============================================================
     // 2. 提交一笔转账到交易池（支持多币种：currency = STC | cBTC | cETH）
