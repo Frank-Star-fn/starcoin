@@ -368,6 +368,9 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         return nodeList;
     }
 
+    // ========== 入站连接 URL 跟踪（通过 NODE_INFO 获取对方 URL，用于 close/error 时清理 nodes） ==========
+    const inboundNodeUrls = new Map(); // connectionId → nodeUrl
+
     // ========== WebSocket 连接监听 ==========
 
     wss.on('connection', (ws, req) => {
@@ -395,8 +398,15 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         _startHeartbeat(ws, remoteAddr, connectionId);
 
         ws.on('message', (message) => {
+            // 先解析 JSON，避免重复解析
+            const parsed = JSON.parse(message);
+            // 捕获 NODE_INFO 中的节点 URL，关联到当前连接，用于 close/error 时清理 nodes
+            if (parsed.type === MESSAGE_TYPES.NODE_INFO && parsed.node && parsed.node.url) {
+                inboundNodeUrls.set(connectionId, parsed.node.url);
+                // nodes.add 由 handleMessage → handleNodeInfo 完成，此处不重复添加
+            }
             if (_messageHandler) {
-                _messageHandler(ws, JSON.parse(message), connectionId);
+                _messageHandler(ws, parsed, connectionId);
             }
         });
 
@@ -404,12 +414,24 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
             log.info('节点已断开连接', { remoteAddr });
             _stopHeartbeat(connectionId);
             nodeConnections.delete(connectionId);
+            // 清理对应的 nodes 条目（通过 NODE_INFO 关联的 URL）
+            const nodeUrl = inboundNodeUrls.get(connectionId);
+            if (nodeUrl) {
+                nodes.delete(nodeUrl);
+                inboundNodeUrls.delete(connectionId);
+            }
         });
 
         ws.on('error', (error) => {
             log.error('WebSocket 错误', { error: error.message || error });
             _stopHeartbeat(connectionId);
             nodeConnections.delete(connectionId);
+            // 清理对应的 nodes 条目（通过 NODE_INFO 关联的 URL）
+            const nodeUrl = inboundNodeUrls.get(connectionId);
+            if (nodeUrl) {
+                nodes.delete(nodeUrl);
+                inboundNodeUrls.delete(connectionId);
+            }
         });
 
         sendMessage(ws, {
