@@ -1,4 +1,5 @@
 const { Block, Transaction } = require('./core');
+const logger = require('./logger');
 
 /**
  * 链验证与同步模块
@@ -9,6 +10,7 @@ const { Block, Transaction } = require('./core');
 class ChainSync {
     constructor(blockchain) {
         this.blockchain = blockchain;
+        this.log = logger.module('ChainSync');
     }
 
     // JSON → Transaction 实例（用于签名验证）
@@ -43,7 +45,7 @@ class ChainSync {
             const incomingGenesisHash = targetChain[0].hash;
             const localGenesisHash = bc.chain[0].hash;
             if (incomingGenesisHash !== localGenesisHash) {
-                console.error(`❌ [isChainValid] 创世块 hash 不一致: 收到=${incomingGenesisHash}, 本地=${localGenesisHash}`);
+                this.log.error('创世块 hash 不一致', { received: incomingGenesisHash, local: localGenesisHash });
                 return false;
             }
         }
@@ -93,14 +95,14 @@ class ChainSync {
             const computedHash = currentBlock.calculateHash();
             if (currentBlock.hash !== computedHash) {
                 if (chain) {
-                    console.error(`❌ [isChainValid] 区块 #${currentBlock.index} hash 不一致: 原hash=${currentBlock.hash.substring(0, 16)}..., 计算hash=${computedHash.substring(0, 16)}...`);
+                    this.log.error('区块 hash 不一致', { index: currentBlock.index });
                 }
                 return false;
             }
 
             if (currentBlock.previousHash !== previousBlock.hash) {
                 if (chain) {
-                    console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 的 previousHash 与前一区块 hash 不匹配`);
+                    this.log.error('区块 previousHash 不匹配', { index: currentBlock.index });
                 }
                 return false;
             }
@@ -117,9 +119,9 @@ class ChainSync {
                     if (validateSignatures) {
                         if (!txInstance.isValid()) {
                             if (chain) {
-                                console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 中一笔交易签名验证失败: tx=${txInstance.id.substring(0, 12)}... from=${txInstance.from.substring(0, 12)}...`);
+                                this.log.error('交易签名验证失败', { blockIndex: currentBlock.index, txId: txInstance.id.substring(0, 12) });
                             } else {
-                                console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 中一笔交易签名验证失败`);
+                                this.log.error('交易签名验证失败', { blockIndex: currentBlock.index });
                             }
                             return false;
                         }
@@ -133,11 +135,12 @@ class ChainSync {
                         if (txInstance.nonce !== undefined && txInstance.nonce !== null) {
                             // 该交易携带 nonce → 必须严格等于 expected
                             if (Number(txInstance.nonce) !== expected) {
-                                if (chain) {
-                                    console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 中交易 nonce 不匹配: from=${sender.substring(0, 12)}... 期望=${expected}, 实际=${txInstance.nonce}`);
-                                } else {
-                                    console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 中交易 nonce 不匹配: from=${sender.substring(0, 12)}... 期望=${expected}, 实际=${txInstance.nonce}`);
-                                }
+                                this.log.error('交易 nonce 不匹配', {
+                                    blockIndex: currentBlock.index,
+                                    sender: sender.substring(0, 12),
+                                    expected,
+                                    actual: txInstance.nonce
+                                });
                                 return false;
                             }
                         }
@@ -164,7 +167,7 @@ class ChainSync {
 
         const removedBlocks = bc.chain.splice(invalidIndex);
         bc.saveToFile();
-        console.log(`🔧 [自动修复] 区块 #${invalidIndex} 开始断裂，已截断 ${removedBlocks.length} 个区块`);
+        this.log.info('链已修复，已截断无效区块', { startIndex: invalidIndex, removedCount: removedBlocks.length });
         return removedBlocks;
     }
 
@@ -201,12 +204,12 @@ class ChainSync {
 
             // 验证 hash
             if (currentBlock.hash !== currentBlock.calculateHash()) {
-                console.warn(`🔧 [自动修复] 区块 #${i} hash 不一致，从此处截断`);
+                this.log.warn('区块 hash 不一致，从此处截断', { blockIndex: i });
                 return i;
             }
             // 验证 previousHash 链式引用
             if (currentBlock.previousHash !== previousBlock.hash) {
-                console.warn(`🔧 [自动修复] 区块 #${i} previousHash 不匹配前一区块，从此处截断`);
+                this.log.warn('区块 previousHash 不匹配，从此处截断', { blockIndex: i });
                 return i;
             }
         }
@@ -218,11 +221,11 @@ class ChainSync {
         const bc = this.blockchain;
 
         if (newChain.length <= bc.chain.length) {
-            console.log('⚠️  新链不更长，拒绝替换');
+            this.log.warn('新链不更长，拒绝替换');
             return false;
         }
         if (!this.isChainValid(newChain)) {
-            console.log('❌ 新链验证失败，拒绝替换');
+            this.log.warn('新链验证失败，拒绝替换');
             return false;
         }
 
@@ -283,10 +286,10 @@ class ChainSync {
         if (rollbackTx.length > 0) {
             // 加到 pendingTransactions 头部，让回滚交易优先被重新打包
             bc.pendingTransactions = rollbackTx.concat(bc.pendingTransactions);
-            console.log(`🔄 分叉回滚：已将 ${rollbackTx.length} 笔用户交易放回交易池`);
+            this.log.info('分叉回滚：已将用户交易放回交易池', { count: rollbackTx.length });
         }
         if (rollbackRewardCount > 0) {
-            console.log(`⛏️  分叉回滚：旧链上 ${rollbackRewardCount} 个区块的矿工奖励已作废（共 ${rollbackRewardAmount} 币，因链被替换自动回滚）`);
+            this.log.info('旧链上的矿工奖励已作废', { blocks: rollbackRewardCount, totalAmount: rollbackRewardAmount });
         }
 
         // ---------------------------------------------------------
@@ -309,14 +312,14 @@ class ChainSync {
             bc.pendingTransactions = bc.pendingTransactions.filter(t => !txIdsInNewChain.has(t.id));
             const removed = pendingBefore - bc.pendingTransactions.length;
             if (removed > 0) {
-                console.log(`🧹 [replaceChain] 交易池清理：移除了 ${removed} 笔已被新链确认的交易`);
+                this.log.info('交易池清理', { removed, context: 'replaceChain' });
             }
         }
 
         // 根据新链的区块时间戳重新计算难度，保证所有节点难度一致
         bc.recalculateDifficulty();
         bc.saveToFile();
-        console.log(`✅ 链已替换，新长度: ${bc.chain.length}（回滚了 ${rollbackTx.length} 笔交易到交易池，难度=${bc.difficulty}）`);
+        this.log.info('链已替换', { newLength: bc.chain.length, rollbackCount: rollbackTx.length, difficulty: bc.difficulty });
         return true;
     }
 }

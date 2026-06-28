@@ -1,5 +1,7 @@
 // StarCoin 统一错误处理：AppError + wrapAsync + 404/错误中间件
 
+const logger = require('../logger');
+
 /**
  * 自定义应用错误类
  * 在路由中抛出即可被 errorMiddleware 捕获并格式化返回
@@ -153,18 +155,14 @@ function _logError(err, req) {
     const timestamp = new Date().toISOString();
     const method = req.method || '?';
     const url = req.originalUrl || req.url || '?';
+    const log = logger.module('HTTP');
 
     if (err instanceof AppError && err.statusCode < 500) {
         // 4xx 业务错误：只打印简略信息
-        console.warn(`⚠️  [${timestamp}] ${method} ${url} → ${err.statusCode} ${err.message}`);
+        log.warn('请求处理错误', { method, url, statusCode: err.statusCode, message: err.message });
     } else {
         // 5xx 或非预期错误：打印完整堆栈
-        console.error(`❌  [${timestamp}] ${method} ${url} → ${err.message}`);
-        if (err.stack) {
-            // 只打印前 5 行避免日志过长
-            const stackLines = err.stack.split('\n').slice(0, 6).join('\n');
-            console.error(`   ${stackLines}`);
-        }
+        log.error('服务器错误', { method, url, message: err.message, stack: err.stack ? err.stack.split('\n').slice(0, 6).join('\n') : undefined });
     }
 }
 

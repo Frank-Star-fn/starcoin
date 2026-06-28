@@ -102,6 +102,20 @@ const config = {
         cETH: float(process.env.TOKEN_INITIAL_AIRDROP_CETH, 5.0)
     },
 
+    // ======== 日志配置 ========
+    /** 日志级别：debug / info / warn / error */
+    LOG_LEVEL: (process.env.LOG_LEVEL || 'info').toLowerCase(),
+    /** 日志传输方式：console / file / both */
+    LOG_TRANSPORT: (process.env.LOG_TRANSPORT || 'console').toLowerCase(),
+    /** 日志文件目录 */
+    LOG_DIR: process.env.LOG_DIR || null,
+    /** 单个日志文件最大字节数 */
+    LOG_FILE_MAX_SIZE: int(process.env.LOG_FILE_MAX_SIZE, 10 * 1024 * 1024),
+    /** 保留的日志文件数量 */
+    LOG_FILE_MAX_FILES: int(process.env.LOG_FILE_MAX_FILES, 5),
+    /** 文件日志是否使用 JSON 格式 */
+    LOG_JSON: bool(process.env.LOG_JSON, false),
+
     // ======== API 限流配置 ========
     /** 全局读接口：时间窗口（毫秒） */
     RATE_LIMIT_GLOBAL_WINDOW_MS: int(process.env.RATE_LIMIT_GLOBAL_WINDOW_MS, 60 * 1000),

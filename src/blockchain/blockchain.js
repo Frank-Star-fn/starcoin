@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const config = require('../config');
+const logger = require('../logger');
 const { Block, Transaction, generateWallet, importWalletFromPem,
         generateMnemonic, validateMnemonic, mnemonicToWallet,
         SUPPORTED_CURRENCIES, DEFAULT_CURRENCY, effectiveCurrency, normalizeCurrency } = require('../core');
@@ -12,6 +13,7 @@ const { StorageManager } = require('./blockchain-storage');
 
 class Blockchain {
     constructor(portOverride, testMode = false) {
+        this.log = logger.module('Chain');
         const PORT = portOverride || config.PORT;
         this.testMode = testMode;
         this.diffManager = new DifficultyManager({
@@ -389,7 +391,7 @@ class Blockchain {
 
         // 如果挖矿被中止（链已更新 或 客户端断开），则丢弃当前区块，交易留在交易池，等调用者重新开始
         if (mineResult && mineResult.aborted) {
-            console.log('🔄 [异步挖矿] 检测到链已更新，中止当前挖矿，等待在新链上重新开始');
+            this.log.info('检测到链已更新，中止当前挖矿，等待在新链上重新开始');
             return { canceled: true, reason: mineResult.reason };
         }
 
@@ -402,7 +404,7 @@ class Blockchain {
 
         // 异步挖矿期间可能收到 P2P 区块导致链状态变化，验证并自动修复
         if (!this.isChainValid()) {
-            console.warn('⚠️ [异步挖矿] 链可能已被其他节点更新，自动修复中...');
+            this.log.warn('链可能已被其他节点更新，自动修复中');
             const removed = this.repairChain();
             // 把被截断区块中的用户交易放回交易池（排除 SYSTEM 奖励交易和空交易）
             const existingPendingIds = new Set(this.pendingTransactions.map(t => t.id));
@@ -416,7 +418,7 @@ class Blockchain {
                 }
             }
             this.saveToFile();
-            console.log(`✅ [异步挖矿] 修复完成，当前链长度: ${this.chain.length}`);
+            this.log.info('修复完成', { chainLength: this.chain.length });
         } else {
             this.saveToFile();
         }
@@ -498,7 +500,7 @@ class Blockchain {
                 this.pendingTransactions = this.pendingTransactions.filter(t => !txIdsInBlock.has(t.id));
                 const removed = before - this.pendingTransactions.length;
                 if (removed > 0) {
-                    console.log(`🧹 [addBlock] 交易池清理：移除了 ${removed} 笔已被区块 #${block.index} 打包的交易`);
+                    this.log.info('交易池清理', { removed, blockIndex: block.index });
                 }
             }
         }

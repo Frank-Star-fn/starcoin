@@ -4,6 +4,7 @@
 const express = require('express');
 const { Block } = require('../blockchain/blockchain');
 const { AppError, wrapAsync } = require('./error-handler');
+const logger = require('../logger');
 
 /**
  * 创建挖矿相关的路由
@@ -119,7 +120,7 @@ function createMiningRoutes(starCoin, p2p, broadcastToFrontend) {
                         keepMining = false;
                         break;
                     }
-                    console.log(`🔄 [SSE挖矿] 链已更新，自动在新链上重新开始挖矿（第 ${consecutiveCancels} 次取消）`);
+                    logger.module('Mining').info('链已更新，自动在新链上重新开始挖矿', { consecutiveCancels, newChainLength: starCoin.chain.length });
                     res.write(`data: ${JSON.stringify({
                         chainUpdated: true,
                         newChainLength: starCoin.chain.length,

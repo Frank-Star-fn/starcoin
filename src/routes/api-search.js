@@ -3,6 +3,7 @@
  * 统一搜索入口：按区块号 / 交易ID / 地址 / 备注 搜索
  */
 const express = require('express');
+const logger = require('../logger');
 const router = express.Router();
 
 module.exports = function (blockchain) {
@@ -34,7 +35,7 @@ module.exports = function (blockchain) {
                 ...result
             });
         } catch (err) {
-            console.error('❌ 搜索出错:', err.message);
+            logger.module('API').error('搜索出错', { error: err.message });
             return res.status(500).json({
                 success: false,
                 type: 'error',

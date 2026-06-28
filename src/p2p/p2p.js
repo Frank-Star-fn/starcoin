@@ -1,5 +1,6 @@
 const WebSocket = require('ws');
 const config = require('../config');
+const logger = require('../logger');
 const { createP2PCore, MESSAGE_TYPES } = require('./p2p-core');
 const { createMessageHandlers } = require('./p2p-message-handlers');
 const { createDiscoveryModule } = require('./p2p-discovery');
@@ -17,6 +18,8 @@ const { createDiscoveryModule } = require('./p2p-discovery');
  * @param {function} [options.onChainChange] - 链数据变化时的回调（用于前端 WebSocket 推送）
  */
 function createP2P(server, starCoin, PORT, options = {}) {
+    const log = logger.module('P2P');
+
     // 1. 创建核心层（网络基础设施）
     const core = createP2PCore(server, starCoin, PORT, options);
 
@@ -59,17 +62,21 @@ function createP2P(server, starCoin, PORT, options = {}) {
 
         const currentLength = starCoin.chain.length;
         const candidates = syncState.candidates;
-        console.log(`🔄 [同步] 汇总完成，共 ${candidates.length} 个候选链（当前链长度: ${currentLength}）`);
+        log.info('汇总完成', {
+                candidateCount: candidates.length,
+                currentLength,
+                context: 'sync'
+            });
 
         if (candidates.length === 0) {
-            console.log('ℹ️  没有其他节点返回链，保持当前链');
+            log.info('没有其他节点返回链，保持当前链');
             syncState.lastSyncAt = new Date().toISOString();
             return;
         }
 
         const validCandidates = candidates.filter(c => c.valid);
         if (validCandidates.length === 0) {
-            console.log('❌ [同步] 所有候选链都无效，拒绝同步');
+            log.warn('所有候选链都无效，拒绝同步');
             syncState.lastSyncAt = new Date().toISOString();
             return;
         }
@@ -77,10 +84,10 @@ function createP2P(server, starCoin, PORT, options = {}) {
         validCandidates.sort((a, b) => b.length - a.length);
         const best = validCandidates[0];
 
-        console.log(`🏆 [同步] 最佳候选: 节点 ${best.fromNode}，长度 ${best.length}`);
+        log.info('最佳候选', { fromNode: best.fromNode, length: best.length });
 
         if (best.length <= currentLength) {
-            console.log('ℹ️  当前链已是最长，无需替换');
+            log.info('当前链已是最长，无需替换');
             syncState.lastSyncAt = new Date().toISOString();
             return;
         }
@@ -88,12 +95,12 @@ function createP2P(server, starCoin, PORT, options = {}) {
         const myLatest = starCoin.getLatestBlock();
         const theirLatest = best.chain[best.chain.length - 1];
         if (myLatest.hash === theirLatest.previousHash) {
-            console.log('🔄 [同步] 最佳链与当前链尾部连续，直接追加');
+            log.info('最佳链与当前链尾部连续，直接追加');
             best.chain.slice(currentLength).forEach(b => starCoin.addBlock(b));
         } else {
-            console.log('🔄 [同步] 发生分叉，用最长有效链替换整条链');
+            log.info('发生分叉，用最长有效链替换整条链');
             if (!starCoin.replaceChain(best.chain)) {
-                console.log('❌ [同步] 替换失败');
+                log.warn('替换失败');
                 syncState.lastSyncAt = new Date().toISOString();
                 return;
             }
@@ -102,7 +109,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         handlers.updateNodeInfo();
         handlers.broadcastLatest();
         syncState.lastSyncAt = new Date().toISOString();
-        console.log(`✅ [同步] 完成，当前链长度: ${starCoin.chain.length}`);
+        log.info('同步完成', { chainLength: starCoin.chain.length });
 
         // 同步完成后通知前端刷新
         if (options.onChainChange) {
@@ -115,7 +122,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
             (Array.from(core.wss.clients).filter(c => c.readyState === 1).length);
 
         if (connectedCount === 0) {
-            console.log('⚠️  [同步] 当前没有连接的对等节点，无法同步');
+            log.warn('当前没有连接的对等节点，无法同步');
             return {
                 success: false,
                 message: '没有可连接的对等节点',
@@ -129,7 +136,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         syncState.syncCount = 0;
         syncState.expectedCount = core.nodeConnections.size;
 
-        console.log(`🔄 [同步] 开始与 ${syncState.expectedCount} 个节点同步...`);
+        log.info('开始与节点同步', { expectedCount: syncState.expectedCount });
 
         let sent = 0;
         core.nodeConnections.forEach((conn) => {
@@ -153,7 +160,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         });
 
         syncState.expectedCount = sent;
-        console.log(`📡 [同步] 已向 ${sent} 个节点发送同步请求`);
+        log.info('已向节点发送同步请求', { sent });
 
         if (sent === 0) {
             syncState.isSyncing = false;
@@ -166,7 +173,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
 
         setTimeout(() => {
             if (!syncState.resolved) {
-                console.log('⏱️  [同步] 超时，用已收到的候选进行解析');
+                log.warn('同步超时，用已收到的候选进行解析');
                 resolveSyncCandidates();
             }
         }, config.SYNC_TIMEOUT);
@@ -248,7 +255,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
      */
     function handleIncomingTransaction(transaction, fromNode) {
         if (!transaction || !transaction.id) {
-            console.log('⚠️ [P2P交易] 收到无效交易，忽略');
+            log.warn('收到无效交易，忽略');
             return;
         }
 
@@ -257,14 +264,14 @@ function createP2P(server, starCoin, PORT, options = {}) {
             return; // 已存在，静默忽略
         }
 
-        console.log(`📥 [P2P交易] 收到来自 ${fromNode || '某节点'} 的交易: ${transaction.id.substring(0, 16)}...`);
+        log.info('收到来自节点的交易', { fromNode, txId: transaction.id.substring(0, 16) });
 
         // 使用 blockchain 的 addPendingTransaction 方法（跳过余额检查）
         const result = starCoin.addPendingTransaction(transaction, true);
         if (result.success) {
-            console.log(`✅ [P2P交易] 已加入本地交易池，当前池大小: ${starCoin.pendingTransactions.length}`);
+            log.info('交易已加入本地交易池', { poolSize: starCoin.pendingTransactions.length });
         } else {
-            console.log(`⚠️ [P2P交易] 拒绝加入: ${result.error}`);
+            log.warn('交易拒绝加入', { error: result.error });
         }
     }
 
@@ -291,7 +298,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         }
 
         if (added > 0) {
-            console.log(`📥 [P2P交易池] 从 ${fromNode || '某节点'} 合并了 ${added} 笔新交易（跳过 ${skipped} 笔），当前池大小: ${starCoin.pendingTransactions.length}`);
+            log.info('从节点合并了新交易', { fromNode, added, skipped, poolSize: starCoin.pendingTransactions.length });
         }
     }
 
@@ -305,7 +312,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         const connectedCount = core.nodes.size;
         if (connectedCount === 0) return;
 
-        console.log(`📤 [P2P交易] 广播交易 ${tx.id.substring(0, 16)}... 到 ${connectedCount} 个节点`);
+        log.info('广播交易到节点', { txId: tx.id.substring(0, 16), count: connectedCount });
         handlers.broadcastTransaction(tx);
     }
 
@@ -317,7 +324,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         if (connectedCount === 0) return;
         if (starCoin.pendingTransactions.length === 0) return;
 
-        console.log(`📤 [P2P交易池] 广播 ${starCoin.pendingTransactions.length} 笔待打包交易到 ${connectedCount} 个节点`);
+        log.info('广播待打包交易到节点', { txCount: starCoin.pendingTransactions.length, count: connectedCount });
         handlers.broadcastPendingTxs();
     }
 
@@ -330,11 +337,11 @@ function createP2P(server, starCoin, PORT, options = {}) {
     function syncPendingTxs() {
         const connectedCount = core.nodes.size;
         if (connectedCount === 0) {
-            console.log('⚠️ [P2P交易池] 没有已连接节点，无法同步');
+            log.warn('没有已连接节点，无法同步');
             return { success: false, message: '没有已连接节点' };
         }
 
-        console.log(`🔄 [P2P交易池] 向 ${connectedCount} 个节点请求交易池同步...`);
+        log.info('向节点请求交易池同步', { count: connectedCount });
 
         const requestMsg = {
             type: MESSAGE_TYPES.QUERY_PENDING_TXS,
@@ -360,7 +367,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
     handlers.handleChainResponse = function enhancedHandleChainResponse(chain, fromNode) {
         // ------ 同步汇聚模式 ------
         if (syncState.isSyncing && fromNode) {
-            console.log(`📥 [同步] 收到节点 ${fromNode} 的链，长度 ${chain.length}`);
+            log.info('收到节点的链', { fromNode, length: chain.length });
             syncState.candidates.push({
                 fromNode: fromNode,
                 chain: chain,
@@ -386,14 +393,14 @@ function createP2P(server, starCoin, PORT, options = {}) {
     // 检查当前链是否有效，无效则自动修复并从其他节点同步
     function checkChainHealth() {
         if (!starCoin.isChainValid()) {
-            console.warn('🏥 [健康检查] 发现链状态无效，开始自动修复...');
+            log.warn('发现链状态无效，开始自动修复');
             const removed = starCoin.repairChain();
             if (removed.length > 0) {
-                console.log(`🏥 [健康检查] 已截断 ${removed.length} 个区块`);
+                log.info('已截断区块', { count: removed.length });
             }
             // 修复后尝试从其他节点同步以恢复
             const syncResult = syncWithPeers();
-            console.log(`🏥 [健康检查] 已触发同步: ${syncResult.message}`);
+            log.info('已触发同步', { message: syncResult.message });
             return {
                 status: 'repaired',
                 removedBlocks: removed.length,
@@ -407,7 +414,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
     // 启动定期健康检查
     function startHealthCheck(intervalMs = config.SYNC_HEALTH_CHECK_INTERVAL) {
         if (healthCheckTimer) return;
-        console.log(`🏥 [健康检查] 已启动（间隔: ${intervalMs / 1000}秒）`);
+        log.info('健康检查已启动', { interval: intervalMs / 1000 });
         healthCheckTimer = setInterval(() => {
             checkChainHealth();
         }, intervalMs);
@@ -418,7 +425,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         if (healthCheckTimer) {
             clearInterval(healthCheckTimer);
             healthCheckTimer = null;
-            console.log('🏥 [健康检查] 已停止');
+            log.info('健康检查已停止');
         }
     }
 

@@ -3,6 +3,7 @@ const path = require('path');
 const http = require('http');
 const WebSocket = require('ws');
 const config = require('./config');
+const logger = require('./logger');
 const { Blockchain, Block, Transaction, generateWallet, importWalletFromPem } = require('./blockchain/blockchain');
 const { createP2P } = require('./p2p/p2p');
 const createRoutes = require('./routes');
@@ -11,6 +12,19 @@ const {
     createErrorMiddleware
 } = require('./routes/error-handler');
 
+// 根据配置初始化日志系统
+logger.configure({
+    level: config.LOG_LEVEL,
+    transport: config.LOG_TRANSPORT,
+    file: {
+        dir: config.LOG_DIR,
+        maxSize: config.LOG_FILE_MAX_SIZE,
+        maxFiles: config.LOG_FILE_MAX_FILES,
+        json: config.LOG_JSON,
+    },
+});
+
+const log = logger.module('Server');
 const app = express();
 const PORT = config.PORT;
 
@@ -43,16 +57,16 @@ function broadcastToFrontend(type, data = {}) {
 const p2p = createP2P(server, starCoin, PORT, {
     onFrontendConnection: (ws) => {
         frontendClients.add(ws);
-        console.log(`🎯 前端客户端已连接，当前连接数: ${frontendClients.size}`);
+        log.info('前端客户端已连接', { count: frontendClients.size });
 
         ws.on('close', () => {
             frontendClients.delete(ws);
-            console.log(`🔌 前端客户端已断开，剩余连接数: ${frontendClients.size}`);
+            log.info('前端客户端已断开', { count: frontendClients.size });
         });
 
         ws.on('error', (err) => {
             frontendClients.delete(ws);
-            console.error('❌ 前端 WebSocket 错误:', err.message);
+            log.error('前端 WebSocket 错误', err);
         });
     },
     onChainChange: () => {
@@ -79,9 +93,7 @@ app.use(createErrorMiddleware());
 
 // 启动服务器
 server.listen(PORT, () => {
-    console.log(`🚀 StarCoin 服务器运行在 http://localhost:${PORT}`);
-    console.log(`📊 初始区块链已创建，包含 ${starCoin.chain.length} 个区块`);
-    console.log(`🆔 节点ID: ${p2p.nodeInfo.id}`);
+    log.info('StarCoin 服务器已启动', { port: PORT, blocks: starCoin.chain.length, nodeId: p2p.nodeInfo.id });
 
     // ---------- 种子节点发现与启动同步 ----------
     // 从配置 SEED_PEERS 获取种子节点列表（逗号分隔），
@@ -90,7 +102,7 @@ server.listen(PORT, () => {
 
     // 如果是全新启动（无本地数据），优先从其他节点获取链
     if (starCoin.freshStart) {
-        console.log('🆕 检测到全新节点（无本地数据），将优先从其他节点同步区块链...');
+        log.info('全新节点，将优先从其他节点同步区块链');
         if (seedPeers.length === 0) {
             // 未配置 SEED_PEERS 时，默认尝试连接其他常见端口
             const commonPorts = ['3000', '3001', '3002', '3003', '3004'];
@@ -112,7 +124,7 @@ server.listen(PORT, () => {
 
     // 连接种子节点并执行首次同步
     if (seedPeers.length > 0) {
-        console.log(`🔗 将尝试连接 ${seedPeers.length} 个种子节点: ${seedPeers.join(', ')}`);
+        log.info('将尝试连接种子节点', { count: seedPeers.length, peers: seedPeers });
         setTimeout(() => {
             let connected = 0;
             for (const peerUrl of seedPeers) {
@@ -126,15 +138,15 @@ server.listen(PORT, () => {
             // 等待连接建立后同步
             const syncDelay = starCoin.freshStart ? 5000 : 3000;
             setTimeout(() => {
-                console.log('🔄 启动后首次同步...');
+                log.info('启动后首次同步');
                 const result = p2p.syncWithPeers();
                 if (starCoin.freshStart) {
                     // 同步完成后检查是否获取到了数据
                     setTimeout(() => {
                         if (starCoin.chain.length <= 1) {
-                            console.log('ℹ️  未从其他节点获取到区块链数据，将使用本地创世区块开始新链');
+                            log.info('未从其他节点获取到区块链数据，将使用本地创世区块开始新链');
                         } else {
-                            console.log(`✅ 已从其他节点同步区块链，当前链长度: ${starCoin.chain.length}`);
+                            log.info('已从其他节点同步区块链', { chainLength: starCoin.chain.length });
                         }
                     }, config.SYNC_TIMEOUT + 2000); // 等待同步超时 + 缓冲
                 }
@@ -146,7 +158,7 @@ server.listen(PORT, () => {
             setTimeout(() => {
                 p2p.connectToPeer('ws://localhost:3000');
                 setTimeout(() => {
-                    console.log('🔄 启动后首次同步...');
+                    log.info('启动后首次同步');
                     p2p.syncWithPeers();
                 }, 3000);
             }, 1000);
@@ -156,7 +168,7 @@ server.listen(PORT, () => {
     // 定期自动同步
     setInterval(() => {
         if (p2p.getConnectedCount() > 0) {
-            console.log('⏰ 定期自动同步...');
+            log.info('定期自动同步');
             p2p.syncWithPeers();
         }
     }, config.SYNC_INTERVAL);

@@ -3,6 +3,7 @@
  * 支持浮点难度（如 5.5 = 5个零 + 下字节≤0x7f）
  */
 const config = require('./config');
+const logger = require('./logger');
 
 class DifficultyManager {
     /**
@@ -25,6 +26,7 @@ class DifficultyManager {
         this.difficultyStep = options.difficultyStep ?? config.DIFFICULTY_STEP;
         this.lastAdjustmentBlock = options.lastAdjustmentBlock ?? 0;
         this.difficultyHistory = options.difficultyHistory ?? [];
+        this.log = logger.module('Difficulty');
     }
 
     /**
@@ -84,15 +86,20 @@ class DifficultyManager {
                 targetTime: this.targetBlockTime,
                 reason: avgTime > this.targetBlockTime * 1.3 ? '出块偏慢 ↓' : '出块偏快 ↑'
             });
-            console.log(
-                `⚙️ 难度调整 [区块 #${latestIndex}]: ${oldDifficulty} → ${this.difficulty} ` +
-                `(平均 ${avgTime.toFixed(1)}s/块, 目标 ${this.targetBlockTime}s/块)`
-            );
+            this.log.info('难度调整', {
+                blockIndex: latestIndex,
+                oldDifficulty,
+                newDifficulty: this.difficulty,
+                avgTime: Math.round(avgTime * 10) / 10,
+                targetTime: this.targetBlockTime
+            });
         } else {
-            console.log(
-                `📊 难度评估 [区块 #${latestIndex}]: 维持 ${this.difficulty} ` +
-                `(平均 ${avgTime.toFixed(1)}s/块, 目标 ${this.targetBlockTime}s/块)`
-            );
+            this.log.info('难度评估', {
+                blockIndex: latestIndex,
+                difficulty: this.difficulty,
+                avgTime: Math.round(avgTime * 10) / 10,
+                targetTime: this.targetBlockTime
+            });
         }
 
         this.lastAdjustmentBlock = latestIndex;
@@ -167,10 +174,12 @@ class DifficultyManager {
         this.difficultyHistory = history;
 
         if (Math.abs(this.difficulty - oldDiff) > 0.01) {
-            console.log(
-                `⚙️ 难度重新计算 [全链重放]: ${oldDiff} → ${this.difficulty} ` +
-                `(基于 ${chain.length} 个区块的时间戳, ${history.length} 次调整)`
-            );
+            this.log.info('难度重新计算（全链重放）', {
+                oldDifficulty: oldDiff,
+                newDifficulty: this.difficulty,
+                chainLength: chain.length,
+                adjustmentCount: history.length
+            });
         }
     }
 

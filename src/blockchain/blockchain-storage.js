@@ -1,11 +1,13 @@
 const fs = require('fs');
 const { Block, Transaction } = require('../core');
 const config = require('../config');
+const logger = require('../logger');
 
 /** 链数据文件的读写与恢复 */
 class StorageManager {
     constructor(blockchain) {
         this.blockchain = blockchain;
+        this.log = logger.module('Storage');
     }
 
     loadFromFile() {
@@ -57,7 +59,7 @@ class StorageManager {
                     if (this.blockchain.isChainValid(undefined, true)) {
                         // 加载成功后，根据链上区块时间戳重新计算难度，保证所有节点一致
                         this.blockchain.recalculateDifficulty();
-                        console.log(`📂 已从本地文件加载区块链: ${this.blockchain.dataFile} (${rebuiltChain.length} 个区块, 难度=${this.blockchain.difficulty}) ✓`);
+                        this.log.info('已从本地文件加载区块链', { file: this.blockchain.dataFile, blocks: rebuiltChain.length, difficulty: this.blockchain.difficulty });
                         return true;
                     }
 
@@ -65,25 +67,25 @@ class StorageManager {
                     if (this.blockchain.isChainValid(undefined, false)) {
                         // 加载成功后，根据链上区块时间戳重新计算难度
                         this.blockchain.recalculateDifficulty();
-                        console.log(`⚠️  [兼容模式] 本地链使用旧签名格式（非 ECDSA），区块结构有效但签名未验证`);
-                        console.log(`📂 已从本地文件加载区块链: ${this.blockchain.dataFile} (${rebuiltChain.length} 个区块, 难度=${this.blockchain.difficulty})`);
+                        this.log.warn('本地链使用旧签名格式，区块结构有效但签名未验证（兼容模式）');
+                        this.log.info('已从本地文件加载区块链', { file: this.blockchain.dataFile, blocks: rebuiltChain.length, difficulty: this.blockchain.difficulty });
                         return true;
                     }
 
                     // 两级验证都失败
-                    console.log('❌  本地文件中的区块链无效，恢复为创世区块');
+                    this.log.warn('本地文件中的区块链无效，恢复为创世区块');
                     this.blockchain.chain = tempChain;
                     return false;
                 } else {
-                    console.log('⚠️  本地文件格式无效，已重置为创世区块');
+                    this.log.warn('本地文件格式无效，已重置为创世区块');
                     return false;
                 }
             } else {
-                console.log(`📂 未找到本地文件，创建新链: ${this.blockchain.dataFile}`);
+                this.log.info('未找到本地文件，创建新链', { file: this.blockchain.dataFile });
                 return false;
             }
         } catch (err) {
-            console.error('❌ 从文件加载失败:', err.message);
+            this.log.error('从文件加载失败', { error: err.message });
             this.blockchain.chain = [this.blockchain.createGenesisBlock()];
             return false;
         }
@@ -105,7 +107,7 @@ class StorageManager {
             fs.writeFileSync(this.blockchain.dataFile, JSON.stringify(data, null, 2), 'utf8');
             return true;
         } catch (err) {
-            console.error('❌ 保存到文件失败:', err.message);
+            this.log.error('保存到文件失败', { error: err.message });
             return false;
         }
     }
@@ -124,7 +126,7 @@ class StorageManager {
             this.blockchain.difficultyHistory = [];
             return true;
         } catch (err) {
-            console.error('❌ 清除文件失败:', err.message);
+            this.log.error('清除文件失败', { error: err.message });
             return false;
         }
     }

@@ -1,5 +1,6 @@
 const WebSocket = require('ws');
 const config = require('../config');
+const logger = require('../logger');
 
 // 消息类型
 const MESSAGE_TYPES = {
@@ -45,6 +46,8 @@ const HEARTBEAT_TIMEOUT  = config.P2P_HEARTBEAT_TIMEOUT;
  * @param {function} [options.onFrontendConnection] - 前端 WebSocket 连接回调（路径为 /ws）
  */
 function createP2PCore(server, starCoin, PORT, options = {}) {
+    const log = logger.module('P2P-Core');
+
     // WebSocket 服务器
     const wss = new WebSocket.Server({ server });
 
@@ -108,13 +111,13 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
 
         state.attempts++;
         if (state.attempts > RECONNECT_MAX_RETRIES) {
-            console.log(`🔌 [重连] ${url} 超过最大重试次数 (${RECONNECT_MAX_RETRIES})，放弃重连`);
+            log.warn('超过最大重试次数，放弃重连', { url, maxRetries: RECONNECT_MAX_RETRIES });
             reconnectState.delete(url);
             return;
         }
 
         const delay = _getReconnectDelay(state.attempts);
-        console.log(`🔌 [重连] ${url} ${(delay / 1000).toFixed(1)}s 后重试（第 ${state.attempts}/${RECONNECT_MAX_RETRIES} 次）`);
+        log.info('计划重连', { url, delay: (delay / 1000).toFixed(1), attempt: state.attempts, maxAttempts: RECONNECT_MAX_RETRIES });
 
         state.timer = setTimeout(() => {
             // 检查是否还在重连状态（可能已被 clearReconnect 取消）
@@ -164,7 +167,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
 
             // 设置 PONG 超时
             const timeoutId = setTimeout(() => {
-                console.log(`💔 [心跳] ${url} (${connectionId}) 心跳超时，关闭连接`);
+                log.warn('心跳超时，关闭连接', { url, connectionId });
                 _stopHeartbeat(connectionId);
                 try { ws.close(); } catch (_) { /* 忽略关闭时的错误 */ }
                 // ws.on('close') 会触发重连
@@ -199,7 +202,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
      */
     function connectToPeer(peerUrl, enableReconnect = true) {
         if (nodes.has(peerUrl) || peerUrl === nodeInfo.url) {
-            console.log('⚠️ 节点已连接或为自身节点');
+            log.warn('节点已连接或为自身节点', { peerUrl });
             return;
         }
 
@@ -212,7 +215,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         const connectionId = `conn_${Math.random().toString(36).substr(2, 9)}`;
 
         ws.on('open', () => {
-            console.log(`🔗 已连接到对等节点: ${peerUrl}`);
+            log.info('已连接到对等节点', { peerUrl });
             nodes.add(peerUrl);
 
             // 连接成功 → 清除重连状态（下次断开时重新累计）
@@ -252,7 +255,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         });
 
         ws.on('close', () => {
-            console.log(`🔌 与对等节点的连接已关闭: ${peerUrl}`);
+            log.info('与对等节点的连接已关闭', { peerUrl });
             // 停止心跳
             _stopHeartbeat(connectionId);
             // 清理连接记录
@@ -266,7 +269,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         });
 
         ws.on('error', (error) => {
-            console.error(`❌ 连接对等节点出错: ${peerUrl}`, error.message || error);
+            log.error('连接对等节点出错', { peerUrl, error: error.message || error });
             _stopHeartbeat(connectionId);
             nodes.delete(peerUrl);
             nodeConnections.delete(connectionId);
@@ -280,7 +283,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
 
     function disconnectFromPeer(peerUrl) {
         if (!nodes.has(peerUrl)) {
-            console.log(`⚠️ 节点未连接: ${peerUrl}`);
+            log.warn('节点未连接', { peerUrl });
             return { success: false, message: '节点未连接' };
         }
 
@@ -317,7 +320,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         nodes.delete(peerUrl);
 
         const message = found ? `已断开与节点 ${peerUrl} 的连接` : `已从节点列表移除 ${peerUrl}`;
-        console.log(`🔌 ${message}`);
+        log.info(message);
         return { success: true, message };
     }
 
@@ -375,13 +378,13 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
             if (options.onFrontendConnection) {
                 options.onFrontendConnection(ws, req);
             } else {
-                console.log('🌐 前端 WS 客户端已连接（未注册处理函数）');
+                log.warn('前端 WS 客户端已连接（未注册处理函数）');
                 ws.close();
             }
             return;
         }
 
-        console.log('📡 新节点已连接');
+        log.info('新节点已连接');
 
         const connectionId = `conn_${Math.random().toString(36).substr(2, 9)}`;
         // 对于入站连接，我们不知道对方的 URL，用 remoteAddr 作为标识
@@ -398,13 +401,13 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         });
 
         ws.on('close', () => {
-            console.log(`📡 节点已断开连接: ${remoteAddr}`);
+            log.info('节点已断开连接', { remoteAddr });
             _stopHeartbeat(connectionId);
             nodeConnections.delete(connectionId);
         });
 
         ws.on('error', (error) => {
-            console.error('❌ WebSocket错误:', error);
+            log.error('WebSocket 错误', { error: error.message || error });
             _stopHeartbeat(connectionId);
             nodeConnections.delete(connectionId);
         });

@@ -1,5 +1,6 @@
 const WebSocket = require('ws');
 const config = require('../config');
+const logger = require('../logger');
 
 /**
  * 创建 P2P 自动节点发现模块
@@ -14,6 +15,7 @@ const config = require('../config');
  * @param {object} MESSAGE_TYPES - 消息类型常量
  */
 function createDiscoveryModule(core, MESSAGE_TYPES) {
+    const log = logger.module('P2P-Discovery');
 
     // ========== 发现状态 ==========
     const pendingNodes = new Set();      // 待连接节点队列（去重）
@@ -50,7 +52,7 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
         }
 
         if (newCount > 0) {
-            console.log(`🔍 从 ${fromNode || '某节点'} 发现 ${newCount} 个新节点，待连接队列: ${pendingNodes.size}`);
+            log.info('发现新节点', { fromNode, newCount, pendingSize: pendingNodes.size });
         }
     }
 
@@ -69,7 +71,7 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
         }
 
         isDiscovering = true;
-        console.log(`🔍 [发现] 正在向 ${connectedCount} 个已连接节点请求节点列表...`);
+        log.info('正在向已连接节点请求节点列表', { count: connectedCount });
 
         const requestMsg = {
             type: MESSAGE_TYPES.NODE_LIST_REQUEST,
@@ -103,7 +105,7 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
 
         const currentPeers = core.nodes.size;
         if (currentPeers >= discoveryConfig.maxPeers) {
-            console.log(`🔍 [发现] 已达到最大连接数 (${discoveryConfig.maxPeers})，清空待连接队列`);
+            log.info('已达到最大连接数，清空待连接队列', { maxPeers: discoveryConfig.maxPeers });
             pendingNodes.clear();
             return;
         }
@@ -115,7 +117,7 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
         );
 
         if (canConnect === 0) return;
-        console.log(`🔍 [发现] 正在尝试连接 ${canConnect}/${pendingNodes.size} 个待连接节点...`);
+        log.info('正在尝试连接待连接节点', { count: canConnect, pendingSize: pendingNodes.size });
 
         const toConnect = [];
         for (const nodeUrl of pendingNodes) {
@@ -149,7 +151,7 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
         const connectionId = `auto_${Math.random().toString(36).substr(2, 9)}`;
 
         ws.on('open', () => {
-            console.log(`🔗 [自动发现] 已连接到: ${nodeUrl}`);
+            log.info('已自动连接到节点', { nodeUrl });
             core.nodes.add(nodeUrl);
             connectingNodes.delete(nodeUrl);
 
@@ -189,7 +191,7 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
         });
 
         ws.on('close', () => {
-            console.log(`🔌 [自动发现] 连接已关闭: ${nodeUrl}`);
+            log.info('自动发现连接已关闭', { nodeUrl });
             core.heartbeat.stop(connectionId);
             core.nodes.delete(nodeUrl);
             core.nodeConnections.delete(connectionId);
@@ -202,7 +204,7 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
         });
 
         ws.on('error', (error) => {
-            console.error(`❌ [自动发现] 连接失败: ${nodeUrl}`, error.message || error);
+            log.error('自动发现连接失败', { nodeUrl, error: error.message || error });
             core.heartbeat.stop(connectionId);
             core.nodes.delete(nodeUrl);
             core.nodeConnections.delete(connectionId);
@@ -223,7 +225,7 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
     function startDiscovery() {
         if (discoveryTimer) return;
         discoveryConfig.enabled = true;
-        console.log(`🔍 [自动发现] 已启动（间隔: ${discoveryConfig.interval / 1000}秒, 最大节点数: ${discoveryConfig.maxPeers}）`);
+        log.info('自动发现已启动', { interval: discoveryConfig.interval / 1000, maxPeers: discoveryConfig.maxPeers });
         discoveryTimer = setInterval(() => {
             requestNodeLists();
         }, discoveryConfig.interval);
@@ -238,7 +240,7 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
             discoveryTimer = null;
         }
         discoveryConfig.enabled = false;
-        console.log('🔍 [自动发现] 已停止');
+        log.info('自动发现已停止');
     }
 
     /**

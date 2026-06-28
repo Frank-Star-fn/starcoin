@@ -1,7 +1,10 @@
 const { MESSAGE_TYPES } = require('./p2p-core');
+const logger = require('../logger');
 
 /** 区块链业务消息处理：链同步、区块追加、交易池等，与 p2p-core 网络层解耦 */
 function createMessageHandlers(network, starCoin, options = {}) {
+    const log = logger.module('P2P-Handlers');
+
     // 业务广播（封装网络层的 broadcast）
 
     function broadcastLatest() {
@@ -57,7 +60,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
 
     function handleChainResponse(chain, fromNode) {
         if (!chain || !Array.isArray(chain) || chain.length === 0) {
-            console.log('📥 收到空链，忽略');
+            log.warn('收到空链，忽略');
             return;
         }
 
@@ -65,12 +68,12 @@ function createMessageHandlers(network, starCoin, options = {}) {
         const latestBlockHeld = starCoin.getLatestBlock();
 
         if (latestBlockReceived.index > latestBlockHeld.index) {
-            console.log(`📥 收到更长的链，长度: ${chain.length}，当前链长度: ${starCoin.chain.length}`);
+            log.info('收到更长的链', { length: chain.length, currentLength: starCoin.chain.length });
 
             if (latestBlockHeld.hash === latestBlockReceived.previousHash) {
                 if (starCoin.addBlock(latestBlockReceived)) {
                     if (!starCoin.isChainValid()) {
-                        console.warn('🔧 [P2P] 添加区块后链状态无效，自动修复...');
+                        log.warn('添加区块后链状态无效，自动修复');
                         starCoin.repairChain();
                     }
                     broadcastLatest();
@@ -78,17 +81,17 @@ function createMessageHandlers(network, starCoin, options = {}) {
                     if (options.onChainChange) options.onChainChange();
                 }
             } else if (chain.length === 1) {
-                console.log('📥 收到创世区块');
+                log.info('收到创世区块');
             } else {
-                console.log('🔄 需要替换整个链，正在验证...');
+                log.info('需要替换整个链，正在验证');
                 if (!starCoin.isChainValid(chain)) {
-                    console.log('❌ 收到的链无效，拒绝替换');
+                    log.warn('收到的链无效，拒绝替换');
                     return;
                 }
                 if (starCoin.replaceChain(chain)) {
-                    console.log('✅ 已替换为更长的链，新长度: ' + starCoin.chain.length);
+                    log.info('已替换为更长的链', { newLength: starCoin.chain.length });
                     if (!starCoin.isChainValid()) {
-                        console.warn('🔧 [P2P] 替换链后状态无效，自动修复...');
+                        log.warn('替换链后状态无效，自动修复');
                         starCoin.repairChain();
                     }
                     broadcastLatest();
@@ -97,7 +100,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
                 }
             }
         } else {
-            console.log(`📥 收到的链不更长（${chain.length} vs ${starCoin.chain.length}），忽略`);
+            log.info('收到的链不更长，忽略', { received: chain.length, current: starCoin.chain.length });
         }
     }
 
@@ -106,7 +109,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
 
         if (block.index <= latestBlockHeld.index) {
             if (block.index === latestBlockHeld.index && !starCoin.isChainValid()) {
-                console.warn('🔧 [P2P] 收到同索引区块且本地链无效，自动修复...');
+                log.warn('收到同索引区块且本地链无效，自动修复');
                 starCoin.repairChain();
             }
             return;
@@ -115,7 +118,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
         if (latestBlockHeld.hash === block.previousHash) {
             if (starCoin.addBlock(block)) {
                 if (!starCoin.isChainValid()) {
-                    console.warn('🔧 [P2P handleBlockResponse] 添加区块后链无效，自动修复...');
+                    log.warn('添加区块后链无效，自动修复');
                     starCoin.repairChain();
                 }
                 broadcastLatest();
@@ -123,7 +126,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
                 if (options.onChainChange) options.onChainChange();
             }
         } else {
-            console.log('🔄 需要查询完整链');
+            log.info('需要查询完整链');
             broadcastQueryAll();
         }
     }
@@ -131,23 +134,23 @@ function createMessageHandlers(network, starCoin, options = {}) {
     function handleNodeInfo(node) {
         if (node.url !== network.nodeInfo.url) {
             network.nodes.add(node.url);
-            console.log(`📝 发现新节点: ${node.url}`);
+            log.info('发现新节点', { url: node.url });
         }
     }
 
     // 交易池处理（基础桩方法，可被上层 p2p.js 覆盖）
 
     function handleTransaction(transaction, fromNode) {
-        console.log(`📥 [交易] 收到来自 ${fromNode || '某节点'} 的交易: ${transaction.id || 'unknown'}`);
+        log.info('收到交易', { fromNode, txId: transaction.id });
     }
 
     function handlePendingTxs(transactions, fromNode) {
         if (!Array.isArray(transactions) || transactions.length === 0) return;
-        console.log(`📥 [交易池] 收到来自 ${fromNode || '某节点'} 的 ${transactions.length} 笔待打包交易`);
+        log.info('收到待打包交易列表', { fromNode, count: transactions.length });
     }
 
     function handleQueryPendingTxs(ws, fromNode) {
-        console.log(`📥 [交易池] 收到来自 ${fromNode || '某节点'} 的交易池请求`);
+        log.info('收到交易池请求', { fromNode });
     }
 
     // 消息路由分发（NODE_LIST 由上层 p2p.js 扩展）
@@ -183,7 +186,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
                 });
                 break;
             case MESSAGE_TYPES.SYNC_REQUEST:
-                console.log(`🔄 收到来自 ${message.fromNode || '某节点'} 的同步请求，发送完整链`);
+                log.info('收到同步请求，发送完整链', { fromNode: message.fromNode });
                 network.sendMessage(ws, {
                     type: MESSAGE_TYPES.CHAIN,
                     chain: starCoin.chain,
