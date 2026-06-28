@@ -108,8 +108,8 @@ const config = {
     CURRENCY_MINING_REWARD: 'STC',
     /** cBTC / cETH 在创世后的初始空投金额（可用于演示） */
     TOKEN_INITIAL_AIRDROP: {
-        cBTC: float(process.env.TOKEN_INITIAL_AIRDROP_CBTC, 100),
-        cETH: float(process.env.TOKEN_INITIAL_AIRDROP_CETH, 500)
+        cBTC: float(process.env.TOKEN_INITIAL_AIRDROP_CBTC, 0.1),
+        cETH: float(process.env.TOKEN_INITIAL_AIRDROP_CETH, 5.0)
     },
 
     // ======== API 限流配置 ========

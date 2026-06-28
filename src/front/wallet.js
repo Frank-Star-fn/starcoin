@@ -287,8 +287,8 @@ async function requestAirdrop(currency) {
     const msgEl = document.getElementById('airdropMessage');
     if (!msgEl) return;
 
-    const defaultAmounts = { cBTC: 100, cETH: 500 };
-    const amount = defaultAmounts[currency] || 100;
+    const defaultAmounts = { cBTC: 0.01, cETH: 0.5 };
+    const amount = defaultAmounts[currency] || 0.01;
 
     msgEl.textContent = `⏳ 正在领取 ${amount} ${currency} ...`;
     msgEl.style.color = '#fbbf24';

@@ -87,7 +87,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
         if (!cur || cur === 'STC') {
             throw new AppError(400, 'currency 仅支持 cBTC 或 cETH', 'INVALID_CURRENCY');
         }
-        const amt = parseFloat(amount) || 100;
+        const amt = parseFloat(amount) || 0.01;
         if (amt <= 0) throw new AppError(400, 'amount 必须大于 0', 'INVALID_AMOUNT');
 
         // 构造 SYSTEM 交易（无需签名）
