@@ -85,6 +85,71 @@ function removeWallet(index) {
     saveWallets();
 }
 
+/**
+ * 重命名钱包：内联编辑钱包标签
+ */
+function renameWallet(index) {
+    const w = state.wallets[index];
+    if (!w) return;
+
+    // 找到对应的 wallet-item 元素中的 label 区域
+    const walletItems = document.querySelectorAll('#walletList .wallet-item');
+    const walletItem = walletItems[index];
+    if (!walletItem) return;
+
+    const labelEl = walletItem.querySelector('.wallet-label');
+    if (!labelEl) return;
+
+    const originalName = w.label;
+
+    // 创建输入框替换 label 文本
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = originalName;
+    input.className = 'rename-input';
+    input.style.cssText = 'width:100%; padding:4px 6px; font-size:13px; border:1px solid #60a5fa; border-radius:4px; background:rgba(96,165,250,0.1); color:#fff; outline:none; box-sizing:border-box;';
+
+    labelEl.textContent = '';
+    labelEl.appendChild(input);
+    input.focus();
+    input.select();
+
+    function confirmRename() {
+        const newName = input.value.trim();
+        if (newName && newName !== originalName) {
+            state.wallets[index].label = newName;
+            saveWallets();
+            renderWallets();
+            renderTransfer();
+        } else if (!newName) {
+            // 名称为空则恢复原名，不触发刷新
+            labelEl.textContent = originalName;
+        } else {
+            labelEl.textContent = originalName;
+        }
+    }
+
+    function cancelRename() {
+        labelEl.textContent = originalName;
+    }
+
+    input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            confirmRename();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelRename();
+        }
+    });
+
+    input.addEventListener('blur', () => {
+        // 延迟确认，避免点击其他按钮时触发的 blur 与按钮 click 冲突
+        setTimeout(confirmRename, 180);
+    });
+}
+
 function copySelectedAddress() {
     const w = state.wallets[state.selectedWallet];
     if (!w) return;
@@ -189,6 +254,7 @@ async function renderWallets() {
                     <button class="secondary small" onclick="event.stopPropagation(); exportPrivateKey(${i})">🔑 导出私钥</button>
                     <button class="secondary small" onclick="event.stopPropagation(); copyWalletAddress(${i})">复制地址</button>
                     <button class="secondary small" onclick="event.stopPropagation(); setAsReceiver(${i})">设为接收方</button>
+                    <button class="secondary small" onclick="event.stopPropagation(); renameWallet(${i})">✏️ 重命名</button>
                     <button class="danger small" onclick="event.stopPropagation(); removeWallet(${i})">删除</button>
                 </div>
             </div>
