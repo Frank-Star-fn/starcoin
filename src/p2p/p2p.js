@@ -1,4 +1,5 @@
 const WebSocket = require('ws');
+const config = require('../config');
 const { createP2PCore, MESSAGE_TYPES } = require('./p2p-core');
 const { createMessageHandlers } = require('./p2p-message-handlers');
 const { createDiscoveryModule } = require('./p2p-discovery');
@@ -168,7 +169,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
                 console.log('⏱️  [同步] 超时，用已收到的候选进行解析');
                 resolveSyncCandidates();
             }
-        }, 10000);
+        }, config.SYNC_TIMEOUT);
 
         return {
             success: true,
@@ -403,8 +404,8 @@ function createP2P(server, starCoin, PORT, options = {}) {
         return { status: 'healthy', chainLength: starCoin.chain.length };
     }
 
-    // 启动定期健康检查（默认每 30 秒）
-    function startHealthCheck(intervalMs = 30000) {
+    // 启动定期健康检查
+    function startHealthCheck(intervalMs = config.SYNC_HEALTH_CHECK_INTERVAL) {
         if (healthCheckTimer) return;
         console.log(`🏥 [健康检查] 已启动（间隔: ${intervalMs / 1000}秒）`);
         healthCheckTimer = setInterval(() => {

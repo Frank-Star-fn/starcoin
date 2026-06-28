@@ -1,26 +1,28 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const config = require('./config');
 const { Block, Transaction, generateWallet, importWalletFromPem } = require('./core');
 const { ChainSync } = require('./chain-sync');
 const { DifficultyManager } = require('./difficulty-manager');
 
 class Blockchain {
     constructor(portOverride) {
-        const PORT = process.env.PORT || 3000;
+        const PORT = portOverride || config.PORT;
         this.diffManager = new DifficultyManager({
-            targetBlockTime: 12,
-            difficultyAdjustInterval: 6,
-            difficultyMin: 3,
-            difficultyMax: 12,
-            difficultyStep: 0.1
+            initialDifficulty: config.DIFFICULTY_INITIAL,
+            targetBlockTime: config.DIFFICULTY_TARGET_TIME,
+            difficultyAdjustInterval: config.DIFFICULTY_ADJUST_INTERVAL,
+            difficultyMin: config.DIFFICULTY_MIN,
+            difficultyMax: config.DIFFICULTY_MAX,
+            difficultyStep: config.DIFFICULTY_STEP
         });
         this.pendingTransactions = [];  // 交易池 (Mempool)
-        this.miningReward = 50;          // 挖矿奖励
-        this.coinbaseMaturity = 5;       // 矿工奖励锁定期（块数），成熟后才能使用
-        this.miningAddress = 'MINER_' + (portOverride || PORT);
+        this.miningReward = config.MINING_REWARD;
+        this.coinbaseMaturity = config.MINING_COINBASE_MATURITY;
+        this.miningAddress = 'MINER_' + PORT;
         this.chain = [this.createGenesisBlock()]; // 先初始化创世区块
-        this.dataFile = path.join(__dirname, '..', 'data', `blockchain_${portOverride || PORT}.json`);
+        this.dataFile = path.join(__dirname, '..', 'data', `blockchain_${PORT}.json`);
         this.sync = new ChainSync(this); // 必须在 loadFromFile 前初始化（isChainValid 委托给 sync）
         // freshStart: 是否未从本地加载到数据（全新节点），用于启动时优先从其他节点同步
         this.freshStart = !this.loadFromFile();
@@ -186,7 +188,7 @@ class Blockchain {
     mineBlock(minerAddress, blockDataText) {
         // 准备要打包的交易：按手续费降序排序，优先打包手续费最高的交易
         const sortedTxs = [...this.pendingTransactions].sort((a, b) => (b.fee || 0) - (a.fee || 0));
-        const txsToInclude = sortedTxs.slice(0, 100); // 最多100笔/区块
+        const txsToInclude = sortedTxs.slice(0, config.MINING_MAX_TXS_PER_BLOCK);
         // 如果没有交易，也允许只写一条备注文本（兼容旧接口）
         if (blockDataText && blockDataText.trim()) {
             txsToInclude.push(new Transaction('', 'NOTE', 0, 0, blockDataText.trim()));
@@ -227,7 +229,7 @@ class Blockchain {
     async mineBlockAsync(minerAddress, blockDataText, onProgress, externalAbortCheck) {
         // 按手续费降序排序，优先打包手续费最高的交易
         const sortedTxs = [...this.pendingTransactions].sort((a, b) => (b.fee || 0) - (a.fee || 0));
-        const txsToInclude = sortedTxs.slice(0, 100);
+        const txsToInclude = sortedTxs.slice(0, config.MINING_MAX_TXS_PER_BLOCK);
         if (blockDataText && blockDataText.trim()) {
             txsToInclude.push(new Transaction('', 'NOTE', 0, 0, blockDataText.trim()));
         }
@@ -539,7 +541,7 @@ class Blockchain {
                 fs.unlinkSync(this.dataFile);
             }
             this.chain = [this.createGenesisBlock()];
-            this.difficulty = 5;
+            this.difficulty = config.DIFFICULTY_INITIAL;
             this.lastAdjustmentBlock = 0;
             this.difficultyHistory = [];
             return true;

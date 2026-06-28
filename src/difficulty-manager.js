@@ -6,25 +6,27 @@
  * - 使用链上区块时间戳而非本地挖矿计时，确保全网共识
  * - 支持浮点难度（如 5.5 = 5个零 + 下字节≤0x7f）
  */
+const config = require('./config');
+
 class DifficultyManager {
     /**
      * @param {Object} options
-     * @param {number} [options.initialDifficulty=5] 初始难度
-     * @param {number} [options.targetBlockTime=12]  目标出块时间（秒）
-     * @param {number} [options.difficultyAdjustInterval=6] 每 N 个区块调整一次
-     * @param {number} [options.difficultyMin=3]    最小难度
-     * @param {number} [options.difficultyMax=12]   最大难度
-     * @param {number} [options.difficultyStep=0.1] 调整步长
-     * @param {number} [options.lastAdjustmentBlock=0] 上次调整时的区块高度
-     * @param {Array}  [options.difficultyHistory=[]]   难度变更历史
+     * @param {number} [options.initialDifficulty] 初始难度（默认取自 config.js）
+     * @param {number} [options.targetBlockTime]   目标出块时间（秒，默认取自 config.js）
+     * @param {number} [options.difficultyAdjustInterval] 每 N 个区块调整一次（默认取自 config.js）
+     * @param {number} [options.difficultyMin]     最小难度（默认取自 config.js）
+     * @param {number} [options.difficultyMax]     最大难度（默认取自 config.js）
+     * @param {number} [options.difficultyStep]    调整步长（默认取自 config.js）
+     * @param {number} [options.lastAdjustmentBlock] 上次调整时的区块高度
+     * @param {Array}  [options.difficultyHistory]     难度变更历史
      */
     constructor(options = {}) {
-        this.difficulty = options.initialDifficulty ?? 5;
-        this.targetBlockTime = options.targetBlockTime ?? 12;
-        this.difficultyAdjustInterval = options.difficultyAdjustInterval ?? 6;
-        this.difficultyMin = options.difficultyMin ?? 3;
-        this.difficultyMax = options.difficultyMax ?? 12;
-        this.difficultyStep = options.difficultyStep ?? 0.1;
+        this.difficulty = options.initialDifficulty ?? config.DIFFICULTY_INITIAL;
+        this.targetBlockTime = options.targetBlockTime ?? config.DIFFICULTY_TARGET_TIME;
+        this.difficultyAdjustInterval = options.difficultyAdjustInterval ?? config.DIFFICULTY_ADJUST_INTERVAL;
+        this.difficultyMin = options.difficultyMin ?? config.DIFFICULTY_MIN;
+        this.difficultyMax = options.difficultyMax ?? config.DIFFICULTY_MAX;
+        this.difficultyStep = options.difficultyStep ?? config.DIFFICULTY_STEP;
         this.lastAdjustmentBlock = options.lastAdjustmentBlock ?? 0;
         this.difficultyHistory = options.difficultyHistory ?? [];
     }

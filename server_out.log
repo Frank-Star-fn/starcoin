@@ -1,0 +1,6 @@
+📂 已从本地文件加载区块链: C:\myfile\program\btc\starcoin\data\blockchain_3000.json (126 个区块, 难度=5.8) ✓
+🚀 StarCoin 服务器运行在 http://localhost:3000
+📊 初始区块链已创建，包含 126 个区块
+🆔 节点ID: node_3000_m6l1h7q3f
+🔍 [自动发现] 已启动（间隔: 30秒, 最大节点数: 20）
+🏥 [健康检查] 已启动（间隔: 30秒）

@@ -1,4 +1,5 @@
 const WebSocket = require('ws');
+const config = require('../config');
 
 /**
  * 创建 P2P 自动节点发现模块
@@ -18,10 +19,10 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
     const pendingNodes = new Set();      // 待连接节点队列（去重）
     const connectingNodes = new Set();   // 正在连接中的节点 URL
     const discoveryConfig = {
-        interval: 30000,                 // 发现间隔（毫秒）
-        maxPeers: 20,                    // 最大对等节点数
-        maxConnectPerRound: 3,           // 每轮最大尝试连接数
-        enabled: true                    // 是否启用自动发现
+        interval: config.P2P_DISCOVERY_INTERVAL,
+        maxPeers: config.P2P_DISCOVERY_MAX_PEERS,
+        maxConnectPerRound: config.P2P_DISCOVERY_MAX_PER_ROUND,
+        enabled: true
     };
     let discoveryTimer = null;           // 定时器句柄
     let isDiscovering = false;           // 是否正在发现中

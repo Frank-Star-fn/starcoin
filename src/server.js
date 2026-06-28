@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const http = require('http');
 const WebSocket = require('ws');
+const config = require('./config');
 const { Blockchain, Block, Transaction, generateWallet, importWalletFromPem } = require('./blockchain');
 const { createP2P } = require('./p2p/p2p');
 const createRoutes = require('./routes');
@@ -11,7 +12,7 @@ const {
 } = require('./routes/error-handler');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = config.PORT;
 
 // 初始化区块链
 const starCoin = new Blockchain();
@@ -93,12 +94,9 @@ server.listen(PORT, () => {
     console.log(`🆔 节点ID: ${p2p.nodeInfo.id}`);
 
     // ---------- 种子节点发现与启动同步 ----------
-    // 从环境变量 SEED_PEERS 获取种子节点列表（逗号分隔），
+    // 从配置 SEED_PEERS 获取种子节点列表（逗号分隔），
     // 例如: SEED_PEERS="ws://localhost:3000,ws://localhost:3001"
-    const seedPeers = (process.env.SEED_PEERS || '')
-        .split(',')
-        .map(s => s.trim())
-        .filter(Boolean);
+    const seedPeers = [...config.SEED_PEERS];
 
     // 如果是全新启动（无本地数据），优先从其他节点获取链
     if (starCoin.freshStart) {
@@ -107,7 +105,7 @@ server.listen(PORT, () => {
             // 未配置 SEED_PEERS 时，默认尝试连接其他常见端口
             const commonPorts = ['3000', '3001', '3002', '3003', '3004'];
             for (const p of commonPorts) {
-                if (p !== PORT) {
+                if (p !== String(PORT)) {
                     seedPeers.push(`ws://localhost:${p}`);
                 }
             }
@@ -116,7 +114,7 @@ server.listen(PORT, () => {
         // 有本地数据，但仍尝试连接已配置的种子节点
         if (seedPeers.length === 0) {
             // 如果本地有数据且非 3000 端口，默认尝试连接 3000 同步
-            if (PORT !== '3000') {
+            if (PORT !== 3000) {
                 seedPeers.push('ws://localhost:3000');
             }
         }
@@ -148,13 +146,13 @@ server.listen(PORT, () => {
                         } else {
                             console.log(`✅ 已从其他节点同步区块链，当前链长度: ${starCoin.chain.length}`);
                         }
-                    }, 12000); // 等待同步超时 + 缓冲
+                    }, config.SYNC_TIMEOUT + 2000); // 等待同步超时 + 缓冲
                 }
             }, syncDelay);
-        }, 1500);
+        }, config.SYNC_STARTUP_CONNECT_DELAY);
     } else {
         // 没有种子节点，仅对非 3000 节点保持向后兼容
-        if (PORT !== '3000') {
+        if (PORT !== 3000) {
             setTimeout(() => {
                 p2p.connectToPeer('ws://localhost:3000');
                 setTimeout(() => {
@@ -165,13 +163,13 @@ server.listen(PORT, () => {
         }
     }
 
-    // 每 60 秒自动同步一次
+    // 定期自动同步
     setInterval(() => {
         if (p2p.getConnectedCount() > 0) {
             console.log('⏰ 定期自动同步...');
             p2p.syncWithPeers();
         }
-    }, 60000);
+    }, config.SYNC_INTERVAL);
 });
 
 // 导出用于测试

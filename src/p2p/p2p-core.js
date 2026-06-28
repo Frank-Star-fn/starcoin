@@ -1,4 +1,5 @@
 const WebSocket = require('ws');
+const config = require('../config');
 
 // 消息类型
 const MESSAGE_TYPES = {
@@ -19,15 +20,15 @@ const MESSAGE_TYPES = {
     PENDING_TXS: 'PENDING_TXS'
 };
 
-// ========== 重连管理器配置 ==========
-const RECONNECT_BASE_DELAY = 1000;    // 初始延迟 1 秒
-const RECONNECT_MAX_DELAY  = 30000;   // 最大延迟 30 秒
-const RECONNECT_MAX_RETRIES = 50;     // 最大重试次数（50 次≈约 15 分钟持续重连后放弃）
-const RECONNECT_JITTER = 0.3;         // 抖动 ±30%
+// ========== 重连管理器配置（来自 config.js） ==========
+const RECONNECT_BASE_DELAY = config.P2P_RECONNECT_BASE_DELAY;
+const RECONNECT_MAX_DELAY  = config.P2P_RECONNECT_MAX_DELAY;
+const RECONNECT_MAX_RETRIES = config.P2P_RECONNECT_MAX_RETRIES;
+const RECONNECT_JITTER = config.P2P_RECONNECT_JITTER;
 
-// ========== 心跳配置 ==========
-const HEARTBEAT_INTERVAL = 15000;     // 每 15 秒发送一次 PING
-const HEARTBEAT_TIMEOUT  = 6000;      // 6 秒内未收到 PONG 视为超时
+// ========== 心跳配置（来自 config.js） ==========
+const HEARTBEAT_INTERVAL = config.P2P_HEARTBEAT_INTERVAL;
+const HEARTBEAT_TIMEOUT  = config.P2P_HEARTBEAT_TIMEOUT;
 
 /**
  * 创建 P2P 核心网络层
