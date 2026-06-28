@@ -402,3 +402,191 @@ async function importPrivateKey() {
         if (btn) { btn.disabled = false; btn.textContent = '✅ 导入'; }
     }
 }
+
+/* ============================================================
+   助记词生成：调用后端生成新钱包 + BIP39 助记词
+   ============================================================ */
+
+/**
+ * 请求后端生成带 BIP39 助记词的钱包，
+ * 加密私钥和助记词后加入列表，并显示助记词对话框
+ */
+async function generateWalletWithMnemonic() {
+    try {
+        const data = await api('/api/wallet/new-with-mnemonic', 'POST');
+        if (!data.wallet || !data.mnemonic) throw new Error('生成失败');
+
+        // 加密私钥
+        const encrypted = await encryptPrivateKey(data.wallet.privateKey);
+        // 加密助记词（复用 AES-GCM，将助记词当作普通字符串加密）
+        const encryptedMnemonic = await encryptPrivateKey(data.mnemonic);
+
+        const w = {
+            label: '钱包 #' + (state.wallets.length + 1),
+            encryptedPrivateKey: encrypted,
+            encryptedMnemonic: encryptedMnemonic,
+            publicKey: data.wallet.publicKey,
+            address: data.wallet.address
+        };
+        state.wallets.push(w);
+        state.selectedWallet = state.wallets.length - 1; // 自动选中新钱包
+        renderWallets();
+        renderTransfer();
+        saveWallets();
+        await refreshAll();
+
+        // 显示助记词对话框
+        showMnemonicDisplay(data.mnemonic);
+
+        showMessage('txMessage', '✅ 新钱包已生成（含 BIP39 助记词）：' + shortAddr(w.address, 16), 'success', 5000);
+
+        // 强制备份
+        showForceBackupDialog(state.wallets.length - 1);
+    } catch (err) {
+        showMessage('txMessage', '❌ 生成助记词钱包失败：' + err.message, 'error');
+    }
+}
+
+/* ============================================================
+   助记词对话框显隐控制
+   ============================================================ */
+
+/** 显示助记词显示对话框并填入内容 */
+function showMnemonicDisplay(mnemonicText) {
+    const dialog = document.getElementById('mnemonicDisplayDialog');
+    const wordsEl = document.getElementById('mnemonicWords');
+    if (wordsEl) wordsEl.textContent = mnemonicText;
+    if (dialog) dialog.style.display = 'block';
+}
+
+/** 隐藏助记词显示对话框 */
+function hideMnemonicDisplayDialog() {
+    const dialog = document.getElementById('mnemonicDisplayDialog');
+    if (dialog) dialog.style.display = 'none';
+}
+
+/** 显示导入助记词对话框 */
+function showImportMnemonicDialog() {
+    const dialog = document.getElementById('importMnemonicDialog');
+    if (dialog) {
+        dialog.style.display = 'block';
+        // 清空上次输入和消息
+        const input = document.getElementById('importMnemonicInput');
+        if (input) input.value = '';
+        const msg = document.getElementById('importMnemonicMessage');
+        if (msg) { msg.className = 'message'; msg.textContent = ''; }
+        const btn = document.getElementById('importMnemonicBtn');
+        if (btn) { btn.disabled = false; btn.textContent = '✅ 导入助记词'; }
+    }
+}
+
+/** 隐藏导入助记词对话框 */
+function hideImportMnemonicDialog() {
+    const dialog = document.getElementById('importMnemonicDialog');
+    if (dialog) dialog.style.display = 'none';
+}
+
+/** 复制助记词到剪贴板 */
+function copyMnemonicToClipboard() {
+    const wordsEl = document.getElementById('mnemonicWords');
+    if (!wordsEl || !wordsEl.textContent) return;
+    navigator.clipboard.writeText(wordsEl.textContent).then(() => {
+        showMessage('txMessage', '📋 助记词已复制到剪贴板', 'success', 1500);
+    });
+}
+
+/* ============================================================
+   显示当前选中钱包的助记词（从 encryptedMnemonic 解密）
+   ============================================================ */
+
+/**
+ * 解密当前选中钱包的助记词并展示在对话框中
+ * 如果该钱包不是通过助记词生成的，提示用户
+ */
+async function showMnemonic() {
+    const w = state.wallets[state.selectedWallet];
+    if (!w) {
+        showMessage('txMessage', '❌ 请先选择一个钱包', 'error');
+        return;
+    }
+    if (!w.encryptedMnemonic) {
+        showMessage('txMessage', '⚠️ 该钱包不是通过助记词生成的，无法显示助记词', 'warning', 4000);
+        return;
+    }
+    try {
+        const masterKey = await getOrCreateMasterKey();
+        const mnemonicText = await decryptPrivateKey(w.encryptedMnemonic, masterKey);
+        showMnemonicDisplay(mnemonicText);
+    } catch (err) {
+        showMessage('txMessage', '❌ 解密助记词失败：' + err.message, 'error');
+    }
+}
+
+/* ============================================================
+   从 BIP39 助记词导入钱包
+   ============================================================ */
+
+/**
+ * 从助记词导入钱包，加密存储后加入列表
+ */
+async function importWalletFromMnemonic() {
+    const btn = document.getElementById('importMnemonicBtn');
+    const input = document.getElementById('importMnemonicInput');
+    const msgEl = document.getElementById('importMnemonicMessage');
+
+    const mnemonicText = input ? input.value.trim() : '';
+    if (!mnemonicText) {
+        if (msgEl) { msgEl.className = 'message error'; msgEl.textContent = '❌ 请粘贴助记词'; }
+        return;
+    }
+
+    if (btn) {
+        btn.disabled = true;
+        btn.textContent = '⏳ 验证中...';
+    }
+    if (msgEl) { msgEl.className = 'message info'; msgEl.textContent = '🔑 正在验证助记词...'; }
+
+    try {
+        const result = await api('/api/wallet/import-mnemonic', 'POST', { mnemonic: mnemonicText });
+
+        if (result.success) {
+            const w = result.wallet;
+            // 检查是否已存在相同地址的钱包
+            const exists = state.wallets.some(ex => ex.address === w.address);
+            if (exists) {
+                if (msgEl) { msgEl.className = 'message error'; msgEl.textContent = '⚠️ 该助记词对应的钱包已存在，无需重复导入'; }
+                if (btn) { btn.disabled = false; btn.textContent = '✅ 导入助记词'; }
+                return;
+            }
+
+            // 加密私钥
+            const encrypted = await encryptPrivateKey(w.privateKey);
+            // 加密助记词原文（规范化后的）
+            const normalizedMnemonic = mnemonicText.trim().replace(/\s+/g, ' ').toLowerCase();
+            const encryptedMnemonic = await encryptPrivateKey(normalizedMnemonic);
+
+            // 添加到钱包列表
+            const walletEntry = {
+                label: '钱包 #' + (state.wallets.length + 1) + '（助记词导入）',
+                encryptedPrivateKey: encrypted,
+                encryptedMnemonic: encryptedMnemonic,
+                publicKey: w.publicKey,
+                address: w.address
+            };
+            state.wallets.push(walletEntry);
+            state.selectedWallet = state.wallets.length - 1;
+            renderWallets();
+            renderTransfer();
+            saveWallets();
+            hideImportMnemonicDialog();
+            showMessage('txMessage', `✅ 助记词导入成功！地址: ${shortAddr(w.address, 20)}`, 'success', 5000);
+            await refreshAll();
+        } else {
+            if (msgEl) { msgEl.className = 'message error'; msgEl.textContent = '❌ ' + (result.error || '导入失败'); }
+            if (btn) { btn.disabled = false; btn.textContent = '✅ 导入助记词'; }
+        }
+    } catch (err) {
+        if (msgEl) { msgEl.className = 'message error'; msgEl.textContent = '❌ 导入失败: ' + err.message; }
+        if (btn) { btn.disabled = false; btn.textContent = '✅ 导入助记词'; }
+    }
+}
