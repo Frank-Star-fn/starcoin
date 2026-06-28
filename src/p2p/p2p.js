@@ -1,11 +1,13 @@
 const WebSocket = require('ws');
 const { createP2PCore, MESSAGE_TYPES } = require('./p2p-core');
+const { createMessageHandlers } = require('./p2p-message-handlers');
+const { createDiscoveryModule } = require('./p2p-discovery');
 
 /**
  * 创建完整的 P2P 网络层（核心层 + 发现 + 同步）
  * - 核心网络通信由 p2p-core.js 提供
- * - 自动节点发现：定期向已连接节点请求节点列表，尝试连接新节点
- * - 链同步：向所有节点请求完整链，汇聚候选后择优替换
+ * - 消息业务逻辑由 p2p-message-handlers.js 提供
+ * - 本层负责：自动节点发现、链同步汇聚、交易池广播、链健康检查
  *
  * @param {http.Server} server - HTTP 服务器实例
  * @param {Blockchain} starCoin - 区块链实例
@@ -14,8 +16,28 @@ const { createP2PCore, MESSAGE_TYPES } = require('./p2p-core');
  * @param {function} [options.onChainChange] - 链数据变化时的回调（用于前端 WebSocket 推送）
  */
 function createP2P(server, starCoin, PORT, options = {}) {
-    // 1. 创建核心层，传递 onChainChange 回调
+    // 1. 创建核心层（网络基础设施）
     const core = createP2PCore(server, starCoin, PORT, options);
+
+    // 2. 创建消息处理器层（区块链业务逻辑）
+    //    将网络基础设施以依赖注入方式传入，实现单向解耦
+    const handlers = createMessageHandlers({
+        sendMessage: core.sendMessage,
+        broadcast: core.broadcast,
+        nodeInfo: core.nodeInfo,
+        nodes: core.nodes,
+        pendingPongs: core.pendingPongs
+    }, starCoin, options);
+
+    // 3. 创建节点发现模块（独立于区块链业务逻辑）
+    //    - 管理待连接节点队列，周期性扫描网络
+    //    - 只依赖 core（网络基础设施），不依赖 starCoin
+    const discovery = createDiscoveryModule(core, MESSAGE_TYPES);
+
+    // 4. 将消息处理器注册到网络层
+    //    此后 connectToPeer 和 wss.on('connection') 中的 ws.on('message')
+    //    会自动调用 handlers.handleMessage
+    core.setHandler(handlers.handleMessage);
 
     // ========== 同步状态 ==========
     const syncState = {
@@ -26,225 +48,6 @@ function createP2P(server, starCoin, PORT, options = {}) {
         expectedCount: 0,
         resolved: false
     };
-
-    // ========== 自动发现状态 ==========
-    const pendingNodes = new Set();      // 待连接节点队列（去重）
-    const connectingNodes = new Set();   // 正在连接中的节点 URL
-    const discoveryConfig = {
-        interval: 30000,                 // 发现间隔（毫秒）
-        maxPeers: 20,                    // 最大对等节点数
-        maxConnectPerRound: 3,           // 每轮最大尝试连接数
-        enabled: true                    // 是否启用自动发现
-    };
-    let discoveryTimer = null;           // 定时器句柄
-    let isDiscovering = false;           // 是否正在发现中
-
-    // ========== 自动节点发现 ==========
-
-    // 处理从其他节点发现的节点 URL，加入待连接队列
-    function handleDiscoveredNodes(discoveredNodes, fromNode) {
-        if (!Array.isArray(discoveredNodes) || discoveredNodes.length === 0) return;
-
-        let newCount = 0;
-        for (const nodeUrl of discoveredNodes) {
-            // 跳过自身、已连接、正在连接、已在队列中的节点
-            if (nodeUrl === core.nodeInfo.url) continue;
-            if (core.nodes.has(nodeUrl)) continue;
-            if (connectingNodes.has(nodeUrl)) continue;
-            if (pendingNodes.has(nodeUrl)) continue;
-
-            pendingNodes.add(nodeUrl);
-            newCount++;
-        }
-
-        if (newCount > 0) {
-            console.log(`🔍 从 ${fromNode || '某节点'} 发现 ${newCount} 个新节点，待连接队列: ${pendingNodes.size}`);
-        }
-    }
-
-    // 向所有已连接节点广播节点列表请求
-    function requestNodeLists() {
-        if (isDiscovering) return;
-        if (!discoveryConfig.enabled) return;
-
-        const connectedCount = core.nodeConnections.size +
-            Array.from(core.wss.clients).filter(c => c.readyState === WebSocket.OPEN).length;
-
-        if (connectedCount === 0) {
-            return;
-        }
-
-        isDiscovering = true;
-        console.log(`🔍 [发现] 正在向 ${connectedCount} 个已连接节点请求节点列表...`);
-
-        const requestMsg = {
-            type: MESSAGE_TYPES.NODE_LIST_REQUEST,
-            fromNode: core.nodeInfo.url
-        };
-
-        core.wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN) {
-                core.sendMessage(client, requestMsg);
-            }
-        });
-        core.nodeConnections.forEach((conn) => {
-            if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
-                core.sendMessage(conn.ws, requestMsg);
-            }
-        });
-
-        // 给节点一些时间响应，然后尝试连接待连接节点
-        setTimeout(() => {
-            tryConnectPendingNodes();
-            isDiscovering = false;
-        }, 5000);
-    }
-
-    // 尝试连接待连接队列中的节点
-    function tryConnectPendingNodes() {
-        if (pendingNodes.size === 0) return;
-        if (!discoveryConfig.enabled) return;
-
-        const currentPeers = core.nodes.size;
-        if (currentPeers >= discoveryConfig.maxPeers) {
-            console.log(`🔍 [发现] 已达到最大连接数 (${discoveryConfig.maxPeers})，清空待连接队列`);
-            pendingNodes.clear();
-            return;
-        }
-
-        const canConnect = Math.min(
-            discoveryConfig.maxConnectPerRound,
-            discoveryConfig.maxPeers - currentPeers,
-            pendingNodes.size
-        );
-
-        if (canConnect === 0) return;
-        console.log(`🔍 [发现] 正在尝试连接 ${canConnect}/${pendingNodes.size} 个待连接节点...`);
-
-        const toConnect = [];
-        for (const nodeUrl of pendingNodes) {
-            if (toConnect.length >= canConnect) break;
-            pendingNodes.delete(nodeUrl);
-            connectingNodes.add(nodeUrl);
-            toConnect.push(nodeUrl);
-        }
-
-        for (const nodeUrl of toConnect) {
-            _autoConnect(nodeUrl);
-        }
-    }
-
-    // 自动连接单个节点（与手动 connectToPeer 逻辑类似，但管理 connectingNodes）
-    // 带自动重连 + 心跳保活
-    function _autoConnect(nodeUrl) {
-        if (core.nodes.has(nodeUrl) || nodeUrl === core.nodeInfo.url) {
-            connectingNodes.delete(nodeUrl);
-            return;
-        }
-
-        // 初始化重连状态
-        core.reconnect.init(nodeUrl);
-
-        const ws = new WebSocket(nodeUrl);
-        const connectionId = `auto_${Math.random().toString(36).substr(2, 9)}`;
-
-        ws.on('open', () => {
-            console.log(`🔗 [自动发现] 已连接到: ${nodeUrl}`);
-            core.nodes.add(nodeUrl);
-            connectingNodes.delete(nodeUrl);
-
-            // 连接成功 → 清除重连状态
-            core.reconnect.clear(nodeUrl);
-
-            core.sendMessage(ws, {
-                type: MESSAGE_TYPES.NODE_INFO,
-                node: core.nodeInfo
-            });
-            // 连接后立即请求对方的节点列表
-            core.sendMessage(ws, {
-                type: MESSAGE_TYPES.NODE_LIST_REQUEST,
-                fromNode: core.nodeInfo.url
-            });
-            core.sendMessage(ws, {
-                type: MESSAGE_TYPES.QUERY_LATEST
-            });
-            // 连接后立即请求对方的待打包交易
-            core.sendMessage(ws, {
-                type: MESSAGE_TYPES.QUERY_PENDING_TXS,
-                fromNode: core.nodeInfo.url
-            });
-
-            core.nodeConnections.set(connectionId, { ws, id: connectionId, url: nodeUrl });
-
-            // 启动心跳保活
-            core.heartbeat.start(ws, nodeUrl, connectionId);
-        });
-
-        ws.on('message', (message) => {
-            core.handleMessage(ws, JSON.parse(message), connectionId);
-        });
-
-        ws.on('close', () => {
-            console.log(`🔌 [自动发现] 连接已关闭: ${nodeUrl}`);
-            core.heartbeat.stop(connectionId);
-            core.nodes.delete(nodeUrl);
-            core.nodeConnections.delete(connectionId);
-            connectingNodes.delete(nodeUrl);
-
-            // 自动重连
-            if (core.reconnect.has(nodeUrl)) {
-                core.reconnect.schedule(nodeUrl, (url) => _autoConnect(url));
-            }
-        });
-
-        ws.on('error', (error) => {
-            console.error(`❌ [自动发现] 连接失败: ${nodeUrl}`, error.message || error);
-            core.heartbeat.stop(connectionId);
-            core.nodes.delete(nodeUrl);
-            core.nodeConnections.delete(connectionId);
-            connectingNodes.delete(nodeUrl);
-
-            // 连接失败也触发重连
-            if (core.reconnect.has(nodeUrl)) {
-                core.reconnect.schedule(nodeUrl, (url) => _autoConnect(url));
-            }
-        });
-    }
-
-    // 启动自动发现定时器
-    function startDiscovery() {
-        if (discoveryTimer) return;
-        discoveryConfig.enabled = true;
-        console.log(`🔍 [自动发现] 已启动（间隔: ${discoveryConfig.interval / 1000}秒, 最大节点数: ${discoveryConfig.maxPeers}）`);
-        discoveryTimer = setInterval(() => {
-            requestNodeLists();
-        }, discoveryConfig.interval);
-    }
-
-    // 停止自动发现定时器
-    function stopDiscovery() {
-        if (discoveryTimer) {
-            clearInterval(discoveryTimer);
-            discoveryTimer = null;
-        }
-        discoveryConfig.enabled = false;
-        console.log('🔍 [自动发现] 已停止');
-    }
-
-    // 获取自动发现状态
-    function getDiscoveryStatus() {
-        return {
-            enabled: discoveryConfig.enabled,
-            interval: discoveryConfig.interval,
-            maxPeers: discoveryConfig.maxPeers,
-            connectedCount: core.nodes.size,
-            pendingCount: pendingNodes.size,
-            connectingCount: connectingNodes.size,
-            isDiscovering: isDiscovering,
-            pendingNodes: Array.from(pendingNodes),
-            connectingNodes: Array.from(connectingNodes)
-        };
-    }
 
     // ========== 同步候选链解析 ==========
 
@@ -295,8 +98,8 @@ function createP2P(server, starCoin, PORT, options = {}) {
             }
         }
 
-        core.updateNodeInfo();
-        core.broadcastLatest();
+        handlers.updateNodeInfo();
+        handlers.broadcastLatest();
         syncState.lastSyncAt = new Date().toISOString();
         console.log(`✅ [同步] 完成，当前链长度: ${starCoin.chain.length}`);
 
@@ -375,18 +178,17 @@ function createP2P(server, starCoin, PORT, options = {}) {
         };
     }
 
-    // ========== 扩展核心消息处理 ==========
-    // 在 core.handleMessage 基础上注入 NODE_LIST / NODE_LIST_REQUEST 处理
-    // 这样 connectToPeer 和 wss.on('connection') 中的 ws.on('message')
-    // 都能自动使用增强后的版本（因为它们引用 core.handleMessage）
+    // ========== 扩展消息处理 ==========
+    // 在 handlers.handleMessage 基础上注入 NODE_LIST / NODE_LIST_REQUEST 处理
+    // 通过 core.setHandler 注册增强版，确保所有 ws.on('message') 都使用增强版
 
-    const origHandleMessage = core.handleMessage;
-    core.handleMessage = function enhancedHandleMessage(ws, message, connectionId) {
+    const origHandleMessage = handlers.handleMessage;
+    handlers.handleMessage = function enhancedHandleMessage(ws, message, connectionId) {
         switch (message.type) {
             case MESSAGE_TYPES.NODE_LIST:
                 if (message.nodes && Array.isArray(message.nodes)) {
                     // 收到节点列表响应，处理发现的节点
-                    handleDiscoveredNodes(message.nodes, message.fromNode || message.currentNode?.url);
+                    discovery.handleDiscoveredNodes(message.nodes, message.fromNode || message.currentNode?.url);
                 } else {
                     // 收到节点列表请求，发送自己的节点列表
                     core.sendMessage(ws, {
@@ -430,6 +232,9 @@ function createP2P(server, starCoin, PORT, options = {}) {
         // 其余消息类型交给原始 handler
         return origHandleMessage.call(this, ws, message, connectionId);
     };
+
+    // 将增强版 handler 注册到网络层
+    core.setHandler(handlers.handleMessage);
 
     // ========== 交易池消息处理逻辑 ==========
 
@@ -500,7 +305,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         if (connectedCount === 0) return;
 
         console.log(`📤 [P2P交易] 广播交易 ${tx.id.substring(0, 16)}... 到 ${connectedCount} 个节点`);
-        core.broadcastTransaction(tx);
+        handlers.broadcastTransaction(tx);
     }
 
     /**
@@ -512,7 +317,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         if (starCoin.pendingTransactions.length === 0) return;
 
         console.log(`📤 [P2P交易池] 广播 ${starCoin.pendingTransactions.length} 笔待打包交易到 ${connectedCount} 个节点`);
-        core.broadcastPendingTxs();
+        handlers.broadcastPendingTxs();
     }
 
     /**
@@ -549,9 +354,9 @@ function createP2P(server, starCoin, PORT, options = {}) {
         return { success: true, message: `已向 ${connectedCount} 个节点发送交易池同步请求` };
     }
 
-    // 扩展 handleChainResponse：注入同步汇聚模式
-    const origHandleChainResponse = core.handleChainResponse;
-    core.handleChainResponse = function enhancedHandleChainResponse(chain, fromNode) {
+    // ========== 扩展 handleChainResponse：注入同步汇聚模式 ==========
+    const origHandleChainResponse = handlers.handleChainResponse;
+    handlers.handleChainResponse = function enhancedHandleChainResponse(chain, fromNode) {
         // ------ 同步汇聚模式 ------
         if (syncState.isSyncing && fromNode) {
             console.log(`📥 [同步] 收到节点 ${fromNode} 的链，长度 ${chain.length}`);
@@ -616,17 +421,14 @@ function createP2P(server, starCoin, PORT, options = {}) {
         }
     }
 
-    // ========== 启动自动发现（首次连接其他节点后才开始周期性扫描） ==========
-    // 如果尚未连接任何节点，先不启动定时器，等有节点后再启动
-    if (discoveryConfig.enabled) {
-        // 延时启动，确保服务器完全就绪
-        setTimeout(() => {
-            startDiscovery();
-            startHealthCheck(); // 同时启动链健康检查
-            // 首次启动时立即发起一次发现请求
-            setTimeout(() => requestNodeLists(), 2000);
-        }, 3000);
-    }
+    // ========== 启动自动发现和健康检查 ==========
+    // 延时启动，确保服务器完全就绪
+    setTimeout(() => {
+        discovery.startDiscovery();
+        startHealthCheck();
+        // 首次启动时立即发起一次发现请求
+        setTimeout(() => discovery.requestNodeLists(), 2000);
+    }, 3000);
 
     // ========== 组装最终 API ==========
 
@@ -640,9 +442,9 @@ function createP2P(server, starCoin, PORT, options = {}) {
         connectToPeer: core.connectToPeer,
         disconnectFromPeer: core.disconnectFromPeer,
         getAllNodeInfo: core.getAllNodeInfo,
-        broadcastLatest: core.broadcastLatest,
-        updateNodeInfo: core.updateNodeInfo,
-        broadcastNodeInfo: core.broadcastNodeInfo,
+        broadcastLatest: handlers.broadcastLatest,
+        updateNodeInfo: handlers.updateNodeInfo,
+        broadcastNodeInfo: handlers.broadcastNodeInfo,
 
         // 同步方法
         syncWithPeers,
@@ -663,11 +465,11 @@ function createP2P(server, starCoin, PORT, options = {}) {
         startHealthCheck,
         stopHealthCheck,
 
-        // 发现方法
-        startDiscovery,
-        stopDiscovery,
-        getDiscoveryStatus,
-        requestNodeLists,
+        // 发现方法（由 p2p-discovery.js 提供）
+        startDiscovery: discovery.startDiscovery,
+        stopDiscovery: discovery.stopDiscovery,
+        getDiscoveryStatus: discovery.getDiscoveryStatus,
+        requestNodeLists: discovery.requestNodeLists,
 
         // 内部引用（调试/扩展用）
         wss: core.wss

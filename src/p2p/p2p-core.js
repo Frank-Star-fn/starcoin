@@ -31,18 +31,16 @@ const HEARTBEAT_TIMEOUT  = 6000;      // 6 秒内未收到 PONG 视为超时
 
 /**
  * 创建 P2P 核心网络层
- * - 管理 WebSocket 服务器
- * - 节点状态跟踪 (nodes, nodeConnections, nodeInfo)
- * - 消息收发工具 (sendMessage, broadcast, broadcastLatest 等)
- * - 基础消息路由分发 (handleMessage)
- * - 节点连接管理 (connectToPeer, disconnectFromPeer, getAllNodeInfo)
- * - ws server 连接事件监听
+ *
+ * 职责：仅处理网络基础设施——WebSocket 服务、连接管理、重连、心跳、基础收发
+ * 不包含任何区块链业务逻辑（链/区块/交易处理），这些由 p2p-message-handlers.js 负责
+ *
+ * 通过 setHandler(fn) 注入消息处理器，实现与业务逻辑的解耦
  *
  * @param {http.Server} server - HTTP 服务器实例
  * @param {Blockchain} starCoin - 区块链实例
  * @param {number} PORT - 当前节点端口
  * @param {object} [options] - 可选配置
- * @param {function} [options.onChainChange] - 链数据变化时的回调
  * @param {function} [options.onFrontendConnection] - 前端 WebSocket 连接回调（路径为 /ws）
  */
 function createP2PCore(server, starCoin, PORT, options = {}) {
@@ -63,6 +61,19 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         startedAt: new Date().toISOString(),
         chainLength: starCoin.chain.length
     };
+
+    // ========== 消息处理器（由上层通过 setHandler 注入） ==========
+    let _messageHandler = null;
+
+    /** 注册消息处理器（由 p2p.js 或 p2p-message-handlers.js 调用） */
+    function setHandler(handlerFn) {
+        _messageHandler = handlerFn;
+    }
+
+    /** 获取当前消息处理器（供自动发现模块等外部 WebSocket 连接使用） */
+    function getHandler() {
+        return _messageHandler;
+    }
 
     // ========== 内部工具函数 ==========
 
@@ -178,229 +189,6 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         });
     }
 
-    function broadcastLatest() {
-        broadcast({
-            type: MESSAGE_TYPES.BLOCK,
-            block: starCoin.getLatestBlock()
-        });
-    }
-
-    function broadcastQueryAll() {
-        broadcast({
-            type: MESSAGE_TYPES.QUERY_ALL
-        });
-    }
-
-    function broadcastNodeInfo() {
-        broadcast({
-            type: MESSAGE_TYPES.NODE_INFO,
-            node: nodeInfo
-        });
-    }
-
-    /**
-     * 向所有已连接节点广播一笔交易（P2P 交易池同步）
-     * @param {object} tx - 交易对象
-     */
-    function broadcastTransaction(tx) {
-        broadcast({
-            type: MESSAGE_TYPES.TRANSACTION,
-            transaction: tx,
-            fromNode: nodeInfo.url
-        });
-    }
-
-    /**
-     * 向所有已连接节点广播本节点的待打包交易列表
-     */
-    function broadcastPendingTxs() {
-        broadcast({
-            type: MESSAGE_TYPES.PENDING_TXS,
-            transactions: starCoin.pendingTransactions,
-            fromNode: nodeInfo.url
-        });
-    }
-
-    function updateNodeInfo() {
-        nodeInfo.chainLength = starCoin.chain.length;
-        nodeInfo.lastUpdated = new Date().toISOString();
-    }
-
-    // ========== 基础消息处理（纯数据层面） ==========
-    // 注意：NODE_LIST / NODE_LIST_REQUEST 由上层 (p2p.js) 通过替换 handleMessage 扩展
-
-    function handleMessage(ws, message, connectionId) {
-        switch (message.type) {
-            case MESSAGE_TYPES.QUERY_LATEST:
-                sendMessage(ws, {
-                    type: MESSAGE_TYPES.BLOCK,
-                    block: starCoin.getLatestBlock()
-                });
-                break;
-            case MESSAGE_TYPES.QUERY_ALL:
-                sendMessage(ws, {
-                    type: MESSAGE_TYPES.CHAIN,
-                    chain: starCoin.chain
-                });
-                break;
-            case MESSAGE_TYPES.CHAIN:
-                handleChainResponse(message.chain, message.fromNode);
-                break;
-            case MESSAGE_TYPES.BLOCK:
-                handleBlockResponse(message.block);
-                break;
-            case MESSAGE_TYPES.NODE_INFO:
-                handleNodeInfo(message.node);
-                break;
-            case MESSAGE_TYPES.CHAIN_LENGTH:
-                sendMessage(ws, {
-                    type: MESSAGE_TYPES.CHAIN_LENGTH,
-                    length: starCoin.chain.length,
-                    latestHash: starCoin.getLatestBlock().hash,
-                    fromNode: nodeInfo.url
-                });
-                break;
-            case MESSAGE_TYPES.SYNC_REQUEST:
-                console.log(`🔄 收到来自 ${message.fromNode || '某节点'} 的同步请求，发送完整链`);
-                sendMessage(ws, {
-                    type: MESSAGE_TYPES.CHAIN,
-                    chain: starCoin.chain,
-                    fromNode: nodeInfo.url
-                });
-                break;
-            // ====== 心跳消息处理 ======
-            case MESSAGE_TYPES.PING:
-                // 收到 PING → 立即回复 PONG
-                sendMessage(ws, { type: MESSAGE_TYPES.PONG });
-                break;
-            case MESSAGE_TYPES.PONG:
-                // 收到 PONG → 清除对应的 pending 超时
-                if (connectionId && pendingPongs.has(connectionId)) {
-                    clearTimeout(pendingPongs.get(connectionId));
-                    pendingPongs.delete(connectionId);
-                }
-                break;
-            // ====== 交易池广播消息处理 ======
-            case MESSAGE_TYPES.TRANSACTION:
-                handleTransaction(message.transaction, message.fromNode);
-                break;
-            case MESSAGE_TYPES.QUERY_PENDING_TXS:
-                handleQueryPendingTxs(ws, message.fromNode);
-                break;
-            case MESSAGE_TYPES.PENDING_TXS:
-                handlePendingTxs(message.transactions, message.fromNode);
-                break;
-        }
-    }
-
-    function handleChainResponse(chain, fromNode) {
-        if (!chain || !Array.isArray(chain) || chain.length === 0) {
-            console.log('📥 收到空链，忽略');
-            return;
-        }
-
-        // ------ 常规被动接收模式 ------
-        const latestBlockReceived = chain[chain.length - 1];
-        const latestBlockHeld = starCoin.getLatestBlock();
-
-        if (latestBlockReceived.index > latestBlockHeld.index) {
-            console.log(`📥 收到更长的链，长度: ${chain.length}，当前链长度: ${starCoin.chain.length}`);
-
-            if (latestBlockHeld.hash === latestBlockReceived.previousHash) {
-                if (starCoin.addBlock(latestBlockReceived)) {
-                    // 添加后验证链状态，如果无效则自动修复
-                    if (!starCoin.isChainValid()) {
-                        console.warn('🔧 [P2P] 添加区块后链状态无效，自动修复...');
-                        starCoin.repairChain();
-                    }
-                    broadcastLatest();
-                    updateNodeInfo();
-                    if (options.onChainChange) options.onChainChange();
-                }
-            } else if (chain.length === 1) {
-                console.log('📥 收到创世区块');
-            } else {
-                console.log('🔄 需要替换整个链，正在验证...');
-                if (!starCoin.isChainValid(chain)) {
-                    console.log('❌ 收到的链无效，拒绝替换');
-                    return;
-                }
-                if (starCoin.replaceChain(chain)) {
-                    console.log('✅ 已替换为更长的链，新长度: ' + starCoin.chain.length);
-                    // 替换后验证链状态
-                    if (!starCoin.isChainValid()) {
-                        console.warn('🔧 [P2P] 替换链后状态无效，自动修复...');
-                        starCoin.repairChain();
-                    }
-                    broadcastLatest();
-                    updateNodeInfo();
-                    if (options.onChainChange) options.onChainChange();
-                }
-            }
-        } else {
-            console.log(`📥 收到的链不更长（${chain.length} vs ${starCoin.chain.length}），忽略`);
-        }
-    }
-
-    function handleBlockResponse(block) {
-        const latestBlockHeld = starCoin.getLatestBlock();
-
-        if (block.index <= latestBlockHeld.index) {
-            // 即使索引相同也可能是不同区块，检查链状态是否有效
-            if (block.index === latestBlockHeld.index && !starCoin.isChainValid()) {
-                console.warn('🔧 [P2P] 收到同索引区块且本地链无效，自动修复...');
-                starCoin.repairChain();
-            }
-            return;
-        }
-
-        if (latestBlockHeld.hash === block.previousHash) {
-            if (starCoin.addBlock(block)) {
-                // 添加后验证链状态
-                if (!starCoin.isChainValid()) {
-                    console.warn('🔧 [P2P handleBlockResponse] 添加区块后链无效，自动修复...');
-                    starCoin.repairChain();
-                }
-                broadcastLatest();
-                updateNodeInfo();
-                if (options.onChainChange) options.onChainChange();
-            }
-        } else {
-            console.log('🔄 需要查询完整链');
-            broadcastQueryAll();
-        }
-    }
-
-    function handleNodeInfo(node) {
-        if (node.url !== nodeInfo.url) {
-            nodes.add(node.url);
-            console.log(`📝 发现新节点: ${node.url}`);
-        }
-    }
-
-    // ========== 交易池广播处理（基础层） ==========
-    // 注意：这些方法在 p2p.js 中会被上层扩展，以注入更完善的业务逻辑
-    // 基础层只做日志记录和基本转发
-
-    /** 处理收到的单笔交易（由上层 p2p.js 扩展覆盖） */
-    function handleTransaction(transaction, fromNode) {
-        console.log(`📥 [交易] 收到来自 ${fromNode || '某节点'} 的交易: ${transaction.id || 'unknown'}`);
-        // 基础层不做具体处理，交给上层扩展
-    }
-
-    /** 处理收到的待打包交易列表（由上层 p2p.js 扩展覆盖） */
-    function handlePendingTxs(transactions, fromNode) {
-        if (!Array.isArray(transactions) || transactions.length === 0) return;
-        console.log(`📥 [交易池] 收到来自 ${fromNode || '某节点'} 的 ${transactions.length} 笔待打包交易`);
-        // 基础层不做具体处理，交给上层扩展
-    }
-
-    /** 处理 QUERY_PENDING_TXS 请求（由上层 p2p.js 扩展覆盖） */
-    function handleQueryPendingTxs(ws, fromNode) {
-        console.log(`📥 [交易池] 收到来自 ${fromNode || '某节点'} 的交易池请求`);
-        // 基础层不做具体处理，交给上层扩展
-    }
-
     // ========== 节点连接管理 ==========
 
     /**
@@ -457,7 +245,9 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         });
 
         ws.on('message', (message) => {
-            core.handleMessage(ws, JSON.parse(message), connectionId);
+            if (_messageHandler) {
+                _messageHandler(ws, JSON.parse(message), connectionId);
+            }
         });
 
         ws.on('close', () => {
@@ -524,7 +314,6 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         }
 
         nodes.delete(peerUrl);
-        updateNodeInfo();
 
         const message = found ? `已断开与节点 ${peerUrl} 的连接` : `已从节点列表移除 ${peerUrl}`;
         console.log(`🔌 ${message}`);
@@ -602,7 +391,9 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         _startHeartbeat(ws, remoteAddr, connectionId);
 
         ws.on('message', (message) => {
-            core.handleMessage(ws, JSON.parse(message), connectionId);
+            if (_messageHandler) {
+                _messageHandler(ws, JSON.parse(message), connectionId);
+            }
         });
 
         ws.on('close', () => {
@@ -649,23 +440,13 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         nodeConnections,
         nodeId,
         nodeInfo,
+        // pendingPongs 对外暴露，供消息处理器层读取（PONG 超时清理）
+        pendingPongs,
         // 核心方法
         sendMessage,
         broadcast,
-        broadcastLatest,
-        broadcastQueryAll,
-        broadcastNodeInfo,
-        updateNodeInfo,
-        handleMessage,    // 可被上层替换扩展
-        handleChainResponse,
-        handleBlockResponse,
-        handleNodeInfo,
-        // 交易池广播方法
-        broadcastTransaction,
-        broadcastPendingTxs,
-        handleTransaction,
-        handlePendingTxs,
-        handleQueryPendingTxs,
+        setHandler,
+        getHandler,
         connectToPeer,
         disconnectFromPeer,
         getAllNodeInfo,
