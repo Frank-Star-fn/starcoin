@@ -4,25 +4,27 @@
    ============================================================ */
 
 /* ============================================================
-   生成钱包
+   生成钱包（带 BIP39 助记词）
    ============================================================ */
 
 /**
- * 请求后端生成新钱包，加密私钥后加入列表并刷新
- * 生成后强制要求导出 .pem 备份
+ * 请求后端生成新钱包（含 BIP39 助记词），
+ * 加密私钥和助记词后加入列表，并显示助记词对话框
  */
 async function generateWallet() {
     try {
-        const data = await api('/api/wallet/new', 'POST');
-        if (!data.wallet) throw new Error('生成失败');
+        const data = await api('/api/wallet/new-with-mnemonic', 'POST');
+        if (!data.wallet || !data.mnemonic) throw new Error('生成失败');
 
         // 加密私钥
         const encrypted = await encryptPrivateKey(data.wallet.privateKey);
-        // data.wallet.privateKey 至此不再使用，退出函数后被 GC 回收
+        // 加密助记词（复用 AES-GCM，将助记词当作普通字符串加密）
+        const encryptedMnemonic = await encryptPrivateKey(data.mnemonic);
 
         const w = {
             label: '钱包 #' + (state.wallets.length + 1),
             encryptedPrivateKey: encrypted,
+            encryptedMnemonic: encryptedMnemonic,
             publicKey: data.wallet.publicKey,
             address: data.wallet.address
         };
@@ -30,9 +32,13 @@ async function generateWallet() {
         state.selectedWallet = state.wallets.length - 1; // 自动选中新钱包
         renderWallets();
         renderTransfer();
-        showMessage('txMessage', '✅ 新钱包已生成：' + shortAddr(w.address, 16), 'success');
         saveWallets();
         await refreshAll();
+
+        // 显示助记词对话框
+        showMnemonicDisplay(data.mnemonic);
+
+        showMessage('txMessage', '✅ 新钱包已生成（含 BIP39 助记词）：' + shortAddr(w.address, 16), 'success', 5000);
 
         // 强制备份
         showForceBackupDialog(state.wallets.length - 1);
@@ -400,50 +406,6 @@ async function importPrivateKey() {
         msgEl.className = 'message error';
         msgEl.textContent = '❌ 导入失败: ' + err.message;
         if (btn) { btn.disabled = false; btn.textContent = '✅ 导入'; }
-    }
-}
-
-/* ============================================================
-   助记词生成：调用后端生成新钱包 + BIP39 助记词
-   ============================================================ */
-
-/**
- * 请求后端生成带 BIP39 助记词的钱包，
- * 加密私钥和助记词后加入列表，并显示助记词对话框
- */
-async function generateWalletWithMnemonic() {
-    try {
-        const data = await api('/api/wallet/new-with-mnemonic', 'POST');
-        if (!data.wallet || !data.mnemonic) throw new Error('生成失败');
-
-        // 加密私钥
-        const encrypted = await encryptPrivateKey(data.wallet.privateKey);
-        // 加密助记词（复用 AES-GCM，将助记词当作普通字符串加密）
-        const encryptedMnemonic = await encryptPrivateKey(data.mnemonic);
-
-        const w = {
-            label: '钱包 #' + (state.wallets.length + 1),
-            encryptedPrivateKey: encrypted,
-            encryptedMnemonic: encryptedMnemonic,
-            publicKey: data.wallet.publicKey,
-            address: data.wallet.address
-        };
-        state.wallets.push(w);
-        state.selectedWallet = state.wallets.length - 1; // 自动选中新钱包
-        renderWallets();
-        renderTransfer();
-        saveWallets();
-        await refreshAll();
-
-        // 显示助记词对话框
-        showMnemonicDisplay(data.mnemonic);
-
-        showMessage('txMessage', '✅ 新钱包已生成（含 BIP39 助记词）：' + shortAddr(w.address, 16), 'success', 5000);
-
-        // 强制备份
-        showForceBackupDialog(state.wallets.length - 1);
-    } catch (err) {
-        showMessage('txMessage', '❌ 生成助记词钱包失败：' + err.message, 'error');
     }
 }
 
