@@ -200,19 +200,36 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
      * @param {string} peerUrl - 目标节点 URL
      * @param {boolean} [enableReconnect=true] - 是否启用自动重连
      */
-    function connectToPeer(peerUrl, enableReconnect = true) {
+    function connectToPeer(peerUrl, options = {}) {
+        // 向后兼容：如果第二个参数是 boolean，转为 { enableReconnect }
+        if (typeof options === 'boolean') {
+            options = { enableReconnect: options };
+        }
+        const {
+            enableReconnect = true,
+            connectionId: customId,
+            createSocket,
+            onConnecting,
+            onConnected,
+            onDisconnected
+        } = options;
+
         if (nodes.has(peerUrl) || peerUrl === nodeInfo.url) {
             log.warn('节点已连接或为自身节点', { peerUrl });
+            if (onDisconnected) onDisconnected(peerUrl);
             return;
         }
+
+        // 连接开始前回调（如 connectingNodes 管理）
+        if (onConnecting) onConnecting(peerUrl);
 
         // 初始化重连状态（即使本次连接首次失败也能重试）
         if (enableReconnect) {
             _initReconnect(peerUrl);
         }
 
-        const ws = new WebSocket(peerUrl);
-        const connectionId = `conn_${Math.random().toString(36).substr(2, 9)}`;
+        const ws = createSocket ? createSocket(peerUrl) : new WebSocket(peerUrl);
+        const connectionId = customId || `conn_${Math.random().toString(36).substr(2, 9)}`;
 
         ws.on('open', () => {
             log.info('已连接到对等节点', { peerUrl });
@@ -246,6 +263,9 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
 
             // 启动心跳保活
             _startHeartbeat(ws, peerUrl, connectionId);
+
+            // 连接成功后回调
+            if (onConnected) onConnected(peerUrl);
         });
 
         ws.on('message', (message) => {
@@ -262,9 +282,12 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
             nodes.delete(peerUrl);
             nodeConnections.delete(connectionId);
 
+            // 断开后回调
+            if (onDisconnected) onDisconnected(peerUrl);
+
             // 自动重连（如果不是主动断开）
             if (enableReconnect && reconnectState.has(peerUrl)) {
-                _scheduleReconnect(peerUrl, (url) => connectToPeer(url, true));
+                _scheduleReconnect(peerUrl, (url) => connectToPeer(url, { enableReconnect: true, onConnecting, onConnected, onDisconnected }));
             }
         });
 
@@ -274,9 +297,12 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
             nodes.delete(peerUrl);
             nodeConnections.delete(connectionId);
 
+            // 出错后回调
+            if (onDisconnected) onDisconnected(peerUrl);
+
             // 连接失败也触发重连（如果是首次连接且未触发过 close）
             if (enableReconnect && reconnectState.has(peerUrl)) {
-                _scheduleReconnect(peerUrl, (url) => connectToPeer(url, true));
+                _scheduleReconnect(peerUrl, (url) => connectToPeer(url, { enableReconnect: true, onConnecting, onConnected, onDisconnected }));
             }
         });
     }

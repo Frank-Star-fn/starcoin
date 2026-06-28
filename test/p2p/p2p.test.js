@@ -185,7 +185,7 @@ describe('syncPendingTxs — 交易池同步', () => {
 
   it('有对等连接时发送请求', async () => {
     const peerUrl = `ws://localhost:${peerPort}`;
-    p2p.connectToPeer(peerUrl, false);
+    p2p.connectToPeer(peerUrl, { enableReconnect: false });
     await sleep(500);
 
     const result = p2p.syncPendingTxs();
@@ -223,7 +223,7 @@ describe('broadcastTransaction / broadcastPendingTxs', () => {
 
   it('有对等连接时广播 TRANSACTION', async () => {
     const peerUrl = `ws://localhost:${peerPort}`;
-    p2p.connectToPeer(peerUrl, false);
+    p2p.connectToPeer(peerUrl, { enableReconnect: false });
     // 等待连接建立和 handler 注册
     await sleep(500);
 
@@ -246,7 +246,7 @@ describe('broadcastTransaction / broadcastPendingTxs', () => {
     starCoin.pendingTransactions.push({ id: 'tx1' }, { id: 'tx2' });
 
     const peerUrl = `ws://localhost:${peerPort}`;
-    p2p.connectToPeer(peerUrl, false);
+    p2p.connectToPeer(peerUrl, { enableReconnect: false });
     await sleep(500);
 
     const peerHandler = vi.fn();

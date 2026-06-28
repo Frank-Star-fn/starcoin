@@ -241,7 +241,7 @@ describe('p2p-core — 核心网络层', () => {
       peerCore.setHandler(handler);
 
       const peerUrl = `ws://localhost:${peerPort}`;
-      core.connectToPeer(peerUrl, false);
+      core.connectToPeer(peerUrl, { enableReconnect: false });
 
       await sleep(200);
 
@@ -253,7 +253,7 @@ describe('p2p-core — 核心网络层', () => {
       peerCore.setHandler(handler);
 
       const peerUrl = `ws://localhost:${peerPort}`;
-      core.connectToPeer(peerUrl, false);
+      core.connectToPeer(peerUrl, { enableReconnect: false });
 
       await sleep(200);
 
@@ -272,13 +272,13 @@ describe('p2p-core — 核心网络层', () => {
 
     it('连接到不存在的节点不崩溃', () => {
       expect(() => {
-        core.connectToPeer('ws://localhost:19999', false);
+        core.connectToPeer('ws://localhost:19999', { enableReconnect: false });
       }).not.toThrow();
     });
 
     it('不重复连接自身', () => {
       const spy = vi.spyOn(core, 'sendMessage');
-      core.connectToPeer(`ws://localhost:${port}`, false);
+      core.connectToPeer(`ws://localhost:${port}`, { enableReconnect: false });
       expect(spy).not.toHaveBeenCalled();
       spy.mockRestore();
     });
@@ -286,7 +286,7 @@ describe('p2p-core — 核心网络层', () => {
     it('不重复连接已连接节点', () => {
       core.nodes.add('ws://localhost:3001');
       const spy = vi.spyOn(core, 'sendMessage');
-      core.connectToPeer('ws://localhost:3001', false);
+      core.connectToPeer('ws://localhost:3001', { enableReconnect: false });
       expect(spy).not.toHaveBeenCalled();
       spy.mockRestore();
     });

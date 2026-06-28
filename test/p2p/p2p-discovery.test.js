@@ -36,6 +36,7 @@ function createMockCore() {
     broadcast: vi.fn(),
     // 注入 WebSocket 工厂：createDiscoveryModule 会优先用它，避免真实网络连接
     createWebSocket: () => new MockWebSocket(),
+    connectToPeer: vi.fn(),
     reconnect: {
       init: vi.fn(),
       schedule: vi.fn(),

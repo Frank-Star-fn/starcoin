@@ -134,8 +134,8 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
 
     /**
      * 自动连接单个节点
-     * - 与 core.connectToPeer 逻辑类似，但额外管理 connectingNodes 状态
-     * - 带自动重连 + 心跳保活
+     * - 委托给 core.connectToPeer 完成实际连接
+     * - 额外管理 connectingNodes 状态（防止重复连接相同节点）
      * @param {string} nodeUrl - 节点 WebSocket URL
      */
     function _autoConnect(nodeUrl) {
@@ -144,76 +144,13 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
             return;
         }
 
-        // 初始化重连状态
-        core.reconnect.init(nodeUrl);
+        connectingNodes.add(nodeUrl);
 
-        const ws = (core.createWebSocket ? core.createWebSocket(nodeUrl) : new WebSocket(nodeUrl));
-        const connectionId = `auto_${Math.random().toString(36).substr(2, 9)}`;
-
-        ws.on('open', () => {
-            log.info('已自动连接到节点', { nodeUrl });
-            core.nodes.add(nodeUrl);
-            connectingNodes.delete(nodeUrl);
-
-            // 连接成功 → 清除重连状态
-            core.reconnect.clear(nodeUrl);
-
-            core.sendMessage(ws, {
-                type: MESSAGE_TYPES.NODE_INFO,
-                node: core.nodeInfo
-            });
-            // 连接后立即请求对方的节点列表
-            core.sendMessage(ws, {
-                type: MESSAGE_TYPES.NODE_LIST_REQUEST,
-                fromNode: core.nodeInfo.url
-            });
-            core.sendMessage(ws, {
-                type: MESSAGE_TYPES.QUERY_LATEST
-            });
-            // 连接后立即请求对方的待打包交易
-            core.sendMessage(ws, {
-                type: MESSAGE_TYPES.QUERY_PENDING_TXS,
-                fromNode: core.nodeInfo.url
-            });
-
-            core.nodeConnections.set(connectionId, { ws, id: connectionId, url: nodeUrl });
-
-            // 启动心跳保活
-            core.heartbeat.start(ws, nodeUrl, connectionId);
-        });
-
-        ws.on('message', (message) => {
-            // 通过 core.getHandler() 获取由 p2p.js 注册的消息处理器
-            const handler = core.getHandler();
-            if (handler) {
-                handler(ws, JSON.parse(message), connectionId);
-            }
-        });
-
-        ws.on('close', () => {
-            log.info('自动发现连接已关闭', { nodeUrl });
-            core.heartbeat.stop(connectionId);
-            core.nodes.delete(nodeUrl);
-            core.nodeConnections.delete(connectionId);
-            connectingNodes.delete(nodeUrl);
-
-            // 自动重连
-            if (core.reconnect.has(nodeUrl)) {
-                core.reconnect.schedule(nodeUrl, (url) => _autoConnect(url));
-            }
-        });
-
-        ws.on('error', (error) => {
-            log.error('自动发现连接失败', { nodeUrl, error: error.message || error });
-            core.heartbeat.stop(connectionId);
-            core.nodes.delete(nodeUrl);
-            core.nodeConnections.delete(connectionId);
-            connectingNodes.delete(nodeUrl);
-
-            // 连接失败也触发重连
-            if (core.reconnect.has(nodeUrl)) {
-                core.reconnect.schedule(nodeUrl, (url) => _autoConnect(url));
-            }
+        core.connectToPeer(nodeUrl, {
+            connectionId: `auto_${Math.random().toString(36).substr(2, 9)}`,
+            createSocket: core.createWebSocket || undefined,
+            onConnected: (url) => connectingNodes.delete(url),
+            onDisconnected: (url) => connectingNodes.delete(url)
         });
     }
 
