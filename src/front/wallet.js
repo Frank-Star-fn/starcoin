@@ -247,7 +247,9 @@ async function refreshSelectedWalletDetails() {
                         ${tx.from === w.address ? '→ 转出' : '← 收到'}: ${tx.amount} STC
                     </div>
                     <div style="color:#666; font-size:10px; margin-top:2px;">
-                        Block #${tx.blockIndex} | ${new Date(tx.timestamp).toLocaleString()}
+                        Block <a onclick="searchBlock('${tx.blockIndex}')" style="color:#60a5fa;cursor:pointer;">#${tx.blockIndex}</a>
+                        | <span class="tx-id" onclick="searchTxId('${tx.id}')" style="color:#60a5fa;cursor:pointer;font-family:monospace;">${shortAddr(tx.id, 16)}</span>
+                        | ${new Date(tx.timestamp).toLocaleString()}
                     </div>
                 </div>
             `).join('');

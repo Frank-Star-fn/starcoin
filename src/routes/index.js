@@ -7,6 +7,7 @@ const createChainRoutes = require('./api-chain');
 const createTxRoutes = require('./api-tx');
 const createMiningRoutes = require('./api-mining');
 const createNetRoutes = require('./api-net');
+const createSearchRoutes = require('./api-search');
 const {
     createNotFoundMiddleware,
     createErrorMiddleware
@@ -28,6 +29,7 @@ function createRoutes(starCoin, p2p, broadcastToFrontend, PORT) {
     router.use(createTxRoutes(starCoin, broadcastToFrontend, p2p));
     router.use(createMiningRoutes(starCoin, p2p, broadcastToFrontend));
     router.use(createNetRoutes(starCoin, p2p, PORT));
+    router.use(createSearchRoutes(starCoin));
 
     // ========== 全局错误处理（仅针对 /api 路径下的路由） ==========
     // 404 兜底：API 路径不存在时返回统一 JSON 格式

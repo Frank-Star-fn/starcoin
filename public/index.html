@@ -12,6 +12,10 @@
     <!-- 顶部状态 -->
     <div class="header">
         <div class="logo">⭐ StarCoin</div>
+        <div class="search-bar">
+            <input type="text" id="searchInput" placeholder="搜索 区块号 / 交易ID / 地址 / 备注..." />
+            <button onclick="performSearch()">🔍</button>
+        </div>
         <div class="stats" id="headerStats">
             <div class="stat-box">
                 <div class="stat-label">区块数量</div>
@@ -186,6 +190,12 @@
         <div class="chain-visual" id="chainVisual"></div>
         <div id="chainDiffHistory"></div>
         
+    </div>
+
+    <!-- 搜索结果面板 -->
+    <div class="panel wide-panel search-results" id="searchResults" style="display:none;">
+        <h2>🔍 搜索结果</h2>
+        <div id="searchResultsContent"></div>
     </div>
 
 </div>
