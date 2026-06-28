@@ -99,6 +99,19 @@ const config = {
     /** 调整步长 */
     DIFFICULTY_STEP: float(process.env.DIFFICULTY_STEP, 0.1),
 
+    // ======== 币种配置 ========
+    /** 链上支持的所有货币符号（大写） */
+    CURRENCIES: ['STC', 'cBTC', 'cETH'],
+    /** 默认主币（原生矿工奖励货币） */
+    CURRENCY_DEFAULT: 'STC',
+    /** 矿工奖励使用的币种 */
+    CURRENCY_MINING_REWARD: 'STC',
+    /** cBTC / cETH 在创世后的初始空投金额（可用于演示） */
+    TOKEN_INITIAL_AIRDROP: {
+        cBTC: float(process.env.TOKEN_INITIAL_AIRDROP_CBTC, 100),
+        cETH: float(process.env.TOKEN_INITIAL_AIRDROP_CETH, 500)
+    },
+
     // ======== API 限流配置 ========
     /** 全局读接口：时间窗口（毫秒） */
     RATE_LIMIT_GLOBAL_WINDOW_MS: int(process.env.RATE_LIMIT_GLOBAL_WINDOW_MS, 60 * 1000),

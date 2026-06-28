@@ -101,10 +101,17 @@
             <label>③ 转账金额</label>
             <input type="number" id="amount" value="10" min="1" step="1">
 
-            <label>④ 矿工费（可选，越高越优先打包）</label>
+            <label>④ 币种（选择要发送的 Token）</label>
+            <select id="currency">
+                <option value="STC" selected>STC（原生币·矿工奖励）</option>
+                <option value="cBTC">cBTC（cBitcoin）</option>
+                <option value="cETH">cETH（cEthereum）</option>
+            </select>
+
+            <label>⑤ 矿工费（可选，越高越优先打包，同币种支付）</label>
             <input type="number" id="fee" value="1" min="0" step="1">
 
-            <label>⑤ 备注（可选）</label>
+            <label>⑥ 备注（可选）</label>
             <input type="text" id="note" placeholder="例如：午餐费用">
 
             <div class="message info" id="signInfo" style="display:none;">

@@ -18,8 +18,8 @@ class ChainSync {
         if (!txObj) return null;
         // 如果已经是 Transaction 实例，直接返回
         if (txObj instanceof Transaction) return txObj;
-        // 从普通对象还原
-        const tx = new Transaction(txObj.from, txObj.to, txObj.amount, txObj.fee || 0, txObj.note || '');
+        // 从普通对象还原（传入 currency 以支持多币种，normalizeCurrency 会处理旧名迁移）
+        const tx = new Transaction(txObj.from, txObj.to, txObj.amount, txObj.fee || 0, txObj.note || '', txObj.currency);
         if (txObj.id) tx.id = txObj.id;
         if (txObj.timestamp) tx.timestamp = txObj.timestamp;
         if (txObj.signature) tx.signature = txObj.signature;

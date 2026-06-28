@@ -2,7 +2,7 @@
 // routes/api-tx.js — 钱包 + 交易 + 余额 + 交易池路由
 // ============================================================
 const express = require('express');
-const { Transaction, generateWallet, importWalletFromPem } = require('../blockchain/blockchain');
+const { Transaction, generateWallet, importWalletFromPem, normalizeCurrency } = require('../blockchain/blockchain');
 const { AppError, wrapAsync } = require('./error-handler');
 
 /**
@@ -73,10 +73,49 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     }));
 
     // ============================================================
-    // 2. 提交一笔转账到交易池（需要 ECDSA 签名）
+    // 1d. 获取 cBTC/cETH 测试代币（空投到指定地址）
+    // 这会构造一笔 SYSTEM → targetAddress 的特殊交易，
+    // 添加到交易池，在下次挖矿时被打包。
+    // ============================================================
+    router.post('/token/airdrop', wrapAsync(async (req, res) => {
+        const { address, currency, amount } = req.body;
+        if (!address) {
+            throw new AppError(400, '必须提供 address 字段（接收方地址）', 'MISSING_PARAM');
+        }
+        const rawCur = currency || 'cBTC';
+        const cur = normalizeCurrency(rawCur);
+        if (!cur || cur === 'STC') {
+            throw new AppError(400, 'currency 仅支持 cBTC 或 cETH', 'INVALID_CURRENCY');
+        }
+        const amt = parseFloat(amount) || 100;
+        if (amt <= 0) throw new AppError(400, 'amount 必须大于 0', 'INVALID_AMOUNT');
+
+        // 构造 SYSTEM 交易（无需签名）
+        const airdropTx = new Transaction('SYSTEM', address, amt, 0, `${cur} Airdrop`, cur);
+        // 直接加入 pendingTransactions
+        starCoin.pendingTransactions.push(airdropTx);
+
+        // P2P 广播（让其他节点也收到这笔空投）
+        if (p2p && p2p.broadcastTransaction) p2p.broadcastTransaction(airdropTx);
+
+        broadcastToFrontend('newTransaction', {
+            poolCount: starCoin.pendingTransactions.length,
+            txId: airdropTx.id
+        });
+
+        res.json({
+            success: true,
+            message: `🎉 已向 ${address.substring(0, 16)}... 发放 ${amt} ${cur}（已加入交易池，下次挖矿时打包）`,
+            transaction: airdropTx,
+            poolCount: starCoin.pendingTransactions.length
+        });
+    }));
+
+    // ============================================================
+    // 2. 提交一笔转账到交易池（支持多币种：currency = STC | cBTC | cETH）
     // ============================================================
     router.post('/transaction', wrapAsync(async (req, res) => {
-        const { from, to, amount, fee, note, privateKey, publicKey } = req.body;
+        const { from, to, amount, fee, note, privateKey, publicKey, currency } = req.body;
 
         if (!from || !to || !amount) {
             throw new AppError(400, '必须提供 from, to, amount 字段', 'MISSING_PARAM');
@@ -85,7 +124,9 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
             throw new AppError(400, '必须提供 privateKey 和 publicKey 用于 ECDSA 签名。请先用 POST /api/wallet/new 生成钱包。', 'MISSING_CREDENTIALS');
         }
 
-        const tx = new Transaction(from, to, Number(amount), Number(fee) || 0, note || '');
+        const tx = new Transaction(
+            from, to, Number(amount), Number(fee) || 0, note || '', currency
+        );
         tx.signTransaction(privateKey, publicKey);
         let savedTx;
         try {
@@ -104,23 +145,51 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
 
         res.json({
             success: true,
-            message: '交易已通过 ECDSA 签名验证，已加入交易池',
+            message: `[${savedTx.currency || 'STC'}] 交易已通过 ECDSA 签名验证，已加入交易池`,
             transaction: savedTx,
             poolCount: starCoin.pendingTransactions.length
         });
     }));
 
     // ============================================================
-    // 3. 查询地址余额
+    // 3. 查询地址余额（返回所有币种：{ STC, cBTC, cETH }）
     // ============================================================
     router.get('/balance/:address', wrapAsync(async (req, res) => {
         const address = req.params.address;
         if (!address || address.length < 2) {
             throw new AppError(400, '无效的地址格式', 'INVALID_ADDRESS');
         }
-        const balance = starCoin.getBalance(address);
-        const totalBalance = starCoin.getBalance(address, true);
-        const lockedRewards = starCoin.getLockedRewards(address);
+
+        // 获取多币种余额；若不支持 getAllBalances 则回退到 getBalance
+        let balances;
+        let totalBalances;
+        if (typeof starCoin.getAllBalances === 'function') {
+            balances = starCoin.getAllBalances(address);
+            totalBalances = starCoin.getAllBalances(address, true);
+        } else {
+            const bal = Number(starCoin.getBalance(address, false)) || 0;
+            const total = Number(starCoin.getBalance(address, true)) || 0;
+            balances = { STC: bal, cBTC: 0, cETH: 0 };
+            totalBalances = { STC: total, cBTC: 0, cETH: 0 };
+        }
+
+        // 获取锁定奖励：支持对象形式（各币种）或数字形式（仅 STC）
+        let lockedRewardsObj = {};
+        let lockedRewardsNum = 0;
+        try {
+            const lr = starCoin.getLockedRewards(address, 'ALL');
+            if (lr && typeof lr === 'object') {
+                lockedRewardsObj = lr;
+                lockedRewardsNum = Number(lr.STC) || 0;
+            } else {
+                lockedRewardsNum = Number(lr) || 0;
+                lockedRewardsObj = { STC: lockedRewardsNum, cBTC: 0, cETH: 0 };
+            }
+        } catch (e) {
+            lockedRewardsNum = 0;
+            lockedRewardsObj = { STC: 0, cBTC: 0, cETH: 0 };
+        }
+
         const pendingInPool = starCoin.pendingTransactions
             .filter(tx => tx.from === address || tx.to === address)
             .length;
@@ -128,9 +197,12 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
         res.json({
             success: true,
             address: address,
-            balance: balance,
-            totalBalance: totalBalance,
-            lockedRewards: lockedRewards,
+            balances: balances,
+            totalBalances: totalBalances,
+            lockedRewards: lockedRewardsNum,           // 数字，兼容旧调用方
+            lockedRewardsByCurrency: lockedRewardsObj, // 对象，新字段
+            balance: Number(balances.STC) || 0,
+            totalBalance: Number(totalBalances.STC) || 0,
             coinbaseMaturity: starCoin.coinbaseMaturity,
             pendingTransactions: pendingInPool,
             historyCount: starCoin.getTransactionHistory(address).length

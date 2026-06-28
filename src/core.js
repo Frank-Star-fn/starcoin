@@ -41,13 +41,70 @@ function verifyWithECDSA(dataHex, signatureHex, publicKeyHex) {
 }
 
 // ============================================================
-// Transaction 类 - 结构化交易对象（带 ECDSA 签名）
+// 支持的币种常量（与 config.js 保持一致；此处独立副本便于核心模块不依赖 config）
+// ============================================================
+const SUPPORTED_CURRENCIES = ['STC', 'cBTC', 'cETH'];
+const DEFAULT_CURRENCY = 'STC';
+
+// 旧币种名 → 新币种名 迁移映射（兼容旧链数据）
+const CURRENCY_MIGRATION_MAP = {
+    'WBTC': 'cBTC',
+    'WETH': 'cETH'
+};
+
+/**
+ * 规整币种符号：空/非法 → 返回 undefined（表示"旧格式、无币种字段"），
+ * 合法值 → 返回大写符号。
+ * 关键设计：undefined 表示"该交易使用旧格式"，在 hash 计算中不引入 currency 字段，
+ * 从而保证已签名的旧链交易 hash/签名仍然有效。
+ */
+function normalizeCurrency(raw) {
+    if (!raw || typeof raw !== 'string') return undefined;
+    const up = raw.trim().toUpperCase();
+    // 1. 检查旧币种迁移映射（兼容旧链数据）
+    if (CURRENCY_MIGRATION_MAP[up]) return CURRENCY_MIGRATION_MAP[up];
+    // 2. 大小写不敏感匹配当前支持的币种，返回标准格式
+    const match = SUPPORTED_CURRENCIES.find(c => c.toUpperCase() === up);
+    return match || undefined;
+}
+
+/**
+ * 获取交易的有效币种（用于余额/显示逻辑）：
+ * currency 为 undefined 时视为 'STC'，用于余额计算/UI 显示。
+ */
+function effectiveCurrency(txOrCurrency) {
+    if (txOrCurrency && typeof txOrCurrency === 'object') {
+        const c = txOrCurrency.currency;
+        // currency 已经是 normalizeCurrency 处理过的标准格式，直接判断
+        if (c && SUPPORTED_CURRENCIES.includes(c)) return c;
+        // 回退：检查旧币种迁移映射
+        if (c) {
+            const up = c.toUpperCase();
+            if (CURRENCY_MIGRATION_MAP[up]) return CURRENCY_MIGRATION_MAP[up];
+            const match = SUPPORTED_CURRENCIES.find(s => s.toUpperCase() === up);
+            if (match) return match;
+        }
+        return DEFAULT_CURRENCY;
+    }
+    if (!txOrCurrency || typeof txOrCurrency !== 'string') return DEFAULT_CURRENCY;
+    const up = txOrCurrency.trim().toUpperCase();
+    if (CURRENCY_MIGRATION_MAP[up]) return CURRENCY_MIGRATION_MAP[up];
+    const match = SUPPORTED_CURRENCIES.find(c => c.toUpperCase() === up);
+    return match || DEFAULT_CURRENCY;
+}
+
+// ============================================================
+// Transaction 类 - 结构化交易对象（带 ECDSA 签名 + 多币种）
+// 兼容策略：currency === undefined  → 旧格式交易（hash 公式与上线前完全一致）
+//          currency === 'STC'/'cBTC'/'cETH' → 新格式多币种交易
 // ============================================================
 class Transaction {
-    constructor(from, to, amount, fee = 0, note = '') {
-        this.id = crypto.createHash('sha256').update(
-            from + to + amount + fee + note + Date.now() + Math.random()
-        ).digest('hex');
+    constructor(from, to, amount, fee = 0, note = '', currency) {
+        this.currency = normalizeCurrency(currency);
+        // id：旧格式（无 currency）不引入 currency；新格式引入 currency 参与 id hash
+        const idInput = from + to + amount + fee + note +
+            (this.currency || '') + Date.now() + Math.random();
+        this.id = crypto.createHash('sha256').update(idInput).digest('hex');
         this.from = from;
         this.to = to;
         this.amount = Number(amount);
@@ -58,10 +115,24 @@ class Transaction {
         this.signature = '';
     }
 
+    /**
+     * 计算 hash：
+     * - 若 this.currency 为 undefined（旧格式交易）：hash 公式与旧代码完全一致，
+     *   保证已签名交易的签名仍然有效。
+     * - 若 this.currency 有值：引入 currency 参与 hash，防止"币种伪造"。
+     */
     calculateHash() {
+        if (!this.currency) {
+            // 旧格式：完全兼容旧链（已持久化的区块、已签名的交易 hash 不变）
+            return crypto.createHash('sha256').update(
+                this.id + this.from + this.to + this.amount +
+                this.fee + this.note + this.timestamp
+            ).digest('hex');
+        }
+        // 新格式：引入 currency 参与 hash
         return crypto.createHash('sha256').update(
             this.id + this.from + this.to + this.amount +
-            this.fee + this.note + this.timestamp
+            this.fee + this.note + this.currency + this.timestamp
         ).digest('hex');
     }
 
@@ -352,4 +423,6 @@ function importWalletFromPem(privateKeyPem) {
 module.exports = { Block, Transaction, generateWallet, calculateMerkleRoot,
                    getPublicKeyFromPrivateKeyPem, publicKeyToAddress,
                    verifyPublicKeyMatchesAddress, signWithECDSA, verifyWithECDSA,
-                   importWalletFromPem };
+                   importWalletFromPem,
+                   SUPPORTED_CURRENCIES, DEFAULT_CURRENCY,
+                   normalizeCurrency, effectiveCurrency };

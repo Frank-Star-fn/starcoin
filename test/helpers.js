@@ -139,6 +139,7 @@ function createMockStarCoin(overrides = {}) {
         getRecentBurnedFees(n) { return []; },
         getBalance(addr, includeLocked) { return 100; },
         getLockedRewards(addr) { return 0; },
+        getAllBalances(addr, includeImmature) { return { STC: 100, cBTC: 0, cETH: 0 }; },
         getTransactionHistory(addr) { return []; },
         getAllAddresses() { return ['addr1', 'addr2']; },
         getLatestBlock() { return { hash: 'latest_hash', index: 5 }; },

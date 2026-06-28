@@ -47,9 +47,19 @@ async function updateFromBalanceHint() {
     if (fromIdx >= 0 && state.wallets[fromIdx]) {
         try {
             const data = await api('/api/balance/' + state.wallets[fromIdx].address);
-            let txt = '可用余额: ' + formatBalance(data.balance) + ' STC';
-            if (data.lockedRewards > 0) {
-                txt += '（🔒 ' + formatBalance(data.lockedRewards) + ' 奖励锁定中，共 ' + formatBalance(data.totalBalance) + ' STC）';
+            let txt;
+            if (data.balances && typeof data.balances === 'object') {
+                const parts = CURRENCY_SYMBOLS.map(c => {
+                    const v = Number(data.balances[c]) || 0;
+                    return `${formatBalance(v)} ${c}`;
+                });
+                txt = '可用余额: ' + parts.join(' / ');
+            } else {
+                txt = '可用余额: ' + formatBalance(data.balance) + ' STC';
+            }
+            const locked = Number(data.lockedRewards) || 0;
+            if (locked > 0) {
+                txt += '（🔒 ' + formatBalance(locked) + ' STC 奖励锁定中）';
             }
             txt += '（未包含交易池中待确认的 ' + (data.pendingTransactions || 0) + ' 笔）';
             document.getElementById('fromBalanceHint').textContent = txt;
@@ -71,6 +81,8 @@ async function submitTransaction() {
     const amount = parseFloat(document.getElementById('amount').value);
     const fee = parseFloat(document.getElementById('fee').value) || 0;
     const note = document.getElementById('note').value.trim();
+    const currencyEl = document.getElementById('currency');
+    const currency = currencyEl ? currencyEl.value : 'STC';  // 多币种
 
     if (btn && btn.disabled) return;
 
@@ -88,7 +100,7 @@ async function submitTransaction() {
     }
 
     clearMessage('txMessage');
-    showMessage('txMessage', '🔑 使用 ' + fromWallet.label + ' 的私钥进行 ECDSA 签名...', 'info', 0);
+    showMessage('txMessage', `🔑 使用 ${fromWallet.label} 的私钥进行 ECDSA 签名（币种: ${currency}）...`, 'info', 0);
 
     try {
         const result = await api('/api/transaction', 'POST', {
@@ -97,6 +109,7 @@ async function submitTransaction() {
             amount: amount,
             fee: fee,
             note: note,
+            currency: currency,
             privateKey: fromWallet.privateKey,
             publicKey: fromWallet.publicKey
         });
@@ -135,17 +148,19 @@ async function refreshMempool() {
         if (!data.count || data.count === 0) {
             el.innerHTML = '<div class="mempool-empty">交易池为空，提交一笔转账后会出现在这里</div>';
         } else {
-            el.innerHTML = data.transactions.map(tx => `
+            el.innerHTML = data.transactions.map(tx => {
+                const cur = (tx.currency || 'STC').toUpperCase();
+                return `
                 <div class="mempool-item">
                     <div style="font-weight:bold; color:#60a5fa;">
-                        ${shortAddr(tx.from, 10)} → ${shortAddr(tx.to, 10)}: <b>${tx.amount} STC</b>
-                        ${tx.fee ? ' <span style="color:#f87171;">🔥 手续费 ' + formatBalance(tx.fee) + ' STC（即将燃烧）</span>' : ''}
+                        ${shortAddr(tx.from, 10)} → ${shortAddr(tx.to, 10)}: <b>${tx.amount} ${cur}</b>
+                        ${tx.fee ? ' <span style="color:#f87171;">🔥 手续费 ' + formatBalance(tx.fee) + ' ' + cur + '（即将燃烧）</span>' : ''}
                     </div>
                     ${tx.note ? '<div style="color:#888; font-size:11px; margin-top:3px;">备注: ' + escapeHtml(tx.note) + '</div>' : ''}
                     <div style="color:#666; font-size:10px; margin-top:3px; font-family:monospace;">txid: ${shortAddr(tx.id, 20)}</div>
                     ${tx.signature ? '<div style="color:#4ade80; font-size:10px; margin-top:2px;">✅ 已 ECDSA 签名</div>' : ''}
                 </div>
-            `).join('');
+            `;}).join('');
         }
     } catch (e) {
         document.getElementById('mempool').textContent = '查询失败';
@@ -161,12 +176,25 @@ async function refreshAddressRank() {
         if (list.length === 0) {
             el.innerHTML = '<div class="mempool-empty">暂无数据</div>';
         } else {
-            el.innerHTML = list.map(a => `
+            el.innerHTML = list.map(a => {
+                // 多币种余额：按 balances 对象渲染
+                let balHtml;
+                if (a.balances && typeof a.balances === 'object') {
+                    const parts = CURRENCY_SYMBOLS.map(c => {
+                        const v = Number(a.balances[c]) || 0;
+                        const cls = v > 0 ? 'color:#4ade80;' : (v < 0 ? 'color:#f87171;' : 'color:#6b7280;');
+                        return `<span style="${cls}">${formatBalance(v)} ${c}</span>`;
+                    });
+                    balHtml = parts.join(' | ');
+                } else {
+                    balHtml = formatBalance(a.balance) + ' STC';
+                }
+                return `
                 <div class="address-row">
                     <span class="addr">${shortAddr(a.address, 18)} <span style="color:#666;">(${a.txCount}笔)</span></span>
-                    <span class="bal">${formatBalance(a.balance)} STC</span>
+                    <span class="bal" style="font-size:11px; white-space:nowrap;">${balHtml}</span>
                 </div>
-            `).join('');
+            `;}).join('');
         }
     } catch (e) {
         document.getElementById('addressRank').textContent = '查询失败';
@@ -237,15 +265,16 @@ async function refreshChain() {
                     feeTxCount++;
                 }
 
+                const cur = (tx.currency || 'STC').toUpperCase();
                 if (tx.from === 'SYSTEM') {
-                    return `<div class="${cls}">${prefix}奖励 → ${shortAddr(tx.to, 10)}: ${tx.amount} STC</div>`;
+                    return `<div class="${cls}">${prefix}奖励 → ${shortAddr(tx.to, 10)}: ${tx.amount} ${cur}</div>`;
                 }
                 if (!tx.from) {
                     return `<div class="${cls}">${prefix}备注: ${escapeHtml(tx.note || tx.to || '')}</div>`;
                 }
-                // 普通交易：显示手续费标签
-                const feeTag = fee > 0 ? `<span class="fee-tag">🔥${formatBalance(fee)}</span>` : '';
-                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${tx.amount} STC${tx.fee ? '(费'+formatBalance(tx.fee)+')':''}${feeTag}</div>`;
+                // 普通交易：显示币种 + 手续费标签
+                const feeTag = fee > 0 ? `<span class="fee-tag">🔥${formatBalance(fee)} ${cur}</span>` : '';
+                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${tx.amount} ${cur}${tx.fee ? '(费'+formatBalance(tx.fee)+' '+cur+')':''}${feeTag}</div>`;
             }).join('');
 
             // 本块燃烧手续费汇总

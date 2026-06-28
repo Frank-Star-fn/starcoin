@@ -1,9 +1,42 @@
 /* ============================================================
-   钱包：生成 + 选择
+   钱包：生成 + 选择（支持多币种）
    ============================================================ */
+const CURRENCY_SYMBOLS = ['STC', 'cBTC', 'cETH'];
+
 function formatBalance(num) {
     if (num === undefined || num === null || isNaN(Number(num))) return '0';
     return Number(num).toFixed(6).replace(/\.?0+$/, '');
+}
+
+/**
+ * 渲染一个多币种余额 HTML（按币种格式化，为 0 的币种显示为灰色小字，不为 0 的突出显示
+ */
+function formatMultiCurrencyBalances(balances, lockedRewardsObj) {
+    if (!balances) return '余额: --';
+    const parts = [];
+    for (const cur of CURRENCY_SYMBOLS) {
+        const bal = Number(balances[cur]) || 0;
+        const balStr = formatBalance(bal);
+        if (bal > 0) {
+            parts.push(`<span style="color:#4ade80;">${balStr} ${cur}</span>`);
+        } else if (bal < 0) {
+            parts.push(`<span style="color:#f87171;">${balStr} ${cur}</span>`);
+        } else {
+            parts.push(`<span style="color:#6b7280;">${balStr} ${cur}</span>`);
+        }
+    }
+    let html = '余额: ' + parts.join(' &nbsp;|&nbsp; ');
+
+    // 锁定奖励（目前只有 STC 有锁定（矿工奖励）
+    if (lockedRewardsObj && typeof lockedRewardsObj === 'object') {
+        const totalLocked = Object.values(lockedRewardsObj).reduce((s, v) => s + (Number(v) || 0), 0);
+        if (totalLocked > 0) {
+            html += ` <span style="color:#fbbf24;font-size:11px;">🔒 锁定中</span>`;
+        }
+    } else if (typeof lockedRewardsObj === 'number' && lockedRewardsObj > 0) {
+        html += ` <span style="color:#fbbf24;font-size:11px;">🔒 +${formatBalance(lockedRewardsObj)} 锁定</span>`;
+    }
+    return html;
 }
 
 async function generateWallet() {
@@ -183,17 +216,17 @@ async function renderWallets() {
             </div>
         `).join('');
 
-        // 异步查询每个钱包余额
+        // 异步查询每个钱包余额（多币种）
         for (let i = 0; i < state.wallets.length; i++) {
             try {
                 const data = await api('/api/balance/' + state.wallets[i].address);
                 const el = document.getElementById('wallet-balance-' + i);
                 if (el) {
-                    let txt = '余额: ' + formatBalance(data.balance) + ' STC';
-                    if (data.lockedRewards > 0) {
-                        txt += ' <span style="color:#fbbf24;font-size:11px;">🔒 +' + formatBalance(data.lockedRewards) + ' 锁定</span>';
+                    if (data.balances) {
+                        el.innerHTML = formatMultiCurrencyBalances(data.balances, data.lockedRewards);
+                    } else {
+                        el.innerHTML = '余额: ' + formatBalance(data.balance) + ' STC';
                     }
-                    el.innerHTML = txt;
                 }
             } catch (e) {}
         }
@@ -222,29 +255,34 @@ async function refreshSelectedWalletDetails() {
     try {
         const data = await api('/api/balance/' + w.address);
         const balEl = document.getElementById('selectedWalletBalance');
-        let txt = formatBalance(data.balance) + ' STC';
-        if (data.lockedRewards > 0) {
-            txt += ' <span style="color:#fbbf24;">(🔒 ' + formatBalance(data.lockedRewards) + ' 奖励锁定中)</span>';
+        if (data.balances) {
+            balEl.innerHTML = formatMultiCurrencyBalances(data.balances, data.lockedRewards);
+        } else {
+            let txt = formatBalance(data.balance) + ' STC';
+            if (data.lockedRewards > 0) {
+                txt += ' <span style="color:#fbbf24;">(🔒 ' + formatBalance(data.lockedRewards) + ' 奖励锁定中)</span>';
+            }
+            balEl.innerHTML = txt;
         }
-        balEl.innerHTML = txt;
-        // 同时更新锁定期提示
         document.getElementById('maturityHint').textContent =
             '⏳ 矿工奖励需 ' + (data.coinbaseMaturity || 5) + ' 个区块确认后才能使用';
     } catch (e) {
         document.getElementById('selectedWalletBalance').textContent = '查询失败';
     }
 
-    // 交易历史
+    // 交易历史（显示币种）
     try {
         const history = await api('/api/transactions/' + w.address);
         const hist = document.getElementById('selectedWalletHistory');
         if (!history.transactions || history.transactions.length === 0) {
             hist.innerHTML = '<div style="color:#666; font-size:11px; padding:10px; text-align:center;">暂无交易记录</div>';
         } else {
-            hist.innerHTML = history.transactions.slice(0, 10).map(tx => `
+            hist.innerHTML = history.transactions.slice(0, 10).map(tx => {
+                const cur = (tx.currency || 'STC').toUpperCase();
+                return `
                 <div style="background:rgba(255,255,255,0.04); padding:6px 8px; border-radius:4px; margin:4px 0; font-size:11px;">
                     <div style="color:${tx.from === w.address ? '#f87171' : '#4ade80'}; font-weight:bold;">
-                        ${tx.from === w.address ? '→ 转出' : '← 收到'}: ${tx.amount} STC
+                        ${tx.from === w.address ? '→ 转出' : '← 收到'}: ${tx.amount} ${cur}
                     </div>
                     <div style="color:#666; font-size:10px; margin-top:2px;">
                         Block <a onclick="searchBlock('${tx.blockIndex}')" style="color:#60a5fa;cursor:pointer;">#${tx.blockIndex}</a>
@@ -252,7 +290,7 @@ async function refreshSelectedWalletDetails() {
                         | ${new Date(tx.timestamp).toLocaleString()}
                     </div>
                 </div>
-            `).join('');
+            `;}).join('');
         }
     } catch (e) {
         document.getElementById('selectedWalletHistory').textContent = '查询失败';

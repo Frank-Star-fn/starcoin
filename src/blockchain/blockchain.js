@@ -2,7 +2,8 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const config = require('../config');
-const { Block, Transaction, generateWallet, importWalletFromPem } = require('../core');
+const { Block, Transaction, generateWallet, importWalletFromPem,
+        SUPPORTED_CURRENCIES, DEFAULT_CURRENCY, effectiveCurrency, normalizeCurrency } = require('../core');
 const { ChainSync } = require('../chain-sync');
 const { DifficultyManager } = require('../difficulty-manager');
 const { QueryEngine } = require('./blockchain-query');
@@ -71,7 +72,7 @@ class Blockchain {
         return block;
     }
 
-    // 添加交易到交易池
+    // 添加交易到交易池（多币种支持：amount/fee 币种 = transaction.currency || 'STC'）
     addTransaction(tx) {
         // 校验基本字段
         if (!tx.from || !tx.to || tx.amount <= 0) {
@@ -86,7 +87,9 @@ class Blockchain {
         if (tx instanceof Transaction) {
             transaction = tx;
         } else {
-            transaction = new Transaction(tx.from, tx.to, tx.amount, tx.fee || 0, tx.note || '');
+            transaction = new Transaction(
+                tx.from, tx.to, tx.amount, tx.fee || 0, tx.note || '', tx.currency
+            );
             // 如果传入对象包含签名和公钥，复制过来
             if (tx.signature) transaction.signature = tx.signature;
             if (tx.publicKey) transaction.publicKey = tx.publicKey;
@@ -99,16 +102,19 @@ class Blockchain {
             throw new Error('交易签名验证失败！可能是未签名、签名被篡改，或公钥与地址不匹配');
         }
 
-        // 检查余额（必须把交易池中待打包的出账金额一起扣除，否则可连点多笔导致超额）
-        const senderBalance = this.getBalance(transaction.from);
+        // ============================================
+        // 多币种余额检查：按 tx 的币种隔离
+        // ============================================
+        const txCurrency = effectiveCurrency(transaction);
+        const senderBalance = this.getBalance(transaction.from, false, txCurrency);
         const pendingOutgoing = this.pendingTransactions
-            .filter(t => t.from === transaction.from)
+            .filter(t => t.from === transaction.from && effectiveCurrency(t) === txCurrency)
             .reduce((sum, t) => sum + (Number(t.amount) || 0) + (Number(t.fee) || 0), 0);
         const availableBalance = senderBalance - pendingOutgoing;
 
         if (availableBalance < transaction.amount + transaction.fee) {
             throw new Error(
-                `余额不足！已确认余额: ${senderBalance}, ` +
+                `[${txCurrency}] 余额不足！已确认余额: ${senderBalance}, ` +
                 `交易池中待打包出账: ${pendingOutgoing}, ` +
                 `可用余额: ${availableBalance}, ` +
                 `当前转账所需: ${transaction.amount + transaction.fee}`
@@ -143,12 +149,15 @@ class Blockchain {
             return { success: false, error: '交易已存在于交易池中' };
         }
 
-        // 构造 Transaction 对象
+        // 构造 Transaction 对象（传递 currency 字段）
         let tx;
         if (txData instanceof Transaction) {
             tx = txData;
         } else {
-            tx = new Transaction(txData.from, txData.to, txData.amount, txData.fee || 0, txData.note || '');
+            tx = new Transaction(
+                txData.from, txData.to, txData.amount,
+                txData.fee || 0, txData.note || '', txData.currency
+            );
             if (txData.signature) tx.signature = txData.signature;
             if (txData.publicKey) tx.publicKey = txData.publicKey;
             if (txData.timestamp) tx.timestamp = txData.timestamp;
@@ -172,15 +181,16 @@ class Blockchain {
             return { success: false, error: '交易签名验证失败' };
         }
 
-        // 余额检查（可选跳过；备注交易和 SYSTEM 交易无需检查余额）
+        // 多币种余额检查（可选跳过；备注交易和 SYSTEM 交易无需检查余额）
         if (!skipBalanceCheck && !isSpecialTx) {
-            const senderBalance = this.getBalance(tx.from);
+            const txCurrency = effectiveCurrency(tx);
+            const senderBalance = this.getBalance(tx.from, false, txCurrency);
             const pendingOutgoing = this.pendingTransactions
-                .filter(t => t.from === tx.from)
+                .filter(t => t.from === tx.from && effectiveCurrency(t) === txCurrency)
                 .reduce((sum, t) => sum + (Number(t.amount) || 0) + (Number(t.fee) || 0), 0);
             const availableBalance = senderBalance - pendingOutgoing;
             if (availableBalance < tx.amount + tx.fee) {
-                return { success: false, error: `余额不足：可用 ${availableBalance}，需要 ${tx.amount + tx.fee}` };
+                return { success: false, error: `[${txCurrency}] 余额不足：可用 ${availableBalance}，需要 ${tx.amount + tx.fee}` };
             }
         }
 
@@ -322,48 +332,101 @@ class Blockchain {
 
     // 计算指定地址的余额（遍历整个链）
     // @param includeImmature 是否包含未成熟的矿工奖励（缺省 false，仅返回可用余额）
-    getBalance(address, includeImmature = false) {
+    /**
+     * 获取指定地址的余额（默认返回 STC 数值，保持与旧代码 100% 兼容）。
+     * currency 可选：'STC' | 'cBTC' | 'cETH'
+     */
+    getBalance(address, includeImmature = false, currency = DEFAULT_CURRENCY) {
         if (!address) return 0;
+        const targetCurrency = effectiveCurrency(currency);
         let balance = 0;
-        const latestIndex = this.getLatestBlock().index;
         for (const block of this.chain) {
             for (const tx of block.transactions) {
+                if (effectiveCurrency(tx) !== targetCurrency) continue;
                 if (tx.from === address) {
-                    balance -= tx.amount;
-                    balance -= tx.fee;
+                    balance -= Number(tx.amount) || 0;
+                    balance -= Number(tx.fee) || 0;
                 }
                 if (tx.to === address) {
-                    // 矿工奖励：检查锁定期
                     if (tx.from === 'SYSTEM' && !includeImmature) {
-                        if (!this._isCoinbaseMature(block.index)) {
-                            continue; // 奖励未成熟，不计入可用余额
-                        }
+                        if (!this._isCoinbaseMature(block.index)) continue;
                     }
-                    balance += tx.amount;
+                    balance += Number(tx.amount) || 0;
                 }
             }
         }
         return balance;
     }
 
-    // 获取地址的"锁定奖励"金额（未成熟的矿工奖励总额）
-    getLockedRewards(address) {
-        if (!address) return 0;
-        let locked = 0;
-        const latestIndex = this.getLatestBlock().index;
+    /** 内部：返回 { STC: 0, cBTC: 0, cETH: 0 } */
+    _emptyBalances() {
+        const obj = {};
+        for (const c of SUPPORTED_CURRENCIES) obj[c] = 0;
+        return obj;
+    }
+
+    /**
+     * 获取全币种余额对象（一次性遍历链，返回 { STC, cBTC, cETH }）。
+     */
+    getAllBalances(address, includeImmature = false) {
+        if (!address) return this._emptyBalances();
+        const balances = this._emptyBalances();
         for (const block of this.chain) {
             for (const tx of block.transactions) {
-                if (tx.to === address && tx.from === 'SYSTEM') {
-                    if (!this._isCoinbaseMature(block.index)) {
-                        locked += Number(tx.amount) || 0;
+                const c = effectiveCurrency(tx);
+                if (!balances.hasOwnProperty(c)) continue;
+                if (tx.from === address) {
+                    balances[c] -= Number(tx.amount) || 0;
+                    balances[c] -= Number(tx.fee) || 0;
+                }
+                if (tx.to === address) {
+                    if (tx.from === 'SYSTEM' && !includeImmature) {
+                        if (!this._isCoinbaseMature(block.index)) continue;
                     }
+                    balances[c] += Number(tx.amount) || 0;
+                }
+            }
+        }
+        return balances;
+    }
+
+    /**
+     * 获取地址的"锁定奖励"金额（未成熟矿工奖励）。
+     * 不传 currency 返回 STC（兼容旧代码）；传 'ALL' 返回所有币种对象。
+     */
+    getLockedRewards(address, currency = DEFAULT_CURRENCY) {
+        if (!address) {
+            return (currency === 'ALL') ? this._emptyBalances() : 0;
+        }
+        if (currency === 'ALL') {
+            const locked = this._emptyBalances();
+            for (const block of this.chain) {
+                for (const tx of block.transactions) {
+                    if (tx.to !== address || tx.from !== 'SYSTEM') continue;
+                    const c = effectiveCurrency(tx);
+                    if (!locked.hasOwnProperty(c)) continue;
+                    if (!this._isCoinbaseMature(block.index)) {
+                        locked[c] += Number(tx.amount) || 0;
+                    }
+                }
+            }
+            return locked;
+        }
+        const targetCurrency = effectiveCurrency(currency);
+        let locked = 0;
+        for (const block of this.chain) {
+            for (const tx of block.transactions) {
+                if (tx.to !== address || tx.from !== 'SYSTEM') continue;
+                if (effectiveCurrency(tx) !== targetCurrency) continue;
+                if (!this._isCoinbaseMature(block.index)) {
+                    locked += Number(tx.amount) || 0;
                 }
             }
         }
         return locked;
     }
 
-    // 获取地址的所有交易历史
+    // 获取地址的所有交易历史（每笔带 currency 字段）
     getTransactionHistory(address) {
         if (!address) return [];
         const history = [];
@@ -372,6 +435,7 @@ class Blockchain {
                 if (tx.from === address || tx.to === address) {
                     history.push({
                         ...tx,
+                        currency: effectiveCurrency(tx),
                         blockIndex: block.index,
                         blockHash: block.hash,
                         direction: tx.from === address ? 'OUT' : 'IN'
@@ -420,7 +484,7 @@ class Blockchain {
         return result;
     }
 
-    // 获取所有地址及其余额（用于排名展示）
+    // 获取所有地址及其余额（用于排名展示，每项包含 balances: {STC, cBTC, cETH}）
     getAllAddresses() {
         const map = new Map();
         for (const block of this.chain) {
@@ -431,10 +495,12 @@ class Blockchain {
         }
         const result = [];
         for (const addr of map.keys()) {
+            const balances = this.getAllBalances(addr);
             result.push({
                 address: addr,
-                balance: this.getBalance(addr),
-                lockedRewards: this.getLockedRewards(addr),
+                balance: balances[DEFAULT_CURRENCY],          // 兼容：主币（STC）余额
+                balances,                                        // 全币种余额 { STC, cBTC, cETH }
+                lockedRewards: this.getLockedRewards(addr),    // 仅 STC 有矿工奖励
                 txCount: this.getTransactionHistory(addr).length
             });
         }
@@ -517,4 +583,4 @@ class Blockchain {
     }
 }
 
-module.exports = { Blockchain, Block, Transaction, generateWallet, importWalletFromPem };
+module.exports = { Blockchain, Block, Transaction, generateWallet, importWalletFromPem, normalizeCurrency };
