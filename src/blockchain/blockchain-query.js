@@ -1,17 +1,17 @@
-const { Block, Transaction } = require('../core');
+const { Block, Transaction,
+        SUPPORTED_CURRENCIES, DEFAULT_CURRENCY, effectiveCurrency } = require('../core');
 
 /**
  * 查询引擎：负责链上的所有"只读"查询操作
  * - 按区块号/交易ID/地址/备注搜索
+ * - 余额查询、交易历史、燃烧手续费统计
  * - 所有方法都不修改链状态
  *
  * 通过 this.blockchain 反向引用访问：
  *   this.blockchain.chain                → 区块数组
  *   this.blockchain.pendingTransactions  → 交易池
- *   this.blockchain.getBalance(...)      → 余额查询
- *   this.blockchain.getTransactionHistory(...) → 交易历史
- *   this.blockchain.getLockedRewards(...)     → 锁定奖励
- *   this.blockchain.getLatestBlock()          → 最新区块
+ *   this.blockchain.getLatestBlock()     → 最新区块
+ *   this.blockchain._isCoinbaseMature()  → 奖励成熟度判断（内部调用）
  */
 class QueryEngine {
     constructor(blockchain) {
@@ -148,10 +148,10 @@ class QueryEngine {
 
         // ── 3) 32位 hex（地址长度）→ 按地址搜索 ──
         if (hexPattern.test(q) && q.length === 32) {
-            const balance = this.blockchain.getBalance(q);
-            const totalBalance = this.blockchain.getBalance(q, true);
-            const lockedRewards = this.blockchain.getLockedRewards(q);
-            const history = this.blockchain.getTransactionHistory(q);
+            const balance = this.getBalance(q);
+            const totalBalance = this.getBalance(q, true);
+            const lockedRewards = this.getLockedRewards(q);
+            const history = this.getTransactionHistory(q);
             const pendingCount = this.blockchain.pendingTransactions.filter(
                 tx => tx.from === q || tx.to === q
             ).length;
@@ -184,8 +184,8 @@ class QueryEngine {
             if (addressSet.size > 0) {
                 const results = Array.from(addressSet).slice(0, 10).map(addr => ({
                     address: addr,
-                    balance: this.blockchain.getBalance(addr),
-                    txCount: this.blockchain.getTransactionHistory(addr).length
+                    balance: this.getBalance(addr),
+                    txCount: this.getTransactionHistory(addr).length
                 }));
                 return {
                     type: 'address_list',
@@ -256,6 +256,204 @@ class QueryEngine {
             result: { message: `未找到与 "${q}" 相关的任何结果` },
             query: q
         };
+    }
+
+    // ============================================================
+    //  余额查询（从 blockchain.js 迁入）
+    // ============================================================
+
+    /**
+     * 获取指定地址的余额（默认返回 STC 数值，保持与旧代码 100% 兼容）。
+     * currency 可选：'STC' | 'cBTC' | 'cETH'
+     */
+    getBalance(address, includeImmature = false, currency = DEFAULT_CURRENCY) {
+        if (!address) return 0;
+        const targetCurrency = effectiveCurrency(currency);
+        let balance = 0;
+        for (const block of this.blockchain.chain) {
+            for (const tx of block.transactions) {
+                const c = effectiveCurrency(tx);
+
+                if (tx.from === address) {
+                    // amount 始终按交易币种扣除
+                    if (c === targetCurrency) {
+                        balance -= Number(tx.amount) || 0;
+                    }
+                    // fee 始终从 STC 扣除（无论交易币种）
+                    if (targetCurrency === DEFAULT_CURRENCY) {
+                        balance -= Number(tx.fee) || 0;
+                    }
+                }
+                if (tx.to === address) {
+                    if (c !== targetCurrency) continue;
+                    if (tx.from === 'SYSTEM' && !includeImmature) {
+                        if (!this.blockchain._isCoinbaseMature(block.index)) continue;
+                    }
+                    balance += Number(tx.amount) || 0;
+                }
+            }
+        }
+        return balance;
+    }
+
+    /** 内部：返回 { STC: 0, cBTC: 0, cETH: 0 } */
+    _emptyBalances() {
+        const obj = {};
+        for (const c of SUPPORTED_CURRENCIES) obj[c] = 0;
+        return obj;
+    }
+
+    /**
+     * 获取全币种余额对象（一次性遍历链，返回 { STC, cBTC, cETH }）。
+     * amount 按交易币种扣除，fee 始终从 STC 扣除。
+     */
+    getAllBalances(address, includeImmature = false) {
+        if (!address) return this._emptyBalances();
+        const balances = this._emptyBalances();
+        for (const block of this.blockchain.chain) {
+            for (const tx of block.transactions) {
+                const c = effectiveCurrency(tx);
+                if (!balances.hasOwnProperty(c)) continue;
+                if (tx.from === address) {
+                    // amount 按交易币种扣除
+                    balances[c] -= Number(tx.amount) || 0;
+                    // fee 始终从 STC 扣除
+                    balances[DEFAULT_CURRENCY] -= Number(tx.fee) || 0;
+                }
+                if (tx.to === address) {
+                    if (tx.from === 'SYSTEM' && !includeImmature) {
+                        if (!this.blockchain._isCoinbaseMature(block.index)) continue;
+                    }
+                    balances[c] += Number(tx.amount) || 0;
+                }
+            }
+        }
+        return balances;
+    }
+
+    /**
+     * 获取地址的"锁定奖励"金额（未成熟矿工奖励）。
+     * 不传 currency 返回 STC（兼容旧代码）；传 'ALL' 返回所有币种对象。
+     */
+    getLockedRewards(address, currency = DEFAULT_CURRENCY) {
+        if (!address) {
+            return (currency === 'ALL') ? this._emptyBalances() : 0;
+        }
+        if (currency === 'ALL') {
+            const locked = this._emptyBalances();
+            for (const block of this.blockchain.chain) {
+                for (const tx of block.transactions) {
+                    if (tx.to !== address || tx.from !== 'SYSTEM') continue;
+                    const c = effectiveCurrency(tx);
+                    if (!locked.hasOwnProperty(c)) continue;
+                    if (!this.blockchain._isCoinbaseMature(block.index)) {
+                        locked[c] += Number(tx.amount) || 0;
+                    }
+                }
+            }
+            return locked;
+        }
+        const targetCurrency = effectiveCurrency(currency);
+        let locked = 0;
+        for (const block of this.blockchain.chain) {
+            for (const tx of block.transactions) {
+                if (tx.to !== address || tx.from !== 'SYSTEM') continue;
+                if (effectiveCurrency(tx) !== targetCurrency) continue;
+                if (!this.blockchain._isCoinbaseMature(block.index)) {
+                    locked += Number(tx.amount) || 0;
+                }
+            }
+        }
+        return locked;
+    }
+
+    /**
+     * 获取地址的所有交易历史（每笔带 currency 字段）
+     */
+    getTransactionHistory(address) {
+        if (!address) return [];
+        const history = [];
+        for (const block of this.blockchain.chain) {
+            for (const tx of block.transactions) {
+                if (tx.from === address || tx.to === address) {
+                    history.push({
+                        ...tx,
+                        currency: effectiveCurrency(tx),
+                        blockIndex: block.index,
+                        blockHash: block.hash,
+                        direction: tx.from === address ? 'OUT' : 'IN'
+                    });
+                }
+            }
+        }
+        return history.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    }
+
+    /**
+     * 计算全链总燃烧手续费（所有交易的 fee 总和）
+     */
+    getTotalBurnedFees() {
+        let totalFees = 0;
+        for (const block of this.blockchain.chain) {
+            if (!block.transactions || !Array.isArray(block.transactions)) continue;
+            for (const tx of block.transactions) {
+                totalFees += Number(tx.fee) || 0;
+            }
+        }
+        return totalFees;
+    }
+
+    /**
+     * 获取最新 N 个区块的燃烧手续费详情（用于前端图表展示）
+     */
+    getRecentBurnedFees(count = 20) {
+        const result = [];
+        const startIdx = Math.max(0, this.blockchain.chain.length - count);
+        for (let i = startIdx; i < this.blockchain.chain.length; i++) {
+            const block = this.blockchain.chain[i];
+            let blockFees = 0;
+            let txCount = 0;
+            if (block.transactions && Array.isArray(block.transactions)) {
+                for (const tx of block.transactions) {
+                    const fee = Number(tx.fee) || 0;
+                    blockFees += fee;
+                    if (fee > 0) txCount++;
+                }
+            }
+            result.push({
+                blockIndex: block.index,
+                blockHash: block.hash ? block.hash.substring(0, 16) : '',
+                totalFees: blockFees,
+                txWithFeeCount: txCount,
+                totalTxCount: (block.transactions || []).length
+            });
+        }
+        return result;
+    }
+
+    /**
+     * 获取所有地址及其余额（用于排名展示，每项包含 balances: {STC, cBTC, cETH}）
+     */
+    getAllAddresses() {
+        const map = new Map();
+        for (const block of this.blockchain.chain) {
+            for (const tx of block.transactions) {
+                if (tx.from) map.set(tx.from, (map.get(tx.from) || 0));
+                if (tx.to) map.set(tx.to, (map.get(tx.to) || 0));
+            }
+        }
+        const result = [];
+        for (const addr of map.keys()) {
+            const balances = this.getAllBalances(addr);
+            result.push({
+                address: addr,
+                balance: balances[DEFAULT_CURRENCY],          // 兼容：主币（STC）余额
+                balances,                                        // 全币种余额 { STC, cBTC, cETH }
+                lockedRewards: this.getLockedRewards(addr),    // 仅 STC 有矿工奖励
+                txCount: this.getTransactionHistory(addr).length
+            });
+        }
+        return result.sort((a, b) => b.balance - a.balance);
     }
 }
 
