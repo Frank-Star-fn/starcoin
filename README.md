@@ -17,11 +17,9 @@ $env:PORT="3002" ; node src/server.js
 
 ## 代码结构
 
-- 前端(front目录)：app.js, wallet.js, main.js, mining.js, 负责可视化和交互。
+- 前端：front目录, 负责可视化和交互。
 
-- 后端：server.js, difficulty-manager.js, chain-sync.js, core.js, blockchain目录, routers目录, p2p目录, 负责处理请求和响应。
-
-- 测试：test目录, 执行单元测试。
+- 后端：server.js, difficulty-manager.js, chain-sync.js, core.js, blockchain目录, p2p目录, routers目录, middleware目录, 负责处理请求和响应。
 
 ## 已完成功能
 
