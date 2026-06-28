@@ -76,7 +76,12 @@ function createNetRoutes(starCoin, p2p, PORT) {
     router.post('/mempool/broadcast', wrapAsync(async (req, res) => {
         const count = starCoin.pendingTransactions.length;
         if (count === 0) {
-            throw new AppError(400, '交易池为空，没有可广播的交易', 'MEMPOOL_EMPTY');
+            return res.json({
+                success: true,
+                message: '交易池为空，没有可广播的交易',
+                poolCount: 0,
+                connectedNodes: p2p.getConnectedCount()
+            });
         }
         p2p.broadcastPendingTxs();
         res.json({

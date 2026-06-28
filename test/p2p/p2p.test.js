@@ -5,8 +5,8 @@
 // ============================================================
 const http = require('http');
 const WebSocket = require('ws');
-const { createP2P } = require('../src/p2p/p2p');
-const { createP2PCore, MESSAGE_TYPES } = require('../src/p2p/p2p-core');
+const { createP2P } = require('../../src/p2p/p2p');
+const { createP2PCore, MESSAGE_TYPES } = require('../../src/p2p/p2p-core');
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));

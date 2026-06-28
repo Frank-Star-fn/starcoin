@@ -24,7 +24,12 @@ function createMiningRoutes(starCoin, p2p, broadcastToFrontend) {
             throw new AppError(400, '必须提供 minerAddress 参数，或先配置 miningAddress', 'MISSING_MINER');
         }
         const startTime = Date.now();
-        const newBlock = starCoin.mineBlock(minerAddress || starCoin.miningAddress, data);
+        let newBlock;
+        try {
+            newBlock = starCoin.mineBlock(minerAddress || starCoin.miningAddress, data);
+        } catch (err) {
+            throw new AppError(400, err.message || '挖矿失败', 'MINE_FAILED');
+        }
         if (!newBlock || !newBlock.hash) {
             throw new AppError(500, '挖矿失败，未返回有效区块', 'MINE_FAILED');
         }

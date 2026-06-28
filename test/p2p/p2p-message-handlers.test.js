@@ -4,7 +4,7 @@
 // 测试策略: 纯依赖注入，所有依赖用 Mock，无需真实 WebSocket
 // ============================================================
 
-const { createMessageHandlers } = require('../src/p2p/p2p-message-handlers');
+const { createMessageHandlers } = require('../../src/p2p/p2p-message-handlers');
 
 describe('p2p-message-handlers', () => {
   let mockNetwork, mockStarCoin, handlers;

@@ -5,7 +5,7 @@
 // ============================================================
 const http = require('http');
 const WebSocket = require('ws');
-const { createP2PCore, MESSAGE_TYPES } = require('../src/p2p/p2p-core');
+const { createP2PCore, MESSAGE_TYPES } = require('../../src/p2p/p2p-core');
 
 /**
  * 创建一个 mock starCoin 实例（最小依赖）

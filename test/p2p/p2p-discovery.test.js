@@ -3,8 +3,8 @@
 // 覆盖: createDiscoveryModule 的纯逻辑方法
 // 测试策略: 用 Mock core 隔离 WebSocket 依赖，验证发现逻辑
 // ============================================================
-const { createDiscoveryModule } = require('../src/p2p/p2p-discovery');
-const { MESSAGE_TYPES } = require('../src/p2p/p2p-core');
+const { createDiscoveryModule } = require('../../src/p2p/p2p-discovery');
+const { MESSAGE_TYPES } = require('../../src/p2p/p2p-core');
 
 /**
  * 创建一个 mock core 对象（模拟 p2p-core.js 返回的网络核心）
