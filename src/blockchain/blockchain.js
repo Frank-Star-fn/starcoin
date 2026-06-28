@@ -22,7 +22,7 @@ class Blockchain {
             difficultyMax: config.DIFFICULTY_MAX,
             difficultyStep: config.DIFFICULTY_STEP
         });
-        this.pendingTransactions = [];  // 交易池 (Mempool)
+        this.pendingTransactions = [];
         this.miningReward = config.MINING_REWARD;
         this.coinbaseMaturity = config.MINING_COINBASE_MATURITY;
         this.miningAddress = 'MINER_' + PORT;
@@ -35,9 +35,7 @@ class Blockchain {
         this.freshStart = !this.loadFromFile();
     }
 
-    // ============================================================
-    //  难度属性代理：委托给 this.diffManager（保持外部兼容）
-    // ============================================================
+    // 难度属性代理
     get difficulty() { return this.diffManager.difficulty; }
     set difficulty(val) { this.diffManager.difficulty = val; }
     get difficultyHistory() { return this.diffManager.difficultyHistory; }
@@ -76,7 +74,6 @@ class Blockchain {
 
     // 添加交易到交易池（支持多币种、nonce 防重放；矿工费始终以 STC 支付）
     addTransaction(tx) {
-        // 校验基本字段
         if (!tx.from || !tx.to || tx.amount <= 0) {
             throw new Error('交易必须包含 from, to, 和正数 amount');
         }
@@ -104,13 +101,7 @@ class Blockchain {
             throw new Error('交易签名验证失败！可能是未签名、签名被篡改，或公钥与地址不匹配');
         }
 
-        // ============================================
-        // nonce 验证（防重放攻击）：
-        // - 有签名 + 有 nonce → 验证 nonce 是否匹配；
-        // - 有签名 + 无 nonce → 允许（视为"旧格式、不启用 nonce 防重放"
-        //   注意：此时签名不含 nonce，填充 nonce 会破坏签名，故不自动填充）；
-        // - 无签名 + 无 nonce → 自动填充。
-        // ============================================
+        // nonce 验证（防重放）：已签名+有nonce→严格校验；已签名+无nonce→旧格式不动；未签名+无nonce→自动填充
         {
             const sender = transaction.from;
             const hasSignature = transaction.signature && transaction.signature.length > 0;
@@ -133,10 +124,7 @@ class Blockchain {
             // （否则会使 hash 改变，签名验证失败）
         }
 
-        // ============================================
-        // 多币种余额检查
-        // amount 使用交易币种支付，fee 始终使用 STC 支付
-        // ============================================
+        // 多币种余额检查：amount 用交易币种，fee 始终用 STC
         const txCurrency = effectiveCurrency(transaction);
         const fee = Number(transaction.fee) || 0;
 

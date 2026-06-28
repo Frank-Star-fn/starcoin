@@ -1,12 +1,4 @@
-// ============================================================
-// routes/error-handler.js — StarCoin 统一错误处理模块
-//
-// 包含：
-//   AppError          — 自定义错误类（携带 statusCode）
-//   wrapAsync         — 自动捕获 async 路由异常
-//   createNotFoundMiddleware — 404 兜底
-//   createErrorMiddleware    — 统一错误响应中间件
-// ============================================================
+// StarCoin 统一错误处理：AppError + wrapAsync + 404/错误中间件
 
 /**
  * 自定义应用错误类
@@ -32,9 +24,6 @@ class AppError extends Error {
     }
 }
 
-/**
- * 根据 statusCode 推导默认错误码
- */
 function _defaultCode(statusCode) {
     if (statusCode >= 500) return 'INTERNAL_ERROR';
     if (statusCode === 404) return 'NOT_FOUND';
@@ -44,23 +33,7 @@ function _defaultCode(statusCode) {
     return 'BAD_REQUEST';
 }
 
-/**
- * 包装异步路由处理函数，自动捕获异常并返回统一 JSON 错误响应
- * 避免 async 路由抛出的 Promise reject 成为未处理异常
- *
- * 与传统的 next(err) 方案不同，本函数会直接发送 JSON 错误响应。
- * 这样即使测试环境没有挂载错误中间件，也能获得统一的错误格式。
- * createErrorMiddleware 保留作为兜底安全网。
- *
- * @param {function} fn - async (req, res, next) => { ... }
- * @returns {function}  - 包装后的 Express 路由处理函数
- *
- * @example
- *   router.get('/balance/:address', wrapAsync(async (req, res) => {
- *       const balance = await starCoin.getBalance(req.params.address);
- *       res.json({ success: true, balance });
- *   }));
- */
+/** 包装 async 路由，自动捕获异常并返回统一 JSON 错误 */
 function wrapAsync(fn) {
     return (req, res, next) => {
         Promise.resolve(fn(req, res, next)).catch(err => {

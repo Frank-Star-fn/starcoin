@@ -157,11 +157,7 @@ function clearMessage(id) {
 }
 
 /* ============================================================
-   本地持久化（加密存储格式）
-   版本说明：
-     v1（旧）：JSON 数组，wallets[i].privateKey 为明文 PEM
-     v2（当前）：{ version: 2, storageType: "browser-key", wallets, selectedWallet }
-               wallets[i].encryptedPrivateKey 为加密数据
+   本地持久化（加密存储 format version 2）
    ============================================================ */
 
 /**
@@ -183,13 +179,7 @@ function saveWallets() {
     }
 }
 
-/**
- * 从 localStorage 加载钱包数据
- * 自动检测格式并迁移：
- *   - v2（对象，version==2）：直接加载
- *   - v1（数组，含 privateKey 明文）：触发加密迁移
- *   解密失败（密钥丢失）时显示提示并清空钱包列表
- */
+/** 从 localStorage 加载钱包，自动检测 v1/v2 格式并迁移 */
 async function loadWallets() {
     try {
         // 确保主密钥就绪

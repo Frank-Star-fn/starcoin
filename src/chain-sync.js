@@ -11,9 +11,7 @@ class ChainSync {
         this.blockchain = blockchain;
     }
 
-    // ============================================================
-    // 辅助：把普通 JSON 对象转换为 Transaction 实例（用于签名验证）
-    // ============================================================
+    // JSON → Transaction 实例（用于签名验证）
     _toTransactionInstance(txObj) {
         if (!txObj) return null;
         // 如果已经是 Transaction 实例，直接返回
@@ -31,12 +29,7 @@ class ChainSync {
         return tx;
     }
 
-    // ============================================================
-    // 链完整性验证
-    // chain: 要验证的链（不传则验证自身）
-    // validateSignatures: 是否验证每笔交易的 ECDSA 签名（默认 true；旧数据可设为 false 兼容）
-    // 附加：对含 nonce 的交易，验证其 nonce 是否按地址从 0 严格递增（防重放）
-    // ============================================================
+    // 链完整性验证：校验 hash + previousHash 链式引用 + 交易签名 + nonce 递增
     isChainValid(chain, validateSignatures = true) {
         const bc = this.blockchain;
         const targetChain = chain || bc.chain;
@@ -220,9 +213,7 @@ class ChainSync {
         return -1; // 全部有效
     }
 
-    // ============================================================
-    // 替换为更长的链（分叉处理 + 交易回滚）
-    // ============================================================
+    // 分叉处理 + 交易回滚：替换为更长的链
     replaceChain(newChain) {
         const bc = this.blockchain;
 

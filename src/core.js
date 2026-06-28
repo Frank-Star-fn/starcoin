@@ -1,9 +1,6 @@
 const crypto = require('crypto');
 const bip39 = require('bip39');
 
-// ============================================================
-// ECDSA 工具函数 - 使用 secp256k1 椭圆曲线
-// ============================================================
 const EC_CURVE = 'secp256k1';
 
 function getPublicKeyFromPrivateKeyPem(privateKeyPem) {
@@ -94,14 +91,8 @@ function effectiveCurrency(txOrCurrency) {
     return match || DEFAULT_CURRENCY;
 }
 
-// ============================================================
-// Transaction 类 - 结构化交易对象（带 ECDSA 签名 + 多币种 + nonce）
-// 兼容策略（向后兼容链上已有数据）：
-//   currency === undefined  → 旧格式交易（hash 公式与上线前完全一致）
-//   currency === 'STC'/...  → 新格式多币种交易
-//   nonce   === undefined  → 旧格式（无 nonce 字段，hash 不引入 nonce）
-//   nonce   为数字        → 新格式（引入 nonce 参与 hash，防重放攻击）
-// ============================================================
+// Transaction 类：ECDSA 签名 + 多币种 + nonce 防重放
+// 向后兼容：currency===undefined / nonce===undefined 表示旧格式，hash 公式与旧链一致
 class Transaction {
     constructor(from, to, amount, fee = 0, note = '', currency, nonce) {
         this.currency = normalizeCurrency(currency);

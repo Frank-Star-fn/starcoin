@@ -27,13 +27,11 @@ async function mineBlock() {
     // 重置取消标志（每次新开单次挖矿时清除之前的取消状态）
     singleMineCancelled = false;
 
-    // 禁用按钮
     btn.disabled = true;
     btn.textContent = '⛏️ 挖矿中...';
 
-    // 显示动画区域
+    // 显示并重置动画状态（先清空再激活，防止 CSS 突变抖动）
     animContainer.style.display = 'block';
-    // 先重置到中性状态再激活，防止从其他状态切换时 CSS 动画突变导致抖动
     animContainer.className = 'mining-animation';
     void animContainer.offsetWidth;
     animContainer.className = 'mining-animation mining-active';

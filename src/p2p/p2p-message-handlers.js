@@ -1,28 +1,8 @@
 const { MESSAGE_TYPES } = require('./p2p-core');
 
-/**
- * 创建消息处理器层
- *
- * 职责：处理所有区块链业务相关的消息（链同步、区块追加、交易池等）
- * 与 p2p-core.js 的网络基础设施层解耦，通过依赖注入使用网络能力
- *
- * 设计模式：工厂函数 + 依赖注入
- * - p2p-core.js 提供网络基础设施（sendMessage, broadcast, nodeInfo 等）
- * - 本模块提供消息业务逻辑（链验证、区块处理等）
- * - 上层 p2p.js 将两者组合，并可在此基础上扩展
- *
- * @param {object} network - 网络基础设施依赖
- * @param {function} network.sendMessage - 发送消息到指定连接
- * @param {function} network.broadcast - 广播消息到所有连接
- * @param {object} network.nodeInfo - 本节点信息
- * @param {Set} network.nodes - 已连接节点 URL 集合
- * @param {Map} network.pendingPongs - 心跳 PONG 超时映射表
- * @param {Blockchain} starCoin - 区块链实例
- * @param {object} [options] - 可选配置
- * @param {function} [options.onChainChange] - 链数据变化时的回调
- */
+/** 区块链业务消息处理：链同步、区块追加、交易池等，与 p2p-core 网络层解耦 */
 function createMessageHandlers(network, starCoin, options = {}) {
-    // ========== 业务广播（封装网络层的 broadcast） ==========
+    // 业务广播（封装网络层的 broadcast）
 
     function broadcastLatest() {
         network.broadcast({
@@ -73,7 +53,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
         network.nodeInfo.lastUpdated = new Date().toISOString();
     }
 
-    // ========== 链/区块消息处理 ==========
+    // 链/区块消息处理
 
     function handleChainResponse(chain, fromNode) {
         if (!chain || !Array.isArray(chain) || chain.length === 0) {
@@ -155,7 +135,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
         }
     }
 
-    // ========== 交易池处理（基础层桩方法，供上层 p2p.js 扩展覆盖） ==========
+    // 交易池处理（基础桩方法，可被上层 p2p.js 覆盖）
 
     function handleTransaction(transaction, fromNode) {
         console.log(`📥 [交易] 收到来自 ${fromNode || '某节点'} 的交易: ${transaction.id || 'unknown'}`);
@@ -170,11 +150,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
         console.log(`📥 [交易池] 收到来自 ${fromNode || '某节点'} 的交易池请求`);
     }
 
-    // ========== 消息路由分发 ==========
-    //
-    // 注意：NODE_LIST / NODE_LIST_REQUEST 由上层 (p2p.js) 通过替换 handleMessage 扩展
-    // 本层只处理核心区块链业务消息 + 心跳消息
-
+    // 消息路由分发（NODE_LIST 由上层 p2p.js 扩展）
     function handleMessage(ws, message, connectionId) {
         switch (message.type) {
             case MESSAGE_TYPES.QUERY_LATEST:

@@ -2,20 +2,7 @@ const fs = require('fs');
 const { Block, Transaction } = require('../core');
 const config = require('../config');
 
-/**
- * 持久化管理器：负责链数据的文件读写与恢复
- * 所有与文件系统相关的操作都集中在这里
- *
- * 通过 this.blockchain 反向引用访问：
- *   this.blockchain.chain                    → 区块数组
- *   this.blockchain.dataFile                 → 数据文件路径
- *   this.blockchain.difficulty               → 当前难度（读写）
- *   this.blockchain.difficultyHistory        → 难度历史（读写）
- *   this.blockchain.lastAdjustmentBlock      → 上次调整区块（读写）
- *   this.blockchain.isChainValid()           → 链完整性验证
- *   this.blockchain.recalculateDifficulty()  → 重新计算难度
- *   this.blockchain.createGenesisBlock()     → 创建创世块
- */
+/** 链数据文件的读写与恢复 */
 class StorageManager {
     constructor(blockchain) {
         this.blockchain = blockchain;
@@ -29,7 +16,7 @@ class StorageManager {
                 const raw = fs.readFileSync(this.blockchain.dataFile, 'utf8');
                 const saved = JSON.parse(raw);
                 if (saved && saved.chain && saved.chain.length > 0) {
-                    // ----- 恢复难度数据（兼容旧格式，但最终以链上时间戳为准） -----
+                    // 恢复难度数据
                     if (saved.difficulty != null) {
                         this.blockchain.difficulty = saved.difficulty;
                     }

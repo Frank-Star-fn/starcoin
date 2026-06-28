@@ -1,13 +1,3 @@
-/**
- * StarCoin 中央配置模块
- *
- * 统一从 .env 文件加载配置，提供带默认值的配置对象。
- * 所有模块通过 require('./config') 获取配置，不再使用硬编码常量。
- *
- * 使用方式：
- *   const config = require('./config');
- *   console.log(config.PORT);
- */
 const path = require('path');
 
 // dotenv 加载 .env 文件（必须在任何其他模块引用之前）

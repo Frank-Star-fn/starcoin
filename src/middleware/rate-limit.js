@@ -1,12 +1,3 @@
-// ============================================================
-// middleware/rate-limit.js — IP 限流中间件（滑动窗口）
-//
-// 用法：
-//   const createRateLimiter = require('./middleware/rate-limit');
-//   const limiter = createRateLimiter({ windowMs: 60000, max: 60 });
-//   app.use('/api', limiter);
-// ============================================================
-
 /**
  * 从请求中获取客户端 IP
  * 优先级：X-Forwarded-For 头（第一个 IP）→ X-Real-IP → req.ip

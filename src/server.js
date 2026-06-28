@@ -20,10 +20,7 @@ const starCoin = new Blockchain();
 // 创建 HTTP 服务器
 const server = http.createServer(app);
 
-// ============================================================
-// 前端 WebSocket 推送服务（与 P2P 共享同一 WebSocket 服务器）
-// 通过 URL 路径区分: 前端连接 /ws, P2P 节点连接 /
-// ============================================================
+// 前端 WS 推送（与 P2P 共享服务器，通过路径区分：前端 /ws，P2P /）
 const frontendClients = new Set();
 
 /**
@@ -69,9 +66,6 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 app.use('/src', express.static(path.join(__dirname, '..', 'src')));
 app.use(express.json());
 
-// ============================================================
-// API 路由 — 委托给 routes/ 目录下的子模块处理
-// ============================================================
 app.use('/api', createRoutes(starCoin, p2p, broadcastToFrontend, PORT));
 
 // 主页路由
@@ -79,12 +73,8 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-// ============================================================
-// 应用级错误处理
-// ============================================================
-// 404 兜底（捕获未匹配的任意请求路径）
+// 404 兜底 + 统一错误响应
 app.use(createNotFoundMiddleware());
-// 统一错误响应
 app.use(createErrorMiddleware());
 
 // 启动服务器

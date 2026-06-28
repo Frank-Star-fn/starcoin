@@ -2,25 +2,12 @@ const { Block, Transaction,
         SUPPORTED_CURRENCIES, DEFAULT_CURRENCY, effectiveCurrency } = require('../core');
 
 /**
- * 查询引擎：负责链上的所有"只读"查询操作
- * - 按区块号/交易ID/地址/备注搜索
- * - 余额查询、交易历史、燃烧手续费统计
- * - 所有方法都不修改链状态
- *
- * 通过 this.blockchain 反向引用访问：
- *   this.blockchain.chain                → 区块数组
- *   this.blockchain.pendingTransactions  → 交易池
- *   this.blockchain.getLatestBlock()     → 最新区块
- *   this.blockchain._isCoinbaseMature()  → 奖励成熟度判断（内部调用）
+ * 查询引擎：只读查询操作（区块/交易/地址/备注搜索、余额、手续费统计）
  */
 class QueryEngine {
     constructor(blockchain) {
         this.blockchain = blockchain;
     }
-
-    // ============================================================
-    //  搜索方法：按区块号 / 交易ID / 地址 / 备注搜索
-    // ============================================================
 
     /**
      * 按区块索引查找区块
@@ -164,7 +151,7 @@ class QueryEngine {
                     lockedRewards,
                     transactionCount: history.length,
                     pendingTransactions: pendingCount,
-                    transactions: history.slice(0, 10) // 最近 10 笔
+                    transactions: history.slice(0, 10)
                 },
                 query: q
             };
