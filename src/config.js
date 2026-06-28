@@ -103,15 +103,15 @@ const config = {
     /** 全局读接口：时间窗口（毫秒） */
     RATE_LIMIT_GLOBAL_WINDOW_MS: int(process.env.RATE_LIMIT_GLOBAL_WINDOW_MS, 60 * 1000),
     /** 全局读接口：允许请求数 / 窗口 */
-    RATE_LIMIT_GLOBAL_MAX: int(process.env.RATE_LIMIT_GLOBAL_MAX, 60),
+    RATE_LIMIT_GLOBAL_MAX: int(process.env.RATE_LIMIT_GLOBAL_MAX, 600),
     /** 写操作敏感路由：时间窗口（毫秒） */
     RATE_LIMIT_WRITE_WINDOW_MS: int(process.env.RATE_LIMIT_WRITE_WINDOW_MS, 60 * 1000),
     /** 写操作敏感路由：允许请求数 / 窗口 */
-    RATE_LIMIT_WRITE_MAX: int(process.env.RATE_LIMIT_WRITE_MAX, 10),
+    RATE_LIMIT_WRITE_MAX: int(process.env.RATE_LIMIT_WRITE_MAX, 100),
     /** 搜索 / 重查询路由：时间窗口（毫秒） */
     RATE_LIMIT_SEARCH_WINDOW_MS: int(process.env.RATE_LIMIT_SEARCH_WINDOW_MS, 60 * 1000),
     /** 搜索 / 重查询路由：允许请求数 / 窗口 */
-    RATE_LIMIT_SEARCH_MAX: int(process.env.RATE_LIMIT_SEARCH_MAX, 20),
+    RATE_LIMIT_SEARCH_MAX: int(process.env.RATE_LIMIT_SEARCH_MAX, 200),
 };
 
 module.exports = config;

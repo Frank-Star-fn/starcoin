@@ -6,6 +6,17 @@
 const { createDiscoveryModule } = require('../../src/p2p/p2p-discovery');
 const { MESSAGE_TYPES } = require('../../src/p2p/p2p-core');
 
+// 模拟 WebSocket：只注册监听器但不触发真实网络事件（这样 error/close 不会
+// 在测试结束后异步触发 console.log，从而避免 "onUserConsoleLog was pending" 警告）
+class MockWebSocket {
+  constructor() {
+    this._listeners = {};
+  }
+  on(event, cb) {
+    this._listeners[event] = cb;
+  }
+}
+
 /**
  * 创建一个 mock core 对象（模拟 p2p-core.js 返回的网络核心）
  */
@@ -23,6 +34,8 @@ function createMockCore() {
     },
     sendMessage: vi.fn(),
     broadcast: vi.fn(),
+    // 注入 WebSocket 工厂：createDiscoveryModule 会优先用它，避免真实网络连接
+    createWebSocket: () => new MockWebSocket(),
     reconnect: {
       init: vi.fn(),
       schedule: vi.fn(),
@@ -44,6 +57,11 @@ describe('p2p-discovery — 自动节点发现', () => {
   beforeEach(() => {
     core = createMockCore();
     discovery = createDiscoveryModule(core, MESSAGE_TYPES);
+  });
+
+  afterEach(() => {
+    discovery.stopDiscovery();
+    vi.clearAllTimers();
   });
 
   // ============================================================

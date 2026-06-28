@@ -145,7 +145,7 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
         // 初始化重连状态
         core.reconnect.init(nodeUrl);
 
-        const ws = new WebSocket(nodeUrl);
+        const ws = (core.createWebSocket ? core.createWebSocket(nodeUrl) : new WebSocket(nodeUrl));
         const connectionId = `auto_${Math.random().toString(36).substr(2, 9)}`;
 
         ws.on('open', () => {
