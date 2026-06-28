@@ -41,6 +41,8 @@ async function mineBlock() {
     hashDisplay.textContent = '计算中...';
     progressBar.style.width = '0%';
     statusText.textContent = '⛏️ 正在寻找满足条件的 nonce...';
+    const hashrateElInit = document.getElementById('miningHashrate');
+    if (hashrateElInit) hashrateElInit.textContent = '--';
     showMessage('txMessage', '', 'info', 0);
 
     // 最佳进度（单调递增，防止进度条抖动）
@@ -161,7 +163,9 @@ async function mineBlock() {
                 const elapsed = (Date.now() - startTime) / 1000;
                 if (elapsed > 0) {
                     const rate = Math.round(Number(data.nonce) / elapsed);
-                    statusText.textContent = `⛏️ 哈希率: ${rate.toLocaleString()} hashes/秒  |  已尝试: ${Number(data.nonce).toLocaleString()} 次`;
+                    statusText.textContent = `⛏️ 已尝试: ${Number(data.nonce).toLocaleString()} 次`;
+                    const hashrateEl = document.getElementById('miningHashrate');
+                    if (hashrateEl) hashrateEl.textContent = rate.toLocaleString();
                 }
             }
         } catch (err) {
@@ -312,6 +316,8 @@ async function startNextAutoMine() {
     hashDisplay.textContent = '计算中...';
     progressBar.style.width = '0%';
     statusText.textContent = '⛏️ 自动挖矿中...';
+    const hashrateElInit = document.getElementById('miningHashrate');
+    if (hashrateElInit) hashrateElInit.textContent = '--';
 
     // 最佳进度（单调递增，防止进度条抖动）
     let bestPct = 0;
@@ -438,7 +444,9 @@ async function startNextAutoMine() {
                 const elapsed = (Date.now() - startTime) / 1000;
                 if (elapsed > 0) {
                     const rate = Math.round(Number(data.nonce) / elapsed);
-                    statusText.textContent = `⏱️ 自动挖矿 | 哈希率: ${rate.toLocaleString()} hashes/秒 | 已尝试: ${Number(data.nonce).toLocaleString()} 次`;
+                    statusText.textContent = `⏱️ 自动挖矿 | 已尝试: ${Number(data.nonce).toLocaleString()} 次`;
+                    const hashrateEl = document.getElementById('miningHashrate');
+                    if (hashrateEl) hashrateEl.textContent = rate.toLocaleString();
                 }
             }
         } catch (err) {

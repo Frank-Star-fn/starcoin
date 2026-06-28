@@ -5,6 +5,8 @@ const config = require('./config');
 const { Block, Transaction, generateWallet, importWalletFromPem } = require('./core');
 const { ChainSync } = require('./chain-sync');
 const { DifficultyManager } = require('./difficulty-manager');
+const { QueryEngine } = require('./blockchain-query');
+const { StorageManager } = require('./blockchain-storage');
 
 class Blockchain {
     constructor(portOverride) {
@@ -24,6 +26,8 @@ class Blockchain {
         this.chain = [this.createGenesisBlock()]; // 先初始化创世区块
         this.dataFile = path.join(__dirname, '..', 'data', `blockchain_${PORT}.json`);
         this.sync = new ChainSync(this); // 必须在 loadFromFile 前初始化（isChainValid 委托给 sync）
+        this.query = new QueryEngine(this); // 查询引擎：封装所有只读搜索操作
+        this.storage = new StorageManager(this); // 持久化：封装文件读写
         // freshStart: 是否未从本地加载到数据（全新节点），用于启动时优先从其他节点同步
         this.freshStart = !this.loadFromFile();
     }
@@ -437,363 +441,25 @@ class Blockchain {
         return result.sort((a, b) => b.balance - a.balance);
     }
 
-    loadFromFile() {
-        try {
-            if (fs.existsSync(this.dataFile)) {
-                const raw = fs.readFileSync(this.dataFile, 'utf8');
-                const saved = JSON.parse(raw);
-                if (saved && saved.chain && saved.chain.length > 0) {
-                    // ----- 恢复难度数据（兼容旧格式，但最终以链上时间戳为准） -----
-                    if (saved.difficulty != null) {
-                        this.difficulty = saved.difficulty;
-                    }
-                    if (saved.difficultyHistory) {
-                        this.difficultyHistory = saved.difficultyHistory;
-                    }
-                    // blockMiningTimes 已废弃，不再从文件加载
-                    if (saved.lastAdjustmentBlock != null) {
-                        this.lastAdjustmentBlock = saved.lastAdjustmentBlock;
-                    }
+    // ============================================================
+    //  持久化方法：转发给 this.storage（StorageManager，定义在 blockchain-storage.js）
+    // ============================================================
 
-                    // 从保存数据重建区块对象 (支持 data 旧格式和 transactions 新格式)
-                    // 注意：从 JSON 读取的 transactions 是普通对象，保留它们供签名验证使用
-                    const rebuiltChain = saved.chain.map(b => {
-                        const block = new Block(b.index, b.timestamp, [], b.previousHash);
-                        block.nonce = b.nonce;
-                        block.merkleRoot = b.merkleRoot || null;  // 恢复 merkleRoot（旧数据为 null，兼容旧链）
-                        // 保留原始 transactions 数组（包含 signature/publicKey 等字段）
-                        if (b.transactions && Array.isArray(b.transactions)) {
-                            block.transactions = b.transactions;
-                        } else if (b.data) {
-                            // 旧格式 data 字段：Block 构造函数已经帮我们派生 transactions
-                            const blockWithData = new Block(b.index, b.timestamp, b.data, b.previousHash);
-                            block.transactions = blockWithData.transactions;
-                        }
-                        // 恢复 hash：如果有 merkleRoot，确保 hash 与 merkleRoot 一致
-                        if (block.merkleRoot) {
-                            block.hash = block.calculateHash();
-                        } else {
-                            block.hash = b.hash;
-                        }
-                        return block;
-                    });
-                    const tempChain = this.chain;
-                    this.chain = rebuiltChain;
-
-                    // 第一级：严格验证（区块 hash + 交易签名）
-                    if (this.isChainValid(undefined, true)) {
-                        // 加载成功后，根据链上区块时间戳重新计算难度，保证所有节点一致
-                        this.recalculateDifficulty();
-                        console.log(`📂 已从本地文件加载区块链: ${this.dataFile} (${rebuiltChain.length} 个区块, 难度=${this.difficulty}) ✓`);
-                        return true;
-                    }
-
-                    // 第二级：降级验证（仅区块 hash，兼容旧数据格式）
-                    if (this.isChainValid(undefined, false)) {
-                        // 加载成功后，根据链上区块时间戳重新计算难度
-                        this.recalculateDifficulty();
-                        console.log(`⚠️  [兼容模式] 本地链使用旧签名格式（非 ECDSA），区块结构有效但签名未验证`);
-                        console.log(`📂 已从本地文件加载区块链: ${this.dataFile} (${rebuiltChain.length} 个区块, 难度=${this.difficulty})`);
-                        return true;
-                    }
-
-                    // 两级验证都失败
-                    console.log('❌  本地文件中的区块链无效，恢复为创世区块');
-                    this.chain = tempChain;
-                    return false;
-                } else {
-                    console.log('⚠️  本地文件格式无效，已重置为创世区块');
-                    return false;
-                }
-            } else {
-                console.log(`📂 未找到本地文件，创建新链: ${this.dataFile}`);
-                return false;
-            }
-        } catch (err) {
-            console.error('❌ 从文件加载失败:', err.message);
-            this.chain = [this.createGenesisBlock()];
-            return false;
-        }
-    }
-
-    saveToFile() {
-        try {
-            const data = {
-                chain: this.chain,
-                difficulty: this.difficulty,
-                difficultyHistory: this.difficultyHistory,
-                // blockMiningTimes 已废弃（改用链上时间戳），不再持久化
-                lastAdjustmentBlock: this.lastAdjustmentBlock,
-                savedAt: new Date().toISOString(),
-                version: '3.0'
-            };
-            fs.writeFileSync(this.dataFile, JSON.stringify(data, null, 2), 'utf8');
-            return true;
-        } catch (err) {
-            console.error('❌ 保存到文件失败:', err.message);
-            return false;
-        }
-    }
-
-    clearDataFile() {
-        try {
-            if (fs.existsSync(this.dataFile)) {
-                fs.unlinkSync(this.dataFile);
-            }
-            this.chain = [this.createGenesisBlock()];
-            this.difficulty = config.DIFFICULTY_INITIAL;
-            this.lastAdjustmentBlock = 0;
-            this.difficultyHistory = [];
-            return true;
-        } catch (err) {
-            console.error('❌ 清除文件失败:', err.message);
-            return false;
-        }
-    }
+    loadFromFile()    { return this.storage.loadFromFile(); }
+    saveToFile()      { return this.storage.saveToFile(); }
+    clearDataFile()   { return this.storage.clearDataFile(); }
 
     getLatestBlock() {
         return this.chain[this.chain.length - 1];
     }
 
     // ============================================================
-    //  搜索方法：按区块号 / 交易ID / 地址 / 备注搜索
+    //  搜索方法：转发给 this.query（QueryEngine，定义在 blockchain-query.js）
     // ============================================================
 
-    /**
-     * 按区块索引查找区块
-     * @param {number} index - 区块高度
-     * @returns {object|null} 区块对象，越界返回 null
-     */
-    findBlockByIndex(index) {
-        if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || index >= this.chain.length) {
-            return null;
-        }
-        return this.chain[index];
-    }
-
-    /**
-     * 按交易 ID 查找交易（遍历全链）
-     * @param {string} txId - 交易 ID（64位 hex 或部分匹配）
-     * @returns {object|null} { block, transaction, confirmations } 或 null
-     */
-    findTransactionById(txId) {
-        if (!txId || typeof txId !== 'string') return null;
-        const query = txId.trim().toLowerCase();
-        if (!query) return null;
-
-        const latestIndex = this.getLatestBlock().index;
-
-        // 正向遍历（从创世到最新），找到第一个完全匹配或前缀匹配的交易
-        for (let i = 0; i < this.chain.length; i++) {
-            const block = this.chain[i];
-            if (!block.transactions || !Array.isArray(block.transactions)) continue;
-            for (const tx of block.transactions) {
-                if (!tx.id) continue;
-                const txIdLower = tx.id.toLowerCase();
-                // 支持完整匹配和前缀匹配（用户可能只输入前几位）
-                if (txIdLower === query || txIdLower.startsWith(query) || query.startsWith(txIdLower)) {
-                    return {
-                        block,
-                        blockIndex: block.index,
-                        blockHash: block.hash,
-                        transaction: tx,
-                        confirmations: latestIndex - block.index
-                    };
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 统一智能搜索
-     * 自动判断查询类型：区块号 / 交易ID / 地址 / 备注文本
-     *
-     * @param {string} query - 用户输入的搜索关键词
-     * @returns {object} { type, result, query }
-     */
-    search(query) {
-        if (!query || typeof query !== 'string') {
-            return { type: 'empty', result: null, query };
-        }
-
-        const q = query.trim();
-
-        // ── 1) 纯数字 → 按区块号搜索 ──
-        const asNumber = Number(q);
-        if (Number.isInteger(asNumber) && asNumber >= 0 && String(asNumber) === q) {
-            const block = this.findBlockByIndex(asNumber);
-            if (block) {
-                // 统计本块燃烧手续费
-                let blockBurnedFees = 0;
-                if (block.transactions && Array.isArray(block.transactions)) {
-                    for (const tx of block.transactions) {
-                        blockBurnedFees += Number(tx.fee) || 0;
-                    }
-                }
-                return {
-                    type: 'block',
-                    result: {
-                        block,
-                        transactionCount: (block.transactions || []).length,
-                        totalBurnedFees: blockBurnedFees
-                    },
-                    query: q
-                };
-            }
-            // 数字但越界 → 返回 not_found 但提示最大区块号
-            return {
-                type: 'not_found',
-                result: {
-                    message: `区块 #${asNumber} 不存在`,
-                    hint: `当前链高度: 0 ~ ${this.chain.length - 1}`
-                },
-                query: q
-            };
-        }
-
-        // ── 2) 64位 hex（sha256）→ 按交易ID 或 区块hash 搜索 ──
-        const hexPattern = /^[0-9a-fA-F]{6,64}$/;
-        if (hexPattern.test(q)) {
-            // 2a) 先搜交易 ID
-            const txResult = this.findTransactionById(q);
-            if (txResult) {
-                return { type: 'transaction', result: txResult, query: q };
-            }
-            // 2b) 再搜区块 hash（前缀匹配）
-            for (let i = 0; i < this.chain.length; i++) {
-                const block = this.chain[i];
-                if (block.hash && block.hash.toLowerCase() === q.toLowerCase()) {
-                    let blockBurnedFees = 0;
-                    if (block.transactions && Array.isArray(block.transactions)) {
-                        for (const tx of block.transactions) {
-                            blockBurnedFees += Number(tx.fee) || 0;
-                        }
-                    }
-                    return {
-                        type: 'block',
-                        result: {
-                            block,
-                            transactionCount: (block.transactions || []).length,
-                            totalBurnedFees: blockBurnedFees
-                        },
-                        query: q
-                    };
-                }
-            }
-        }
-
-        // ── 3) 32位 hex（地址长度）→ 按地址搜索 ──
-        if (hexPattern.test(q) && q.length === 32) {
-            const balance = this.getBalance(q);
-            const totalBalance = this.getBalance(q, true);
-            const lockedRewards = this.getLockedRewards(q);
-            const history = this.getTransactionHistory(q);
-            const pendingCount = this.pendingTransactions.filter(
-                tx => tx.from === q || tx.to === q
-            ).length;
-            return {
-                type: 'address',
-                result: {
-                    address: q,
-                    balance,
-                    totalBalance,
-                    lockedRewards,
-                    transactionCount: history.length,
-                    pendingTransactions: pendingCount,
-                    transactions: history.slice(0, 10) // 最近 10 笔
-                },
-                query: q
-            };
-        }
-
-        // ── 4) 地址前缀模糊搜索（短地址如 "abc123"） ──
-        if (q.length >= 6 && hexPattern.test(q)) {
-            // 在链中搜索匹配的地址
-            const addressSet = new Set();
-            for (const block of this.chain) {
-                if (!block.transactions) continue;
-                for (const tx of block.transactions) {
-                    if (tx.from && tx.from.toLowerCase().startsWith(q.toLowerCase())) addressSet.add(tx.from);
-                    if (tx.to && tx.to.toLowerCase().startsWith(q.toLowerCase())) addressSet.add(tx.to);
-                }
-            }
-            if (addressSet.size > 0) {
-                const results = Array.from(addressSet).slice(0, 10).map(addr => ({
-                    address: addr,
-                    balance: this.getBalance(addr),
-                    txCount: this.getTransactionHistory(addr).length
-                }));
-                return {
-                    type: 'address_list',
-                    result: {
-                        addresses: results,
-                        total: addressSet.size,
-                        message: `找到 ${addressSet.size} 个匹配的地址`
-                    },
-                    query: q
-                };
-            }
-        }
-
-        // ── 5) 备注模糊搜索 ──
-        const qLower = q.toLowerCase();
-        const matchedTxs = [];
-        for (let i = 0; i < this.chain.length; i++) {
-            const block = this.chain[i];
-            if (!block.transactions) continue;
-            for (const tx of block.transactions) {
-                if (tx.note && tx.note.toLowerCase().includes(qLower)) {
-                    matchedTxs.push({
-                        ...tx,
-                        blockIndex: block.index,
-                        blockHash: block.hash
-                    });
-                    if (matchedTxs.length >= 20) break; // 最多返回 20 条
-                }
-            }
-            if (matchedTxs.length >= 20) break;
-        }
-        if (matchedTxs.length > 0) {
-            return {
-                type: 'note',
-                result: {
-                    transactions: matchedTxs,
-                    total: matchedTxs.length,
-                    message: `在备注中找到 ${matchedTxs.length} 条匹配记录`
-                },
-                query: q
-            };
-        }
-
-        // ── 6) 搜索交易池（待打包交易） ──
-        const pendingMatches = this.pendingTransactions.filter(tx => {
-            const txId = (tx.id || '').toLowerCase();
-            const from = (tx.from || '').toLowerCase();
-            const to = (tx.to || '').toLowerCase();
-            const note = (tx.note || '').toLowerCase();
-            const ql = q.toLowerCase();
-            return txId.includes(ql) || from.includes(ql) || to.includes(ql) || note.includes(ql);
-        });
-        if (pendingMatches.length > 0) {
-            return {
-                type: 'mempool',
-                result: {
-                    transactions: pendingMatches,
-                    total: pendingMatches.length,
-                    message: `在交易池中找到 ${pendingMatches.length} 条匹配记录`
-                },
-                query: q
-            };
-        }
-
-        // ── 未匹配任何结果 ──
-        return {
-            type: 'not_found',
-            result: { message: `未找到与 "${q}" 相关的任何结果` },
-            query: q
-        };
-    }
+    findBlockByIndex(index)      { return this.query.findBlockByIndex(index); }
+    findTransactionById(txId)    { return this.query.findTransactionById(txId); }
+    search(query)                { return this.query.search(query); }
 
     addBlock(newBlock) {
         let block = newBlock;
