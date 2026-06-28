@@ -363,7 +363,7 @@ async function startNextAutoMine() {
                 if (data.hash) hashDisplay.textContent = data.hash;
                 progressBar.style.width = '100%';
                 animContainer.className = 'mining-animation mining-success';
-                statusText.textContent = '🎉 区块 #' + (data.block && data.block.index != null ? data.block.index : '?') + ' 挖矿成功！';
+                statusText.textContent = data.message || '🎉 挖矿成功！';
 
                 // 刷新数据
                 refreshAll();
