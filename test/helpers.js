@@ -43,8 +43,8 @@ function fundAddress(chain, address, amount) {
 /**
  * 生成一个已签名的转账交易
  */
-function createSignedTx(wallet, to, amount, fee = 0, note = '') {
-  const tx = new Transaction(wallet.address, to, amount, fee, note);
+function createSignedTx(wallet, to, amount, fee = 0, note = '', currency) {
+  const tx = new Transaction(wallet.address, to, amount, fee, note, currency);
   tx.signTransaction(wallet.privateKey, wallet.publicKey);
   return tx;
 }
