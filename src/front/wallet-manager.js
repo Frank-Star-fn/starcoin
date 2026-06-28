@@ -1,6 +1,6 @@
 /* ============================================================
    wallet-manager.js — 钱包业务逻辑 + 私钥导入/导出
-   依赖：app.js + wallet-utils.js + wallet-ui.js + main.js
+   依赖：app.js + wallet-utils.js + wallet-ui.js + main.js + keystore.js
    ============================================================ */
 
 /* ============================================================
@@ -8,15 +8,21 @@
    ============================================================ */
 
 /**
- * 请求后端生成新钱包，自动加入列表并刷新
+ * 请求后端生成新钱包，加密私钥后加入列表并刷新
+ * 生成后强制要求导出 .pem 备份
  */
 async function generateWallet() {
     try {
         const data = await api('/api/wallet/new', 'POST');
         if (!data.wallet) throw new Error('生成失败');
+
+        // 加密私钥
+        const encrypted = await encryptPrivateKey(data.wallet.privateKey);
+        // data.wallet.privateKey 至此不再使用，退出函数后被 GC 回收
+
         const w = {
             label: '钱包 #' + (state.wallets.length + 1),
-            privateKey: data.wallet.privateKey,
+            encryptedPrivateKey: encrypted,
             publicKey: data.wallet.publicKey,
             address: data.wallet.address
         };
@@ -27,6 +33,9 @@ async function generateWallet() {
         showMessage('txMessage', '✅ 新钱包已生成：' + shortAddr(w.address, 16), 'success');
         saveWallets();
         await refreshAll();
+
+        // 强制备份
+        showForceBackupDialog(state.wallets.length - 1);
     } catch (err) {
         showMessage('txMessage', '❌ 生成钱包失败：' + err.message, 'error');
     }
@@ -163,22 +172,28 @@ function copySelectedAddress() {
 }
 
 /* ============================================================
-   私钥导出：下载 PEM 文件（纯前端，不经过网络）
+   私钥导出：解密后下载 PEM 文件（纯前端，不经过网络）
    ============================================================ */
 
 /**
  * 导出指定钱包的私钥为 .pem 文件
+ * 解密成功后立即下载，内存中的明文在函数退出后由 GC 回收
  * @param {number} index - 钱包索引
  */
-function exportPrivateKey(index) {
+async function exportPrivateKey(index) {
     const w = state.wallets[index];
     if (!w) return;
 
     // 安全确认
-    if (!confirm(`⚠️  即将导出私钥！\n\n钱包: ${w.label}\n地址: ${shortAddr(w.address, 20)}\n\n持有私钥即可完全控制该钱包中的资产。\n请确保在安全的环境下操作。\n\n确认导出吗？`)) return;
+    if (!confirm(`⚠️  即将导出私钥！\n\n钱包: ${w.label}\n地址: ${shortAddr(w.address, 20)}\n\n持有私钥即可完全控制该钱包中的资产。\n请确保在安全的环境下操作。\n\n确认导出吗？`)) {
+        throw new Error('用户取消导出');
+    }
+
+    // 解密私钥（局部变量，不存回 state）
+    const masterKey = await getOrCreateMasterKey();
+    const pemContent = await decryptPrivateKey(w.encryptedPrivateKey, masterKey);
 
     // 构建 .pem 文件内容
-    const pemContent = w.privateKey;
     const shortAddrPart = w.address.substring(0, 8);
     const fileName = `starcoin_wallet_${shortAddrPart}.pem`;
 
@@ -221,6 +236,7 @@ function toggleImportArea() {
 
 /**
  * 执行私钥导入（旧版文本输入区）
+ * 后端验证通过后，前端加密存储 privateKey
  */
 async function doImportPrivateKey() {
     const textarea = document.getElementById('importKeyTextarea');
@@ -251,9 +267,12 @@ async function doImportPrivateKey() {
             return;
         }
 
+        // 加密私钥
+        const encrypted = await encryptPrivateKey(w.privateKey);
+
         state.wallets.push({
             label: '钱包 #' + (state.wallets.length + 1) + ' (导入)',
-            privateKey: w.privateKey,
+            encryptedPrivateKey: encrypted,
             publicKey: w.publicKey,
             address: w.address
         });
@@ -300,6 +319,7 @@ function hideImportKeyDialog() {
 
 /**
  * 执行私钥导入（新版：支持 PEM 文本粘贴或文件选择）
+ * 后端验证通过后，前端加密存储 privateKey
  */
 async function importPrivateKey() {
     const btn = document.getElementById('importKeyBtn');
@@ -348,10 +368,13 @@ async function importPrivateKey() {
                 return;
             }
 
+            // 加密私钥
+            const encrypted = await encryptPrivateKey(w.privateKey);
+
             // 添加到钱包列表
             const walletEntry = {
                 label: '钱包 #' + (state.wallets.length + 1) + '（导入）',
-                privateKey: w.privateKey,
+                encryptedPrivateKey: encrypted,
                 publicKey: w.publicKey,
                 address: w.address
             };

@@ -95,6 +95,10 @@ async function submitTransaction() {
     showMessage('txMessage', `🔑 使用 ${fromWallet.label} 的私钥进行 ECDSA 签名（币种: ${currency}）...`, 'info', 0);
 
     try {
+        // 解密私钥（局部变量，不存回 state，函数退出后 GC 回收）
+        const masterKey = await getOrCreateMasterKey();
+        const privateKeyPem = await decryptPrivateKey(fromWallet.encryptedPrivateKey, masterKey);
+
         const result = await api('/api/transaction', 'POST', {
             from: fromWallet.address,
             to: to,
@@ -102,7 +106,7 @@ async function submitTransaction() {
             fee: fee,
             note: note,
             currency: currency,
-            privateKey: fromWallet.privateKey,
+            privateKey: privateKeyPem, // 解密后的明文 PEM（仅在此请求中使用）
             publicKey: fromWallet.publicKey
         });
 
@@ -337,13 +341,15 @@ async function refreshAll() {
 /* ============================================================
    初始化
    ============================================================ */
-loadWallets();
-renderWallets();
-renderTransfer();
-refreshAll();
+(async function init() {
+    await loadWallets();
+    renderWallets();
+    renderTransfer();
+    refreshAll();
 
-// 连接 WebSocket，接收实时推送（新区块/新交易/链更新）
-connectWebSocket();
+    // 连接 WebSocket，接收实时推送（新区块/新交易/链更新）
+    connectWebSocket();
+})();
 
 // 备用轮询：每 60 秒刷新一次（WebSocket 断开时的兜底）
 setInterval(() => {

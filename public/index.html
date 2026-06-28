@@ -239,6 +239,45 @@
 
 </div>
 
+<!-- ====== 强制备份对话框（模态遮罩） ====== -->
+<div id="forceBackupOverlay" class="modal-overlay" style="display:none;">
+    <div class="modal-dialog">
+        <div class="modal-icon">📁</div>
+        <div class="modal-title">请立即导出私钥备份</div>
+        <div class="modal-body">
+            <p>您的钱包私钥已<strong>加密存储</strong>在浏览器中。</p>
+            <p class="warning-text">⚠️ 如果清除浏览器数据或更换设备，加密密钥将丢失，钱包将无法恢复。</p>
+            <p><strong>导出 .pem 备份文件</strong>是您恢复钱包的唯一方式。</p>
+            <div id="forceBackupWalletInfo" class="modal-wallet-info"></div>
+        </div>
+        <div class="modal-actions">
+            <button id="forceBackupDownloadBtn" class="modal-btn-primary">📥 下载 .pem 备份</button>
+            <button id="forceBackupLaterBtn" class="modal-btn-secondary">稍后再说</button>
+        </div>
+        <div id="forceBackupRiskConfirm" style="display:none; margin-top:10px; padding:10px; background:rgba(248,113,113,0.15); border-radius:6px; text-align:center;">
+            <p style="color:#f87171; font-size:12px; margin:0 0 8px 0;">⚠️ 跳过备份意味着：清除浏览器数据后此钱包将永久丢失。</p>
+            <button id="forceBackupConfirmRiskBtn" class="modal-btn-danger" style="padding:8px 20px;">我已知晓风险，确认跳过</button>
+        </div>
+    </div>
+</div>
+
+<!-- ====== 密钥丢失提示对话框（模态遮罩） ====== -->
+<div id="keyMismatchOverlay" class="modal-overlay" style="display:none;">
+    <div class="modal-dialog">
+        <div class="modal-icon">🔑</div>
+        <div class="modal-title">加密密钥已重置</div>
+        <div class="modal-body">
+            <p>浏览器中存储的加密密钥已变更，无法解密现有的钱包私钥。</p>
+            <p class="warning-text">⚠️ 这通常发生在清除浏览器数据、更换浏览器或更换设备后。</p>
+            <p>请使用之前导出的 <strong>.pem 备份文件</strong> 重新导入您的钱包：</p>
+        </div>
+        <div class="modal-actions">
+            <button id="keyMismatchImportBtn" class="modal-btn-primary">📥 导入私钥恢复钱包</button>
+        </div>
+    </div>
+</div>
+
+<script src="src/front/keystore.js"></script>
 <script src="src/front/app.js"></script>
 <script src="src/front/wallet-utils.js"></script>
 <script src="src/front/wallet-ui.js"></script>
