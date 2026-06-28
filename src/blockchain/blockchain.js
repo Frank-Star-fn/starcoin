@@ -11,8 +11,9 @@ const { QueryEngine } = require('./blockchain-query');
 const { StorageManager } = require('./blockchain-storage');
 
 class Blockchain {
-    constructor(portOverride) {
+    constructor(portOverride, testMode = false) {
         const PORT = portOverride || config.PORT;
+        this.testMode = testMode;
         this.diffManager = new DifficultyManager({
             initialDifficulty: config.DIFFICULTY_INITIAL,
             targetBlockTime: config.DIFFICULTY_TARGET_TIME,
@@ -590,9 +591,9 @@ class Blockchain {
     //  持久化方法：转发给 this.storage（StorageManager，定义在 blockchain-storage.js）
     // ============================================================
 
-    loadFromFile()    { return this.storage.loadFromFile(); }
-    saveToFile()      { return this.storage.saveToFile(); }
-    clearDataFile()   { return this.storage.clearDataFile(); }
+    loadFromFile()    { return this.testMode ? false : this.storage.loadFromFile(); }
+    saveToFile()      { return this.testMode ? true  : this.storage.saveToFile(); }
+    clearDataFile()   { return this.testMode ? true  : this.storage.clearDataFile(); }
 
     getLatestBlock() {
         return this.chain[this.chain.length - 1];

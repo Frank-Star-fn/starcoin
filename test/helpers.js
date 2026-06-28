@@ -18,7 +18,7 @@ const { Blockchain, Block, Transaction, generateWallet } = require('../src/block
  */
 function newFreshChain() {
   const randomPort = Math.floor(Math.random() * 90000) + 10000;
-  const chain = new Blockchain(randomPort);
+  const chain = new Blockchain(randomPort, /* testMode */ true);
   chain.coinbaseMaturity = 0;
   chain.difficulty = 1;
   chain.pendingTransactions = [];
