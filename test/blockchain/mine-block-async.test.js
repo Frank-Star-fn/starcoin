@@ -199,6 +199,9 @@ describe('mineBlockAsync 外部中止', () => {
 
     beforeEach(() => {
         chain = newFreshChain();
+        // 难度设为 4（需要 4 位前导零），确保每次挖矿都需要足够迭代，
+        // 避免因初始 hash 恰好满足难度而导致 abort 测试无效
+        chain.difficulty = 4;
     });
 
     it('externalAbortCheck 返回 true → 挖矿中止返回 {canceled: true}', async () => {
@@ -223,8 +226,6 @@ describe('mineBlockAsync 外部中止', () => {
     });
 
     it('externalAbortCheck 先 false 后 true → 仍能中止', async () => {
-        // 提高难度确保需要多次迭代，让 delayed abort 有机会触发
-        chain.difficulty = 4;
         let callCount = 0;
         const externalAbortCheck = () => {
             callCount++;

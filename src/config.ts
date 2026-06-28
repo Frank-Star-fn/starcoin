@@ -1,0 +1,140 @@
+import path from 'path';
+import dotenv from 'dotenv';
+
+// dotenv 加载 .env 文件（必须在任何其他模块引用之前）
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
+// 辅助：解析整数环境变量
+function int(val: string | undefined, defaultVal: number): number {
+    const parsed = parseInt(val as string, 10);
+    return isNaN(parsed) ? defaultVal : parsed;
+}
+
+// 辅助：解析浮点环境变量
+function float(val: string | undefined, defaultVal: number): number {
+    const parsed = parseFloat(val as string);
+    return isNaN(parsed) ? defaultVal : parsed;
+}
+
+// 辅助：解析布尔环境变量
+function bool(val: string | undefined | boolean, defaultVal: boolean): boolean {
+    if (val === undefined || val === null) return defaultVal;
+    if (typeof val === 'boolean') return val;
+    if (val === 'true' || val === '1') return true;
+    if (val === 'false' || val === '0') return false;
+    return defaultVal;
+}
+
+interface TokenAirdrop {
+    cBTC: number;
+    cETH: number;
+}
+
+const config = {
+    // ======== 节点配置 ========
+    /** HTTP/WS 服务端口 */
+    PORT: int(process.env.PORT, 3000),
+    /** 种子节点列表（逗号分隔的 WebSocket URL） */
+    SEED_PEERS: (process.env.SEED_PEERS || '').split(',').map(s => s.trim()).filter(Boolean),
+    /** 自定义节点名称（可选） */
+    NODE_NAME: process.env.NODE_NAME || '',
+
+    // ======== P2P 重连配置 ========
+    /** 重连初始延迟（毫秒） */
+    P2P_RECONNECT_BASE_DELAY: int(process.env.P2P_RECONNECT_BASE_DELAY, 1000),
+    /** 重连最大延迟（毫秒） */
+    P2P_RECONNECT_MAX_DELAY: int(process.env.P2P_RECONNECT_MAX_DELAY, 30000),
+    /** 最大重试次数 */
+    P2P_RECONNECT_MAX_RETRIES: int(process.env.P2P_RECONNECT_MAX_RETRIES, 50),
+    /** 随机抖动系数（0~1） */
+    P2P_RECONNECT_JITTER: float(process.env.P2P_RECONNECT_JITTER, 0.3),
+
+    // ======== P2P 心跳配置 ========
+    /** 心跳发送间隔（毫秒） */
+    P2P_HEARTBEAT_INTERVAL: int(process.env.P2P_HEARTBEAT_INTERVAL, 15000),
+    /** 心跳超时阈值（毫秒） */
+    P2P_HEARTBEAT_TIMEOUT: int(process.env.P2P_HEARTBEAT_TIMEOUT, 6000),
+
+    // ======== 节点发现配置 ========
+    /** 自动发现请求间隔（毫秒） */
+    P2P_DISCOVERY_INTERVAL: int(process.env.P2P_DISCOVERY_INTERVAL, 30000),
+    /** 最大对等节点数 */
+    P2P_DISCOVERY_MAX_PEERS: int(process.env.P2P_DISCOVERY_MAX_PEERS, 20),
+    /** 每轮最大尝试连接数 */
+    P2P_DISCOVERY_MAX_PER_ROUND: int(process.env.P2P_DISCOVERY_MAX_PER_ROUND, 3),
+
+    // ======== 链同步配置 ========
+    /** 同步响应超时（毫秒） */
+    SYNC_TIMEOUT: int(process.env.SYNC_TIMEOUT, 10000),
+    /** 定期自动同步间隔（毫秒） */
+    SYNC_INTERVAL: int(process.env.SYNC_INTERVAL, 60000),
+    /** 链健康检查间隔（毫秒） */
+    SYNC_HEALTH_CHECK_INTERVAL: int(process.env.SYNC_HEALTH_CHECK_INTERVAL, 30000),
+    /** 启动后首次连接延迟（毫秒） */
+    SYNC_STARTUP_CONNECT_DELAY: int(process.env.SYNC_STARTUP_CONNECT_DELAY, 1500),
+
+    // ======== 挖矿/区块配置 ========
+    /** 矿工奖励金额 */
+    MINING_REWARD: float(process.env.MINING_REWARD, 50),
+    /** 矿工奖励锁定期（区块数） */
+    MINING_COINBASE_MATURITY: int(process.env.MINING_COINBASE_MATURITY, 5),
+    /** 每区块最大打包交易数 */
+    MINING_MAX_TXS_PER_BLOCK: int(process.env.MINING_MAX_TXS_PER_BLOCK, 100),
+
+    // ======== 难度调整配置 ========
+    /** 初始难度 */
+    DIFFICULTY_INITIAL: float(process.env.DIFFICULTY_INITIAL, 5),
+    /** 目标出块时间（秒） */
+    DIFFICULTY_TARGET_TIME: int(process.env.DIFFICULTY_TARGET_TIME, 12),
+    /** 每 N 个区块调整一次 */
+    DIFFICULTY_ADJUST_INTERVAL: int(process.env.DIFFICULTY_ADJUST_INTERVAL, 6),
+    /** 最小难度 */
+    DIFFICULTY_MIN: float(process.env.DIFFICULTY_MIN, 3),
+    /** 最大难度 */
+    DIFFICULTY_MAX: float(process.env.DIFFICULTY_MAX, 12),
+    /** 调整步长 */
+    DIFFICULTY_STEP: float(process.env.DIFFICULTY_STEP, 0.1),
+
+    // ======== 币种配置 ========
+    /** 链上支持的所有货币符号（大写） */
+    CURRENCIES: ['STC', 'cBTC', 'cETH'] as string[],
+    /** 默认主币（原生矿工奖励货币） */
+    CURRENCY_DEFAULT: 'STC',
+    /** 矿工奖励使用的币种 */
+    CURRENCY_MINING_REWARD: 'STC',
+    /** cBTC / cETH 在创世后的初始空投金额（可用于演示） */
+    TOKEN_INITIAL_AIRDROP: {
+        cBTC: float(process.env.TOKEN_INITIAL_AIRDROP_CBTC, 0.1),
+        cETH: float(process.env.TOKEN_INITIAL_AIRDROP_CETH, 5.0)
+    } as TokenAirdrop,
+
+    // ======== 日志配置 ========
+    /** 日志级别：debug / info / warn / error */
+    LOG_LEVEL: (process.env.LOG_LEVEL || 'info').toLowerCase(),
+    /** 日志传输方式：console / file / both */
+    LOG_TRANSPORT: (process.env.LOG_TRANSPORT || 'console').toLowerCase(),
+    /** 日志文件目录 */
+    LOG_DIR: (process.env.LOG_DIR as string) || null,
+    /** 单个日志文件最大字节数 */
+    LOG_FILE_MAX_SIZE: int(process.env.LOG_FILE_MAX_SIZE, 10 * 1024 * 1024),
+    /** 保留的日志文件数量 */
+    LOG_FILE_MAX_FILES: int(process.env.LOG_FILE_MAX_FILES, 5),
+    /** 文件日志是否使用 JSON 格式 */
+    LOG_JSON: bool(process.env.LOG_JSON, false),
+
+    // ======== API 限流配置 ========
+    /** 全局读接口：时间窗口（毫秒） */
+    RATE_LIMIT_GLOBAL_WINDOW_MS: int(process.env.RATE_LIMIT_GLOBAL_WINDOW_MS, 60 * 1000),
+    /** 全局读接口：允许请求数 / 窗口 */
+    RATE_LIMIT_GLOBAL_MAX: int(process.env.RATE_LIMIT_GLOBAL_MAX, 600),
+    /** 写操作敏感路由：时间窗口（毫秒） */
+    RATE_LIMIT_WRITE_WINDOW_MS: int(process.env.RATE_LIMIT_WRITE_WINDOW_MS, 60 * 1000),
+    /** 写操作敏感路由：允许请求数 / 窗口 */
+    RATE_LIMIT_WRITE_MAX: int(process.env.RATE_LIMIT_WRITE_MAX, 100),
+    /** 搜索 / 重查询路由：时间窗口（毫秒） */
+    RATE_LIMIT_SEARCH_WINDOW_MS: int(process.env.RATE_LIMIT_SEARCH_WINDOW_MS, 60 * 1000),
+    /** 搜索 / 重查询路由：允许请求数 / 窗口 */
+    RATE_LIMIT_SEARCH_MAX: int(process.env.RATE_LIMIT_SEARCH_MAX, 200),
+};
+
+export = config;
