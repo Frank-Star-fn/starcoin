@@ -1,7 +1,7 @@
 // ============================================================
 // addTransaction 边界条件单元测试
 // ============================================================
-const { Transaction, generateWallet } = require('../src/blockchain');
+const { Transaction, generateWallet } = require('../src/blockchain/blockchain');
 const { newFreshChain, fundAddress, createSignedTx } = require('./helpers');
 
 // ============================================================

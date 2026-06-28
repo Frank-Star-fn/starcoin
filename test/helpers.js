@@ -7,7 +7,7 @@
 // ============================================================
 'use strict';
 
-const { Blockchain, Block, Transaction, generateWallet } = require('../src/blockchain');
+const { Blockchain, Block, Transaction, generateWallet } = require('../src/blockchain/blockchain');
 
 // ============================================================
 // 第一部分: 区块链核心测试辅助

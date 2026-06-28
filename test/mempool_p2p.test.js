@@ -2,7 +2,7 @@
 // P2P 交易池广播 — 单元测试
 // 覆盖: 交易池去重、P2P 交易接收、区块确认清理、链替换清理
 // ============================================================
-const { Block, Transaction, generateWallet } = require('../src/blockchain');
+const { Block, Transaction, generateWallet } = require('../src/blockchain/blockchain');
 const { newFreshChain, createSignedTx } = require('./helpers');
 
 // ============================================================

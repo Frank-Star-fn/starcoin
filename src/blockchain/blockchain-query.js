@@ -1,4 +1,4 @@
-const { Block, Transaction } = require('./core');
+const { Block, Transaction } = require('../core');
 
 /**
  * 查询引擎：负责链上的所有"只读"查询操作

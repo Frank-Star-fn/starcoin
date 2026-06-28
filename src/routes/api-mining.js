@@ -2,7 +2,7 @@
 // routes/api-mining.js — 挖矿相关路由
 // ============================================================
 const express = require('express');
-const { Block } = require('../blockchain');
+const { Block } = require('../blockchain/blockchain');
 const { AppError, wrapAsync } = require('./error-handler');
 
 /**

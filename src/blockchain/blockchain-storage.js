@@ -1,6 +1,6 @@
 const fs = require('fs');
-const { Block, Transaction } = require('./core');
-const config = require('./config');
+const { Block, Transaction } = require('../core');
+const config = require('../config');
 
 /**
  * 持久化管理器：负责链数据的文件读写与恢复

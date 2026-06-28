@@ -2,7 +2,7 @@
 // routes/api-tx.js — 钱包 + 交易 + 余额 + 交易池路由
 // ============================================================
 const express = require('express');
-const { Transaction, generateWallet, importWalletFromPem } = require('../blockchain');
+const { Transaction, generateWallet, importWalletFromPem } = require('../blockchain/blockchain');
 const { AppError, wrapAsync } = require('./error-handler');
 
 /**

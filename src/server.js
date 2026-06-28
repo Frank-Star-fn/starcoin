@@ -3,7 +3,7 @@ const path = require('path');
 const http = require('http');
 const WebSocket = require('ws');
 const config = require('./config');
-const { Blockchain, Block, Transaction, generateWallet, importWalletFromPem } = require('./blockchain');
+const { Blockchain, Block, Transaction, generateWallet, importWalletFromPem } = require('./blockchain/blockchain');
 const { createP2P } = require('./p2p/p2p');
 const createRoutes = require('./routes');
 const {

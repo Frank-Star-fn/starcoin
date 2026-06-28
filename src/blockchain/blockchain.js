@@ -1,10 +1,10 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const config = require('./config');
-const { Block, Transaction, generateWallet, importWalletFromPem } = require('./core');
-const { ChainSync } = require('./chain-sync');
-const { DifficultyManager } = require('./difficulty-manager');
+const config = require('../config');
+const { Block, Transaction, generateWallet, importWalletFromPem } = require('../core');
+const { ChainSync } = require('../chain-sync');
+const { DifficultyManager } = require('../difficulty-manager');
 const { QueryEngine } = require('./blockchain-query');
 const { StorageManager } = require('./blockchain-storage');
 
@@ -24,7 +24,7 @@ class Blockchain {
         this.coinbaseMaturity = config.MINING_COINBASE_MATURITY;
         this.miningAddress = 'MINER_' + PORT;
         this.chain = [this.createGenesisBlock()]; // 先初始化创世区块
-        this.dataFile = path.join(__dirname, '..', 'data', `blockchain_${PORT}.json`);
+        this.dataFile = path.join(__dirname, '..', '..', 'data', `blockchain_${PORT}.json`);
         this.sync = new ChainSync(this); // 必须在 loadFromFile 前初始化（isChainValid 委托给 sync）
         this.query = new QueryEngine(this); // 查询引擎：封装所有只读搜索操作
         this.storage = new StorageManager(this); // 持久化：封装文件读写

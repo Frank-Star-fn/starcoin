@@ -1,7 +1,7 @@
 // ============================================================
 // 分叉回滚单元测试
 // ============================================================
-const { Blockchain, Block, Transaction, generateWallet } = require('../src/blockchain');
+const { Blockchain, Block, Transaction, generateWallet } = require('../src/blockchain/blockchain');
 const { newFreshChain, fundAddress, createSignedTx } = require('./helpers');
 
 // ============================================================

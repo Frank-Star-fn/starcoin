@@ -3,7 +3,7 @@
 // ============================================================
 const express = require('express');
 const request = require('supertest');
-const { generateWallet } = require('../../src/blockchain');
+const { generateWallet } = require('../../src/blockchain/blockchain');
 const createTxRoutes = require('../../src/routes/api-tx');
 const { createMockStarCoin, createMockP2P, createSpy } = require('../helpers');
 

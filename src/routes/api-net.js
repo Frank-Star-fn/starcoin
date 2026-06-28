@@ -2,7 +2,7 @@
 // routes/api-net.js — P2P 同步 + 数据持久化 + 节点连接 + 发现
 // ============================================================
 const express = require('express');
-const { Block } = require('../blockchain');
+const { Block } = require('../blockchain/blockchain');
 const { AppError, wrapAsync } = require('./error-handler');
 
 /**
