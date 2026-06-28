@@ -123,6 +123,11 @@ function renameWallet(index) {
     input.focus();
     input.select();
 
+    // 阻止点击输入框时 click 事件冒泡到 .wallet-item，防止触发 selectWallet 导致输入框被销毁
+    input.addEventListener('click', (e) => {
+        e.stopPropagation();
+    });
+
     function confirmRename() {
         const newName = input.value.trim();
         if (newName && newName !== originalName) {
