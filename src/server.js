@@ -42,8 +42,21 @@ const frontendClients = new Set();
  * @param {string} type - 消息类型: 'newBlock' | 'newTransaction' | 'chainUpdated'
  * @param {object} data - 附加数据
  */
+// 广播去重：刚发过 newBlock，1 秒内抑制紧随其后的 chainUpdated
+let _lastBroadcastType = null;
+let _lastBroadcastTime = 0;
 function broadcastToFrontend(type, data = {}) {
-    const message = JSON.stringify({ type, ...data, timestamp: Date.now() });
+    const now = Date.now();
+    // 如果刚发过 newBlock（1 秒内），抑制紧随的 chainUpdated
+    const SUPPRESS_WINDOW = 1000;
+    if (type === 'chainUpdated' && _lastBroadcastType === 'newBlock' && (now - _lastBroadcastTime) < SUPPRESS_WINDOW) {
+        log.info('广播去重：抑制 chainUpdated（刚发过 newBlock）');
+        return;
+    }
+    _lastBroadcastType = type;
+    _lastBroadcastTime = now;
+
+    const message = JSON.stringify({ type, ...data, sourcePort: PORT, timestamp: now });
     frontendClients.forEach((client) => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(message);

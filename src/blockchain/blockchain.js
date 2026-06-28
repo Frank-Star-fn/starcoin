@@ -387,7 +387,8 @@ class Blockchain {
 
         // 异步挖矿（让步事件循环，让进度能实时推送）
         // 传入 shouldAbort，让 block.mineBlockAsync 在检测到链变化时提前中止
-        const mineResult = await block.mineBlockAsync(this.difficulty, onProgress, 5000, shouldAbort);
+        // minIntervalMs=150：距上次回调至少 150ms，防止高频回调压垮前端
+        const mineResult = await block.mineBlockAsync(this.difficulty, onProgress, 5000, shouldAbort, 150);
 
         // 如果挖矿被中止（链已更新 或 客户端断开），则丢弃当前区块，交易留在交易池，等调用者重新开始
         if (mineResult && mineResult.aborted) {

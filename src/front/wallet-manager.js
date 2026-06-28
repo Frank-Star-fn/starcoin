@@ -33,7 +33,11 @@ async function generateWallet() {
         renderWallets();
         renderTransfer();
         saveWallets();
-        await refreshAll();
+        if (typeof debouncedRefreshAll === 'function') {
+            debouncedRefreshAll('high');
+        } else {
+            await refreshAll();
+        }
 
         // 显示助记词对话框
         showMnemonicDisplay(data.mnemonic);
@@ -296,7 +300,11 @@ async function doImportPrivateKey() {
         toggleImportArea();
 
         showMessage('txMessage', '✅ 私钥导入成功！地址：' + shortAddr(w.address, 16), 'success', 5000);
-        await refreshAll();
+        if (typeof debouncedRefreshAll === 'function') {
+            debouncedRefreshAll('high');
+        } else {
+            await refreshAll();
+        }
     } catch (err) {
         msgEl.textContent = '❌ ' + err.message;
         msgEl.className = 'message error';
@@ -396,7 +404,11 @@ async function importPrivateKey() {
             saveWallets();
             hideImportKeyDialog();
             showMessage('txMessage', `✅ 私钥导入成功！地址: ${shortAddr(w.address, 20)}`, 'success', 5000);
-            await refreshAll();
+            if (typeof debouncedRefreshAll === 'function') {
+                debouncedRefreshAll('high');
+            } else {
+                await refreshAll();
+            }
         } else {
             msgEl.className = 'message error';
             msgEl.textContent = '❌ ' + (result.error || '导入失败');
@@ -542,7 +554,11 @@ async function importWalletFromMnemonic() {
             saveWallets();
             hideImportMnemonicDialog();
             showMessage('txMessage', `✅ 助记词导入成功！地址: ${shortAddr(w.address, 20)}`, 'success', 5000);
-            await refreshAll();
+            if (typeof debouncedRefreshAll === 'function') {
+                debouncedRefreshAll('high');
+            } else {
+                await refreshAll();
+            }
         } else {
             if (msgEl) { msgEl.className = 'message error'; msgEl.textContent = '❌ ' + (result.error || '导入失败'); }
             if (btn) { btn.disabled = false; btn.textContent = '✅ 导入助记词'; }

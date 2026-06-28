@@ -5,6 +5,64 @@
    ============================================================ */
 
 // ============================================================
+// RAF 批量 DOM 更新系统
+// 将 SSE 高频回调中的 DOM 写入统一缓存，
+// 由 requestAnimationFrame 驱动在下一帧批量应用，
+// 避免强制同步 reflow 导致的卡顿。
+// ============================================================
+const _miningDisplayState = {
+    nonce: null,
+    hash: null,
+    progress: null,
+    difficulty: null,
+    hashrate: null,
+    status: null,
+    animClass: null,
+    _rafId: null,
+    _dirty: false
+};
+
+function _scheduleMiningFlush() {
+    if (_miningDisplayState._dirty) return;
+    _miningDisplayState._dirty = true;
+    _miningDisplayState._rafId = requestAnimationFrame(() => {
+        _miningDisplayState._dirty = false;
+        _miningDisplayState._rafId = null;
+        _flushMiningDisplayNow();
+    });
+}
+
+function _flushMiningDisplayNow() {
+    const s = _miningDisplayState;
+    const nonceEl = document.getElementById('miningNonce');
+    const hashEl = document.getElementById('miningHash');
+    const progressEl = document.getElementById('miningProgress');
+    const difficultyEl = document.getElementById('miningDifficulty');
+    const hashrateEl = document.getElementById('miningHashrate');
+    const statusEl = document.getElementById('miningStatus');
+    const animEl = document.getElementById('miningAnimation');
+
+    if (s.nonce !== null && nonceEl) nonceEl.textContent = s.nonce;
+    if (s.hash !== null && hashEl) hashEl.textContent = s.hash;
+    if (s.progress !== null && progressEl) progressEl.style.width = s.progress;
+    if (s.difficulty !== null && difficultyEl) difficultyEl.textContent = s.difficulty;
+    if (s.hashrate !== null && hashrateEl) hashrateEl.textContent = s.hashrate;
+    if (s.status !== null && statusEl) statusEl.textContent = s.status;
+    if (s.animClass !== null && animEl) {
+        animEl.className = s.animClass;
+        s.animClass = null; // 仅应用一次，避免重复覆盖
+    }
+}
+
+function _cancelMiningFlush() {
+    if (_miningDisplayState._rafId) {
+        cancelAnimationFrame(_miningDisplayState._rafId);
+        _miningDisplayState._rafId = null;
+    }
+    _miningDisplayState._dirty = false;
+}
+
+// ============================================================
 // 单次挖矿（SSE 流，用于前端动画）
 // ============================================================
 async function mineBlock() {
@@ -63,10 +121,14 @@ async function mineBlock() {
 
             if (data.started) {
                 // 开始挖矿
-                statusText.textContent = data.message || '⛏️ 正在寻找满足条件的 nonce...';
-                if (data.difficulty != null) {
-                    difficultyDisplay.textContent = data.difficulty;
-                }
+                _miningDisplayState.nonce = '0';
+                _miningDisplayState.hash = '计算中...';
+                _miningDisplayState.progress = '0%';
+                _miningDisplayState.status = data.message || '⛏️ 正在寻找满足条件的 nonce...';
+                _miningDisplayState.difficulty = data.difficulty != null ? data.difficulty : null;
+                _miningDisplayState.hashrate = '--';
+                _miningDisplayState.animClass = 'mining-animation mining-active';
+                _scheduleMiningFlush();
                 return;
             }
 
@@ -75,16 +137,13 @@ async function mineBlock() {
                 miningCompleted = true;
                 eventSource.close();
 
-                if (data.nonce != null) {
-                    nonceDisplay.textContent = Number(data.nonce).toLocaleString();
-                }
-                if (data.difficulty != null) {
-                    difficultyDisplay.textContent = data.difficulty;
-                }
-                if (data.hash) hashDisplay.textContent = data.hash;
-                progressBar.style.width = '100%';
-                animContainer.className = 'mining-animation mining-success';
-                statusText.textContent = data.message || '🎉 挖矿成功！';
+                _miningDisplayState.nonce = data.nonce != null ? Number(data.nonce).toLocaleString() : null;
+                _miningDisplayState.difficulty = data.difficulty != null ? data.difficulty : null;
+                _miningDisplayState.hash = data.hash || null;
+                _miningDisplayState.progress = '100%';
+                _miningDisplayState.animClass = 'mining-animation mining-success';
+                _miningDisplayState.status = data.message || '🎉 挖矿成功！';
+                _scheduleMiningFlush();
 
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
                 if (data.block && data.block.index != null) {
@@ -101,14 +160,19 @@ async function mineBlock() {
 
                 // 8 秒后隐藏动画
                 setTimeout(() => {
-                    if (!document.querySelector('.mining-success')) return;
-                    animContainer.style.display = 'none';
-                    animContainer.className = 'mining-animation';
+                    const anim = document.getElementById('miningAnimation');
+                    if (anim && anim.className.includes('mining-success')) {
+                        anim.style.display = 'none';
+                    }
                 }, 8000);
 
-                // 主动刷新期间，短暂忽略 WebSocket 推送，避免重复 API 调用
-                if (typeof setIgnoreWs === 'function') setIgnoreWs(3000);
-                refreshAll();
+                // 使用防抖刷新，避免多节点同时挖矿成功时的 API 风暴
+                if (typeof debouncedRefreshAll === 'function') {
+                    debouncedRefreshAll('high');
+                } else {
+                    if (typeof setIgnoreWs === 'function') setIgnoreWs(3000);
+                    refreshAll();
+                }
                 return;
             }
 
@@ -116,20 +180,21 @@ async function mineBlock() {
                 miningCompleted = true;
                 eventSource.close();
                 singleMineEventSource = null;
-                statusText.textContent = '❌ ' + data.error;
-                animContainer.className = 'mining-animation mining-error';
+                _miningDisplayState.status = '❌ ' + data.error;
+                _miningDisplayState.animClass = 'mining-animation mining-error';
+                _scheduleMiningFlush();
                 enableMineButton();
                 showMessage('txMessage', '❌ ' + data.error, 'error');
                 return;
             }
 
-            // 进度更新
+            // 进度更新 —— 使用 RAF 缓存写入
             if (data.nonce) {
-                nonceDisplay.textContent = Number(data.nonce).toLocaleString();
-                if (data.difficulty != null) difficultyDisplay.textContent = data.difficulty;
-                if (data.hash) hashDisplay.textContent = data.hash;
+                _miningDisplayState.nonce = Number(data.nonce).toLocaleString();
+                _miningDisplayState.difficulty = data.difficulty != null ? data.difficulty : null;
+                _miningDisplayState.hash = data.hash || null;
 
-                // 简单的进度估算：当前 hash 的前缀匹配程度
+                // 进度计算（只在 _scheduleMiningFlush 中执行）
                 if (data.hash && data.difficulty != null) {
                     const prefixLen = Math.floor(Number(data.difficulty));
                     let matchLen = 0;
@@ -139,7 +204,6 @@ async function mineBlock() {
                     }
                     const baseLen = Math.max(1, prefixLen);
                     let pct = (matchLen / baseLen) * 100;
-                    // 加上小数部分的微进度（如果当前已满足整数前缀零）
                     if (matchLen === prefixLen && Number(data.difficulty) - prefixLen > 0) {
                         const nextByteHex = data.hash.substring(prefixLen, prefixLen + 2);
                         const nextByteVal = parseInt(nextByteHex, 16);
@@ -150,10 +214,9 @@ async function mineBlock() {
                         }
                     }
                     pct = Math.min(95, Math.max(1, pct));
-                    // 只升不降：仅当当前进度超过历史最佳时才更新进度条
                     if (pct > bestPct) {
                         bestPct = pct;
-                        progressBar.style.width = pct + '%';
+                        _miningDisplayState.progress = pct + '%';
                     }
                 }
 
@@ -161,10 +224,11 @@ async function mineBlock() {
                 const elapsed = (Date.now() - startTime) / 1000;
                 if (elapsed > 0) {
                     const rate = Math.round(Number(data.nonce) / elapsed);
-                    statusText.textContent = `⛏️ 已尝试: ${Number(data.nonce).toLocaleString()} 次`;
-                    const hashrateEl = document.getElementById('miningHashrate');
-                    if (hashrateEl) hashrateEl.textContent = rate.toLocaleString();
+                    _miningDisplayState.status = `⛏️ 已尝试: ${Number(data.nonce).toLocaleString()} 次`;
+                    _miningDisplayState.hashrate = rate.toLocaleString();
                 }
+
+                _scheduleMiningFlush();
             }
         } catch (err) {
             console.error('挖矿 SSE 消息处理出错:', err);
@@ -242,6 +306,8 @@ async function toggleAutoMine() {
             autoMineState.eventSource.close();
             autoMineState.eventSource = null;
         }
+        // 清理 RAF 队列
+        _cancelMiningFlush();
         // 立即隐藏挖矿动画
         if (animContainer) {
             animContainer.style.display = 'none';
@@ -351,8 +417,14 @@ async function startNextAutoMine() {
             }
 
             if (data.started) {
-                statusText.textContent = data.message || '⛏️ 自动挖矿中...';
-                if (data.difficulty != null) difficultyDisplay.textContent = data.difficulty;
+                _miningDisplayState.nonce = '0';
+                _miningDisplayState.hash = '计算中...';
+                _miningDisplayState.progress = '0%';
+                _miningDisplayState.status = data.message || '⛏️ 自动挖矿中...';
+                _miningDisplayState.difficulty = data.difficulty != null ? data.difficulty : null;
+                _miningDisplayState.hashrate = '--';
+                _miningDisplayState.animClass = 'mining-animation mining-active';
+                _scheduleMiningFlush();
                 return;
             }
 
@@ -363,17 +435,21 @@ async function startNextAutoMine() {
                     autoMineState.eventSource = null;
                 }
 
-                // 更新显示
-                if (data.nonce != null) nonceDisplay.textContent = Number(data.nonce).toLocaleString();
-                if (data.difficulty != null) difficultyDisplay.textContent = data.difficulty;
-                if (data.hash) hashDisplay.textContent = data.hash;
-                progressBar.style.width = '100%';
-                animContainer.className = 'mining-animation mining-success';
-                statusText.textContent = data.message || '🎉 挖矿成功！';
+                _miningDisplayState.nonce = data.nonce != null ? Number(data.nonce).toLocaleString() : null;
+                _miningDisplayState.difficulty = data.difficulty != null ? data.difficulty : null;
+                _miningDisplayState.hash = data.hash || null;
+                _miningDisplayState.progress = '100%';
+                _miningDisplayState.animClass = 'mining-animation mining-success';
+                _miningDisplayState.status = data.message || '🎉 挖矿成功！';
+                _scheduleMiningFlush();
 
-                // 刷新数据（主动刷新期间，短暂忽略 WebSocket 推送，避免重复 API 调用）
-                if (typeof setIgnoreWs === 'function') setIgnoreWs(3000);
-                refreshAll();
+                // 使用防抖刷新，避免多节点同时挖矿成功时的 API 风暴
+                if (typeof debouncedRefreshAll === 'function') {
+                    debouncedRefreshAll('high');
+                } else {
+                    if (typeof setIgnoreWs === 'function') setIgnoreWs(3000);
+                    refreshAll();
+                }
 
                 // 计数 + 重置连续失败计数（成功说明链路恢复正常）
                 autoMineState.blocksMined++;
@@ -389,7 +465,8 @@ async function startNextAutoMine() {
                 } else {
                     // 已被停止
                     enableMineButton();
-                    animContainer.style.display = 'none';
+                    const anim = document.getElementById('miningAnimation');
+                    if (anim) anim.style.display = 'none';
                 }
                 return;
             }
@@ -400,17 +477,18 @@ async function startNextAutoMine() {
                 if (autoMineState.eventSource === eventSource) {
                     autoMineState.eventSource = null;
                 }
-                statusText.textContent = '❌ ' + data.error;
-                animContainer.className = 'mining-animation mining-error';
+                _miningDisplayState.status = '❌ ' + data.error;
+                _miningDisplayState.animClass = 'mining-animation mining-error';
+                _scheduleMiningFlush();
                 stopAutoMineOnError(data.error);
                 return;
             }
 
-            // 进度更新
+            // 进度更新 —— 使用 RAF 缓存写入
             if (data.nonce) {
-                nonceDisplay.textContent = Number(data.nonce).toLocaleString();
-                if (data.difficulty != null) difficultyDisplay.textContent = data.difficulty;
-                if (data.hash) hashDisplay.textContent = data.hash;
+                _miningDisplayState.nonce = Number(data.nonce).toLocaleString();
+                _miningDisplayState.difficulty = data.difficulty != null ? data.difficulty : null;
+                _miningDisplayState.hash = data.hash || null;
 
                 // 自动挖矿进度：基于 difficulty 计算前缀零匹配（兼容小数难度）
                 if (data.hash && data.difficulty != null) {
@@ -435,17 +513,18 @@ async function startNextAutoMine() {
                     // 只升不降：仅当当前进度超过历史最佳时才更新进度条
                     if (pct > bestPct) {
                         bestPct = pct;
-                        progressBar.style.width = pct + '%';
+                        _miningDisplayState.progress = pct + '%';
                     }
                 }
 
                 const elapsed = (Date.now() - startTime) / 1000;
                 if (elapsed > 0) {
                     const rate = Math.round(Number(data.nonce) / elapsed);
-                    statusText.textContent = `⏱️ 自动挖矿 | 已尝试: ${Number(data.nonce).toLocaleString()} 次`;
-                    const hashrateEl = document.getElementById('miningHashrate');
-                    if (hashrateEl) hashrateEl.textContent = rate.toLocaleString();
+                    _miningDisplayState.status = `⏱️ 自动挖矿 | 已尝试: ${Number(data.nonce).toLocaleString()} 次`;
+                    _miningDisplayState.hashrate = rate.toLocaleString();
                 }
+
+                _scheduleMiningFlush();
             }
         } catch (err) {
             console.error('自动挖矿 SSE 处理出错:', err);
@@ -489,6 +568,8 @@ function stopAutoMineOnError(errMsg) {
         clearTimeout(autoMineState.timeoutId);
         autoMineState.timeoutId = null;
     }
+    // 清理 RAF 队列
+    _cancelMiningFlush();
 
     const btn = document.getElementById('autoMineBtn');
     if (btn) {

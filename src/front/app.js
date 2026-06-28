@@ -14,6 +14,63 @@ function setIgnoreWs(ms) { ignoreWsUntil = Date.now() + ms; }
 function isWsIgnored() { return Date.now() < ignoreWsUntil; }
 
 /* ============================================================
+   全局防抖刷新（合并多源触发，避免 API 风暴）
+   ============================================================ */
+let _refreshTimer = null;
+let _refreshLock = false;
+let _refreshLockUntil = 0;
+
+/**
+ * 在 refreshAll 执行期间设置锁，防止 WS/SSE 重复触发
+ * @param {number} ms - 锁定毫秒数
+ */
+function setRefreshLock(ms = 2000) {
+    _refreshLockUntil = Date.now() + ms;
+    _refreshLock = true;
+}
+
+/**
+ * 检查是否处于刷新锁定期
+ * @returns {boolean}
+ */
+function isRefreshLocked() {
+    if (!_refreshLock) return false;
+    if (Date.now() >= _refreshLockUntil) {
+        _refreshLock = false;
+        return false;
+    }
+    return true;
+}
+
+/**
+ * 防抖版 refreshAll：在防抖窗口内合并多次触发为一次
+ * @param {'high'|'normal'} priority - 'high' 立即执行但锁定后续，'normal' 合并等待
+ */
+function debouncedRefreshAll(priority = 'normal') {
+    // 如果当前处于刷新锁定期，忽略本次请求
+    if (isRefreshLocked()) return;
+
+    if (_refreshTimer) clearTimeout(_refreshTimer);
+
+    if (priority === 'high') {
+        // 高优先级（挖矿成功）：立即执行，设置 500ms 锁定
+        setRefreshLock(500);
+        refreshAll();
+        // 500ms 防抖窗口内不再响应新的触发
+        _refreshTimer = setTimeout(() => {
+            _refreshTimer = null;
+        }, 500);
+    } else {
+        // 普通优先级：500ms 防抖窗口
+        _refreshTimer = setTimeout(() => {
+            _refreshTimer = null;
+            if (isRefreshLocked()) return;
+            refreshAll();
+        }, 500);
+    }
+}
+
+/* ============================================================
    WebSocket 实时推送（替代轮询）
    ============================================================ */
 let wsReconnectTimer = null;
@@ -39,6 +96,10 @@ function connectWebSocket() {
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
+            // 更新 WS 活跃时间（供备用轮询判断是否跳过）
+            if (typeof lastWsActivity !== 'undefined') {
+                lastWsActivity = Date.now();
+            }
             handleWsMessage(data);
         } catch (err) {
             console.error('❌ WebSocket 消息解析失败:', err);
@@ -58,46 +119,62 @@ function connectWebSocket() {
     };
 }
 
+/* ============================================================
+   WebSocket 消息合并刷新队列
+   ============================================================ */
+let _pendingRefreshTypes = new Set();
+let _pendingRefreshTimer = null;
+
+/**
+ * 将 WS 消息入队，在防抖窗口内合并同类刷新
+ * @param {string} type - 消息类型
+ */
+function enqueueRefresh(type) {
+    _pendingRefreshTypes.add(type);
+
+    if (_pendingRefreshTimer) return;
+    _pendingRefreshTimer = setTimeout(() => {
+        _pendingRefreshTimer = null;
+
+        if (isRefreshLocked() || isWsIgnored()) {
+            _pendingRefreshTypes.clear();
+            return;
+        }
+
+        // 根据合并后的消息类型决定刷新范围
+        if (_pendingRefreshTypes.has('newBlock')) {
+            // 包含新区块 → 全量刷新
+            setRefreshLock(500);
+            refreshAll();
+        } else {
+            // 仅新交易或链更新 → 局部刷新
+            if (_pendingRefreshTypes.has('chainUpdated')) {
+                refreshChain();
+                refreshSelectedWalletDetails();
+                updateFromBalanceHint();
+            }
+            if (_pendingRefreshTypes.has('newTransaction')) {
+                refreshMempool();
+            }
+        }
+        _pendingRefreshTypes.clear();
+    }, 300); // 300ms 合并窗口
+}
+
 /**
  * 处理 WebSocket 推送消息
  */
 function handleWsMessage(data) {
     // 前端刚刚主动刷新过（如挖矿成功）→ 短暂跳过 WS 触发的刷新
     if (isWsIgnored()) {
-        console.log(`🎯 WS推送（已忽略·主动刷新窗口内）: ${data.type}`);
         return;
     }
-    switch (data.type) {
-        case 'newBlock':
-            // 新区块到达 → 刷新链、交易池、地址榜
-            console.log(`🎯 WS推送: 新区块 #${data.blockIndex}`);
-            refreshChain();
-            refreshMempool();
-            refreshAddressRank();
-            // 也刷新钱包详情（余额可能变化）
-            refreshSelectedWalletDetails();
-            updateFromBalanceHint();
-            break;
-
-        case 'newTransaction':
-            // 新交易到达 → 刷新交易池
-            console.log('🎯 WS推送: 新交易到达');
-            refreshMempool();
-            break;
-
-        case 'chainUpdated':
-            // 链数据变更（P2P 同步引起）→ 全面刷新
-            console.log('🎯 WS推送: 链数据已更新（P2P同步）');
-            refreshChain();
-            refreshMempool();
-            refreshAddressRank();
-            refreshSelectedWalletDetails();
-            updateFromBalanceHint();
-            break;
-
-        default:
-            console.log('🎯 WS推送: 未知类型', data.type);
+    // 如果在防抖刷新锁定期内，忽略 WS 推送
+    if (isRefreshLocked()) {
+        return;
     }
+    // 入队合并刷新
+    enqueueRefresh(data.type);
 }
 
 /* ============================================================

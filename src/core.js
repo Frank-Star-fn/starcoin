@@ -362,10 +362,12 @@ class Block {
 
     // 异步挖矿（带进度回调，用于前端动画）
     // 每 stepInterval 次 hash 让步一次事件循环 + 回调进度
+    // 增加 minIntervalMs 参数：距上次回调至少间隔此毫秒数，防止高频回调压垮前端
     // @param {function} [shouldAbort] - 可选函数，每次让步时调用，返回 true 则中止挖矿
-    async mineBlockAsync(difficulty, onProgress, stepInterval = 5000, shouldAbort) {
+    async mineBlockAsync(difficulty, onProgress, stepInterval = 5000, shouldAbort, minIntervalMs = 0) {
         const { targetText } = Block._parseDifficulty(difficulty);
         this.targetText = targetText;
+        let lastCallbackTime = 0;
         while (!Block._meetsDifficulty(this.hash, difficulty)) {
             // 检查是否需要中止（例如外部链已更新）
             if (shouldAbort && shouldAbort()) {
@@ -386,7 +388,9 @@ class Block {
             this.nonce++;
             this.hash = this.calculateHash();
 
-            if (this.nonce % stepInterval === 0) {
+            // 双重条件：达到 stepInterval 阈值，且距上次回调至少 minIntervalMs
+            if (this.nonce % stepInterval === 0 && (minIntervalMs <= 0 || Date.now() - lastCallbackTime >= minIntervalMs)) {
+                lastCallbackTime = Date.now();
                 // 让步事件循环，让 SSE 等异步操作有机会发送数据
                 await new Promise(r => setImmediate(r));
                 if (onProgress) {

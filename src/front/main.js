@@ -116,7 +116,11 @@ async function submitTransaction() {
             document.getElementById('note').value = '';
             // 主动刷新期间，短暂忽略 WebSocket 推送（新交易到达会触发重复刷新）
             if (typeof setIgnoreWs === 'function') setIgnoreWs(2000);
-            await refreshAll();
+            if (typeof debouncedRefreshAll === 'function') {
+                debouncedRefreshAll('high');
+            } else {
+                await refreshAll();
+            }
         } else {
             showMessage('txMessage', '❌ ' + (result.error || '提交失败'), 'error');
         }
@@ -341,6 +345,9 @@ async function refreshAll() {
 /* ============================================================
    初始化
    ============================================================ */
+// WebSocket 活跃时间戳，用于判断是否应跳过备用轮询
+let lastWsActivity = Date.now();
+
 (async function init() {
     await loadWallets();
     renderWallets();
@@ -352,7 +359,9 @@ async function refreshAll() {
 })();
 
 // 备用轮询：每 60 秒刷新一次（WebSocket 断开时的兜底）
+// 如果最近 30 秒内有 WS 活跃推送，跳过本轮轮询，避免与 WS 推送冲突
 setInterval(() => {
+    if (Date.now() - lastWsActivity < 30000) return;
     refreshMempool();
     refreshChain();
     refreshAddressRank();

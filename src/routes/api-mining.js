@@ -111,22 +111,33 @@ function createMiningRoutes(starCoin, p2p, broadcastToFrontend) {
                         break;
                     }
                     consecutiveCancels++;
-                    if (consecutiveCancels > 20) {
+                    // 指数退避：连续取消越频繁，等待越久，让多个节点自然错峰
+                    const backoffDelay = Math.min(200 * Math.pow(1.5, consecutiveCancels - 1), 3000);
+                    if (consecutiveCancels > 15) {
+                        // 连续取消超过 15 次，暂停 10 秒让链稳定下来
+                        logger.module('Mining').warn('链频繁更新，暂停 10s 让链稳定', { consecutiveCancels });
                         res.write(`data: ${JSON.stringify({
                             found: false,
-                            error: '链频繁更新，已放弃挖矿',
-                            message: '❌ 链频繁更新，已放弃挖矿'
+                            error: '链频繁更新，暂停 10s',
+                            message: '⏸️ 链频繁更新，暂停 10 秒让链稳定...'
                         })}\n\n`);
-                        keepMining = false;
-                        break;
+                        await new Promise(r => setTimeout(r, 10000));
+                        consecutiveCancels = Math.max(0, consecutiveCancels - 5); // 恢复部分计数
+                        // 继续循环尝试，不退出
+                        continue;
                     }
-                    logger.module('Mining').info('链已更新，自动在新链上重新开始挖矿', { consecutiveCancels, newChainLength: starCoin.chain.length });
+                    logger.module('Mining').info('链已更新，自动在新链上重新开始挖矿', { consecutiveCancels, newChainLength: starCoin.chain.length, backoffDelay });
                     res.write(`data: ${JSON.stringify({
                         chainUpdated: true,
                         newChainLength: starCoin.chain.length,
                         difficulty: starCoin.difficulty,
-                        message: '🔄 区块链已更新（高度=' + starCoin.chain.length + '），自动切换到新链继续挖矿...'
+                        backoffDelay,
+                        message: '🔄 区块链已更新（高度=' + starCoin.chain.length + '），' + (backoffDelay > 0 ? Math.round(backoffDelay) + 'ms 后重新开始...' : '立即重新开始...')
                     })}\n\n`);
+                    // 退避等待，让其他节点先稳定
+                    if (backoffDelay > 0) {
+                        await new Promise(r => setTimeout(r, backoffDelay));
+                    }
                     continue;
                 }
 
