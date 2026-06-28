@@ -22,6 +22,8 @@ class StorageManager {
     }
 
     loadFromFile() {
+        // testMode 下不读写磁盘
+        if (this.blockchain.testMode) { return false; }
         try {
             if (fs.existsSync(this.blockchain.dataFile)) {
                 const raw = fs.readFileSync(this.blockchain.dataFile, 'utf8');
@@ -101,6 +103,8 @@ class StorageManager {
     }
 
     saveToFile() {
+        // testMode 下不读写磁盘
+        if (this.blockchain.testMode) { return true; }
         try {
             const data = {
                 chain: this.blockchain.chain,
@@ -121,8 +125,11 @@ class StorageManager {
 
     clearDataFile() {
         try {
-            if (fs.existsSync(this.blockchain.dataFile)) {
-                fs.unlinkSync(this.blockchain.dataFile);
+            // testMode 下仅跳过文件删除，内存状态仍需重置
+            if (!this.blockchain.testMode) {
+                if (fs.existsSync(this.blockchain.dataFile)) {
+                    fs.unlinkSync(this.blockchain.dataFile);
+                }
             }
             this.blockchain.chain = [this.blockchain.createGenesisBlock()];
             this.blockchain.difficulty = config.DIFFICULTY_INITIAL;
