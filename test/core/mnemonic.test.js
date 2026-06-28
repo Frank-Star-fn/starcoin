@@ -2,7 +2,7 @@
 // 助记词模块单元测试
 // 覆盖: generateMnemonic, validateMnemonic, mnemonicToWallet
 // ============================================================
-const { generateMnemonic, validateMnemonic, mnemonicToWallet } = require('../src/core');
+const { generateMnemonic, validateMnemonic, mnemonicToWallet } = require('../../src/core');
 
 // ============================================================
 // 第1组: generateMnemonic 助记词生成

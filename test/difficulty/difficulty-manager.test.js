@@ -1,8 +1,8 @@
 // ============================================================
 // 难度管理器单元测试
 // ============================================================
-const { DifficultyManager } = require('../src/difficulty-manager');
-const { Block } = require('../src/core');
+const { DifficultyManager } = require('../../src/difficulty-manager');
+const { Block } = require('../../src/core');
 
 // ============================================================
 // 辅助：创建一个带有指定时间戳区间的链

@@ -1,7 +1,7 @@
 // ============================================================
 // Block.mineBlockAsync 异步挖矿单元测试
 // ============================================================
-const { Block } = require('../src/core');
+const { Block } = require('../../src/core');
 
 // ============================================================
 // 辅助：创建确定性 Block 用于测试
@@ -217,7 +217,7 @@ describe('mineBlockAsync 边缘情况', () => {
     });
 
     it('带有 pending 交易的区块也能成功挖掘', async () => {
-        const { Transaction } = require('../src/core');
+        const { Transaction } = require('../../src/core');
         const tx1 = new Transaction('Alice', 'Bob', 10, 1, 'test', 'STC');
         const block = new Block(1, '2025-01-01T00:00:00.000Z', [tx1], '0'.repeat(64));
 

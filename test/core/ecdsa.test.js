@@ -2,8 +2,8 @@
 // ECDSA 签名系统测试
 // ============================================================
 const crypto = require('crypto');
-const { Blockchain, Block, Transaction, generateWallet, importWalletFromPem } = require('../src/blockchain/blockchain');
-const { newFreshChain } = require('./helpers');
+const { Blockchain, Block, Transaction, generateWallet, importWalletFromPem } = require('../../src/blockchain/blockchain');
+const { newFreshChain } = require('../helpers');
 
 // ============================================================
 // 第1组: 钱包生成测试

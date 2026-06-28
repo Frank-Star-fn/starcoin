@@ -1,8 +1,8 @@
 // ============================================================
 // 余额计算单元测试
 // ============================================================
-const { Blockchain, Block, Transaction, generateWallet } = require('../src/blockchain/blockchain');
-const { newFreshChain, fundAddress, createSignedTx } = require('./helpers');
+const { Blockchain, Block, Transaction, generateWallet } = require('../../src/blockchain/blockchain');
+const { newFreshChain, fundAddress, createSignedTx } = require('../helpers');
 
 // ============================================================
 // 第1组: 基础余额计算

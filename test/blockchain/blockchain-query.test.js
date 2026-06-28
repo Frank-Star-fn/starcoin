@@ -2,8 +2,8 @@
 // QueryEngine 查询引擎单元测试
 // 覆盖: findBlockByIndex, findTransactionById, search
 // ============================================================
-const { Block, Transaction, generateWallet } = require('../src/core');
-const { newFreshChain, createSignedTx } = require('./helpers');
+const { Block, Transaction, generateWallet } = require('../../src/core');
+const { newFreshChain, createSignedTx } = require('../helpers');
 
 // ============================================================
 // 第1组: findBlockByIndex

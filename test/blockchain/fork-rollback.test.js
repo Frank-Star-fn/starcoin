@@ -1,8 +1,8 @@
 // ============================================================
 // 分叉回滚单元测试
 // ============================================================
-const { Blockchain, Block, Transaction, generateWallet } = require('../src/blockchain/blockchain');
-const { newFreshChain, fundAddress, createSignedTx } = require('./helpers');
+const { Blockchain, Block, Transaction, generateWallet } = require('../../src/blockchain/blockchain');
+const { newFreshChain, fundAddress, createSignedTx } = require('../helpers');
 
 // ============================================================
 // 辅助：构造一笔指定索引区块的挖矿区块（无交易，仅用于延展链）

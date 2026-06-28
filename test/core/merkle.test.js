@@ -2,7 +2,7 @@
 // Merkle 树单元测试
 // ============================================================
 const crypto = require('crypto');
-const { Block, Transaction, calculateMerkleRoot } = require('../src/core');
+const { Block, Transaction, calculateMerkleRoot } = require('../../src/core');
 
 // ============================================================
 // 辅助：创建确定性 Transaction（覆盖随机 id/timestamp）

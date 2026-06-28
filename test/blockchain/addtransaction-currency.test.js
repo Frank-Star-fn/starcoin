@@ -3,9 +3,9 @@
 // 覆盖: addTransaction / addPendingTransaction 多币种余额边界
 //       (STC: amount+fee 都从 STC 扣; 非 STC: amount 从币种扣, fee 从 STC 扣)
 // ============================================================
-const { Transaction, generateWallet } = require('../src/core');
-const { Blockchain, Block } = require('../src/blockchain/blockchain');
-const { newFreshChain, createSignedTx, fundAddress } = require('./helpers');
+const { Transaction, generateWallet } = require('../../src/core');
+const { Blockchain, Block } = require('../../src/blockchain/blockchain');
+const { newFreshChain, createSignedTx, fundAddress } = require('../helpers');
 
 // ============================================================
 // 第1组: STC 交易余额边界

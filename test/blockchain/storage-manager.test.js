@@ -2,8 +2,8 @@
 // StorageManager 持久化管理器单元测试
 // 覆盖: loadFromFile, saveToFile, clearDataFile
 // ============================================================
-const { Blockchain, Block, Transaction, generateWallet } = require('../src/blockchain/blockchain');
-const { newFreshChain, createSignedTx } = require('./helpers');
+const { Blockchain, Block, Transaction, generateWallet } = require('../../src/blockchain/blockchain');
+const { newFreshChain, createSignedTx } = require('../helpers');
 
 // ============================================================
 // 第1组: saveToFile
@@ -94,7 +94,7 @@ describe('StorageManager.clearDataFile', () => {
     });
 
     it('清除后难度重置为 config 初始值', () => {
-        const config = require('../src/config');
+        const config = require('../../src/config');
         chain.difficulty = 10;
         chain.storage.clearDataFile();
         expect(chain.difficulty).toBe(config.DIFFICULTY_INITIAL);

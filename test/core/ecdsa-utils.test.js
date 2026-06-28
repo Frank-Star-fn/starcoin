@@ -11,7 +11,7 @@ const {
     signWithECDSA,
     verifyWithECDSA,
     generateWallet
-} = require('../src/core');
+} = require('../../src/core');
 
 // ============================================================
 // 第1组: getPublicKeyFromPrivateKeyPem

@@ -2,7 +2,7 @@
 // 核心工具函数单元测试
 // 覆盖: normalizeCurrency, effectiveCurrency
 // ============================================================
-const { normalizeCurrency, effectiveCurrency, SUPPORTED_CURRENCIES, DEFAULT_CURRENCY } = require('../src/core');
+const { normalizeCurrency, effectiveCurrency, SUPPORTED_CURRENCIES, DEFAULT_CURRENCY } = require('../../src/core');
 
 // ============================================================
 // 第1组: normalizeCurrency 币种规范化
@@ -158,25 +158,25 @@ describe('effectiveCurrency', () => {
 
     // --- Transaction 实例 ---
     it('Transaction 实例 currency=STC → 返回 STC', () => {
-        const { Transaction } = require('../src/core');
+        const { Transaction } = require('../../src/core');
         const tx = new Transaction('A', 'B', 10, 0, '', 'STC');
         expect(effectiveCurrency(tx)).toBe('STC');
     });
 
     it('Transaction 实例 currency=WBTC → 被 normalize 为 cBTC', () => {
-        const { Transaction } = require('../src/core');
+        const { Transaction } = require('../../src/core');
         const tx = new Transaction('A', 'B', 10, 0, '', 'WBTC');
         expect(effectiveCurrency(tx)).toBe('cBTC');
     });
 
     it('Transaction 实例 currency=undefined → 返回默认 STC', () => {
-        const { Transaction } = require('../src/core');
+        const { Transaction } = require('../../src/core');
         const tx = new Transaction('A', 'B', 10, 0, '', undefined);
         expect(effectiveCurrency(tx)).toBe('STC');
     });
 
     it('Transaction 实例无 currency 参数 → 返回默认 STC', () => {
-        const { Transaction } = require('../src/core');
+        const { Transaction } = require('../../src/core');
         const tx = new Transaction('A', 'B', 10);
         expect(effectiveCurrency(tx)).toBe('STC');
     });
