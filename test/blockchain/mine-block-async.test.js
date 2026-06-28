@@ -223,6 +223,8 @@ describe('mineBlockAsync 外部中止', () => {
     });
 
     it('externalAbortCheck 先 false 后 true → 仍能中止', async () => {
+        // 提高难度确保需要多次迭代，让 delayed abort 有机会触发
+        chain.difficulty = 4;
         let callCount = 0;
         const externalAbortCheck = () => {
             callCount++;

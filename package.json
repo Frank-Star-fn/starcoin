@@ -6,6 +6,11 @@
     "start": "node src/server.js",
     "start:node1": "set PORT=3000 && node src/server.js",
     "start:node2": "set PORT=3001 && node src/server.js",
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "start:prod": "node dist/src/server.js",
+    "start:prod:node1": "set PORT=3000 && node dist/src/server.js",
+    "start:prod:node2": "set PORT=3001 && node dist/src/server.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -20,7 +25,11 @@
     "ws": "^8.14.2"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.0.1",
+    "@types/ws": "^8.18.1",
     "supertest": "^7.2.2",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   }
 }
