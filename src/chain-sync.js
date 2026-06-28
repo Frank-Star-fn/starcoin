@@ -274,6 +274,7 @@ class ChainSync {
             const block = new Block(b.index, b.timestamp, txSrc, b.previousHash);
             block.nonce = b.nonce;
             block.hash = b.hash;
+            block.merkleRoot = b.merkleRoot || null;  // ★ 修复：保留原始 merkleRoot，防止 hash 校验失败
             return block;
         });
 

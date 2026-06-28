@@ -612,6 +612,7 @@ class Blockchain {
             block = new Block(newBlock.index, newBlock.timestamp, txSource, newBlock.previousHash);
             block.nonce = newBlock.nonce;
             block.hash = newBlock.hash;
+            block.merkleRoot = newBlock.merkleRoot || null;  // ★ 修复：保留原始 merkleRoot，防止 hash 校验失败
         }
         if (block.hash !== block.calculateHash()) {
             return null;

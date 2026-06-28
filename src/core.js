@@ -219,9 +219,10 @@ function calculateMerkleRoot(transactions) {
             return tx.calculateHash();
         }
         // 普通 JSON 对象：直接用字段计算 hash
+        // ★ 包含 currency 字段，保持与 Transaction.calculateHash() 新格式一致
         return crypto.createHash('sha256').update(
             (tx.id || '') + (tx.from || '') + (tx.to || '') + (Number(tx.amount) || 0) +
-            (Number(tx.fee) || 0) + (tx.note || '') + (tx.timestamp || '')
+            (Number(tx.fee) || 0) + (tx.note || '') + (tx.currency || '') + (tx.timestamp || '')
         ).digest('hex');
     });
 
