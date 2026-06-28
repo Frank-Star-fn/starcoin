@@ -163,10 +163,10 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     // }));
 
     // ============================================================
-    // 2. 提交一笔转账到交易池（支持多币种：currency = STC | cBTC | cETH）
+    // 2. 提交一笔转账到交易池（支持多币种：currency = STC | cBTC | cETH；自动填充 nonce 防重放）
     // ============================================================
     router.post('/transaction', wrapAsync(async (req, res) => {
-        const { from, to, amount, fee, note, privateKey, publicKey, currency } = req.body;
+        const { from, to, amount, fee, note, privateKey, publicKey, currency, nonce } = req.body;
 
         if (!from || !to || !amount) {
             throw new AppError(400, '必须提供 from, to, amount 字段', 'MISSING_PARAM');
@@ -175,10 +175,23 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
             throw new AppError(400, '必须提供 privateKey 和 publicKey 用于 ECDSA 签名。请先用 POST /api/wallet/new 生成钱包。', 'MISSING_CREDENTIALS');
         }
 
+        // nonce 策略：
+        // - 用户显式提供 nonce → 使用用户值（由 addTransaction 做最终校验）；
+        // - 未提供 → 从链 + 交易池查询当前"期望 nonce"并填充，
+        //   使得 hash 包含 nonce，从而签名绑定 nonce，具备防重放属性。
+        let txNonce = null;
+        if (nonce !== undefined && nonce !== null && nonce !== '') {
+            txNonce = Number(nonce);
+        } else if (typeof starCoin.query !== 'undefined'
+                   && typeof starCoin.query.getAddressNonce === 'function') {
+            txNonce = starCoin.query.getAddressNonce(from, true);
+        }
+
         const tx = new Transaction(
-            from, to, Number(amount), Number(fee) || 0, note || '', currency
+            from, to, Number(amount), Number(fee) || 0, note || '', currency, txNonce
         );
         tx.signTransaction(privateKey, publicKey);
+
         let savedTx;
         try {
             savedTx = starCoin.addTransaction(tx);
@@ -196,9 +209,32 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
 
         res.json({
             success: true,
-            message: `[${savedTx.currency || 'STC'}] 交易已通过 ECDSA 签名验证，已加入交易池`,
+            message: `[${savedTx.currency || 'STC'}] 交易已通过 ECDSA 签名验证（nonce=${savedTx.nonce}），已加入交易池`,
             transaction: savedTx,
             poolCount: starCoin.pendingTransactions.length
+        });
+    }));
+
+    // ============================================================
+    // 2b. 查询地址的下一个期望 nonce（用于前端构造交易时填充）
+    // ============================================================
+    router.get('/nonce/:address', wrapAsync(async (req, res) => {
+        const address = req.params.address;
+        if (!address || address.length < 2) {
+            throw new AppError(400, '无效的地址格式', 'INVALID_ADDRESS');
+        }
+        let nextNonce = 0;
+        let confirmedNonce = 0;
+        if (starCoin.query && typeof starCoin.query.getAddressNonce === 'function') {
+            nextNonce = starCoin.query.getAddressNonce(address, true);
+            confirmedNonce = starCoin.query.getConfirmedNonce(address);
+        }
+        res.json({
+            success: true,
+            address,
+            nextNonce,
+            confirmedNonce,
+            pendingInPool: nextNonce - confirmedNonce,
         });
     }));
 

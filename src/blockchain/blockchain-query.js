@@ -432,6 +432,54 @@ class QueryEngine {
     }
 
     /**
+     * 计算指定地址的"下一个期望 nonce"。
+     * - 从创世块扫描到当前链尾，统计该地址作为 from 的交易数量（非 SYSTEM、非空 from）。
+     * - includePending=true 时，额外统计交易池中的数量（用于本地节点添加交易时的验证）。
+     * - nonce 从 0 开始：地址首次发送交易时 nonce 应为 0，第二笔为 1，依此类推。
+     */
+    getAddressNonce(address, includePending = true) {
+        if (!address) return 0;
+        let count = 0;
+        for (const block of this.blockchain.chain) {
+            if (!block.transactions || !Array.isArray(block.transactions)) continue;
+            for (const tx of block.transactions) {
+                if (tx.from !== address) continue;
+                if (!tx.from || tx.from === '' || tx.from === 'SYSTEM') continue;
+                if (tx.amount <= 0) continue; // 忽略备注交易（amount=0）
+                count++;
+            }
+        }
+        if (includePending) {
+            for (const tx of this.blockchain.pendingTransactions) {
+                if (tx.from !== address) continue;
+                if (!tx.from || tx.from === '' || tx.from === 'SYSTEM') continue;
+                if (Number(tx.amount) <= 0) continue;
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 仅统计链上已确认的 nonce（不含交易池）。
+     * 用于链验证逻辑（验证链上每笔交易的 nonce 是否按顺序递增）。
+     */
+    getConfirmedNonce(address) {
+        if (!address) return 0;
+        let count = 0;
+        for (const block of this.blockchain.chain) {
+            if (!block.transactions || !Array.isArray(block.transactions)) continue;
+            for (const tx of block.transactions) {
+                if (tx.from !== address) continue;
+                if (!tx.from || tx.from === '' || tx.from === 'SYSTEM') continue;
+                if (Number(tx.amount) <= 0) continue;
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
      * 获取所有地址及其余额（用于排名展示，每项包含 balances: {STC, cBTC, cETH}）
      */
     getAllAddresses() {

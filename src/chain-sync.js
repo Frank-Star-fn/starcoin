@@ -18,8 +18,12 @@ class ChainSync {
         if (!txObj) return null;
         // 如果已经是 Transaction 实例，直接返回
         if (txObj instanceof Transaction) return txObj;
-        // 从普通对象还原（传入 currency 以支持多币种，normalizeCurrency 会处理旧名迁移）
-        const tx = new Transaction(txObj.from, txObj.to, txObj.amount, txObj.fee || 0, txObj.note || '', txObj.currency);
+        // 从普通对象还原（传入 currency 与 nonce，确保 hash 计算一致）
+        const tx = new Transaction(
+            txObj.from, txObj.to, txObj.amount,
+            txObj.fee || 0, txObj.note || '',
+            txObj.currency, txObj.nonce
+        );
         if (txObj.id) tx.id = txObj.id;
         if (txObj.timestamp) tx.timestamp = txObj.timestamp;
         if (txObj.signature) tx.signature = txObj.signature;
@@ -31,6 +35,7 @@ class ChainSync {
     // 链完整性验证
     // chain: 要验证的链（不传则验证自身）
     // validateSignatures: 是否验证每笔交易的 ECDSA 签名（默认 true；旧数据可设为 false 兼容）
+    // 附加：对含 nonce 的交易，验证其 nonce 是否按地址从 0 严格递增（防重放）
     // ============================================================
     isChainValid(chain, validateSignatures = true) {
         const bc = this.blockchain;
@@ -49,6 +54,9 @@ class ChainSync {
                 return false;
             }
         }
+
+        // 记录每个地址已确认的交易数（用于 nonce 递增验证）
+        const nonceByAddress = new Map();
 
         for (let i = 1; i < targetChain.length; i++) {
             let currentBlock = targetChain[i];
@@ -105,18 +113,43 @@ class ChainSync {
             }
 
             // ============================================
-            // 验证区块中每笔交易的 ECDSA 签名
+            // 验证区块中每笔交易的 ECDSA 签名 + nonce 顺序
             // ============================================
-            if (validateSignatures && currentBlock.transactions && Array.isArray(currentBlock.transactions)) {
+            if (currentBlock.transactions && Array.isArray(currentBlock.transactions)) {
                 for (const tx of currentBlock.transactions) {
                     const txInstance = this._toTransactionInstance(tx);
-                    if (txInstance && !txInstance.isValid()) {
-                        if (chain) {
-                            console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 中一笔交易签名验证失败: tx=${txInstance.id.substring(0, 12)}... from=${txInstance.from.substring(0, 12)}...`);
-                        } else {
-                            console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 中一笔交易签名验证失败`);
+                    if (!txInstance) continue;
+
+                    // 1) ECDSA 签名验证（可选）
+                    if (validateSignatures) {
+                        if (!txInstance.isValid()) {
+                            if (chain) {
+                                console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 中一笔交易签名验证失败: tx=${txInstance.id.substring(0, 12)}... from=${txInstance.from.substring(0, 12)}...`);
+                            } else {
+                                console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 中一笔交易签名验证失败`);
+                            }
+                            return false;
                         }
-                        return false;
+                    }
+
+                    // 2) nonce 递增验证（防重放）：只对非 SYSTEM、非空 from 的交易验证
+                    if (txInstance.from && txInstance.from !== '' && txInstance.from !== 'SYSTEM'
+                        && txInstance.amount > 0) {
+                        const sender = txInstance.from;
+                        const expected = nonceByAddress.get(sender) || 0;
+                        if (txInstance.nonce !== undefined && txInstance.nonce !== null) {
+                            // 该交易携带 nonce → 必须严格等于 expected
+                            if (Number(txInstance.nonce) !== expected) {
+                                if (chain) {
+                                    console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 中交易 nonce 不匹配: from=${sender.substring(0, 12)}... 期望=${expected}, 实际=${txInstance.nonce}`);
+                                } else {
+                                    console.error(`❌ [isChainValid] 区块 #${currentBlock.index} 中交易 nonce 不匹配: from=${sender.substring(0, 12)}... 期望=${expected}, 实际=${txInstance.nonce}`);
+                                }
+                                return false;
+                            }
+                        }
+                        // 无论是否携带 nonce，计数都递增
+                        nonceByAddress.set(sender, expected + 1);
                     }
                 }
             }

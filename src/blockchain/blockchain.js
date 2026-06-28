@@ -74,7 +74,7 @@ class Blockchain {
         return block;
     }
 
-    // 添加交易到交易池（支持多币种，但矿工费始终以 STC 支付）
+    // 添加交易到交易池（支持多币种、nonce 防重放；矿工费始终以 STC 支付）
     addTransaction(tx) {
         // 校验基本字段
         if (!tx.from || !tx.to || tx.amount <= 0) {
@@ -90,7 +90,7 @@ class Blockchain {
             transaction = tx;
         } else {
             transaction = new Transaction(
-                tx.from, tx.to, tx.amount, tx.fee || 0, tx.note || '', tx.currency
+                tx.from, tx.to, tx.amount, tx.fee || 0, tx.note || '', tx.currency, tx.nonce
             );
             // 如果传入对象包含签名和公钥，复制过来
             if (tx.signature) transaction.signature = tx.signature;
@@ -102,6 +102,35 @@ class Blockchain {
         // ECDSA 签名验证（核心安全检查）
         if (!transaction.isValid()) {
             throw new Error('交易签名验证失败！可能是未签名、签名被篡改，或公钥与地址不匹配');
+        }
+
+        // ============================================
+        // nonce 验证（防重放攻击）：
+        // - 有签名 + 有 nonce → 验证 nonce 是否匹配；
+        // - 有签名 + 无 nonce → 允许（视为"旧格式、不启用 nonce 防重放"
+        //   注意：此时签名不含 nonce，填充 nonce 会破坏签名，故不自动填充）；
+        // - 无签名 + 无 nonce → 自动填充。
+        // ============================================
+        {
+            const sender = transaction.from;
+            const hasSignature = transaction.signature && transaction.signature.length > 0;
+            const hasNonce = (transaction.nonce !== undefined && transaction.nonce !== null);
+
+            if (hasSignature && hasNonce) {
+                // 已签名 + 有 nonce → 严格验证
+                const expected = this.query.getAddressNonce(sender, true);
+                if (Number(transaction.nonce) !== expected) {
+                    throw new Error(
+                        `[nonce] 交易序号不匹配！地址 ${sender.substring(0, 16)}... ` +
+                        `期望 nonce=${expected}，收到 nonce=${transaction.nonce}`
+                    );
+                }
+            } else if (!hasSignature && !hasNonce) {
+                // 未签名 + 未提供 nonce → 自动填充（用户可以在之后签名
+                transaction.nonce = this.query.getAddressNonce(sender, true);
+            }
+            // hasSignature && !hasNonce → 保持 nonce=undefined，不自动填充
+            // （否则会使 hash 改变，签名验证失败）
         }
 
         // ============================================
@@ -192,14 +221,14 @@ class Blockchain {
             return { success: false, error: '交易已存在于交易池中' };
         }
 
-        // 构造 Transaction 对象（传递 currency 字段）
+        // 构造 Transaction 对象（传递 currency 与 nonce 字段）
         let tx;
         if (txData instanceof Transaction) {
             tx = txData;
         } else {
             tx = new Transaction(
                 txData.from, txData.to, txData.amount,
-                txData.fee || 0, txData.note || '', txData.currency
+                txData.fee || 0, txData.note || '', txData.currency, txData.nonce
             );
             if (txData.signature) tx.signature = txData.signature;
             if (txData.publicKey) tx.publicKey = txData.publicKey;
@@ -222,6 +251,30 @@ class Blockchain {
         // ECDSA 签名验证（核心安全检查，不能跳过）
         if (!tx.isValid()) {
             return { success: false, error: '交易签名验证失败' };
+        }
+
+        // ============================================
+        // nonce 验证（防重放攻击）：
+        // - 已签名 + 有 nonce → 严格验证；
+        // - 已签名 + 无 nonce → 允许（旧格式兼容，不自动填充以免破坏签名）；
+        // - 未签名 + 无 nonce → 自动填充。
+        // 对于 SPECIAL 交易（SYSTEM、备注交易）跳过 nonce 验证
+        // ============================================
+        if (!isSpecialTx) {
+            const sender = tx.from;
+            const hasSignature = tx.signature && tx.signature.length > 0;
+            const hasNonce = (tx.nonce !== undefined && tx.nonce !== null);
+            if (hasSignature && hasNonce) {
+                const expected = this.query.getAddressNonce(sender, true);
+                if (Number(tx.nonce) !== expected) {
+                    return {
+                        success: false,
+                        error: `[nonce] 序号不匹配！地址 ${sender.substring(0, 16)}... 期望 ${expected}，收到 ${tx.nonce}`
+                    };
+                }
+            } else if (!hasSignature && !hasNonce) {
+                tx.nonce = this.query.getAddressNonce(sender, true);
+            }
         }
 
         // 多币种余额检查（可选跳过；备注交易和 SYSTEM 交易无需检查余额）

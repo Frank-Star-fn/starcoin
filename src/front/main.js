@@ -150,7 +150,7 @@ async function refreshMempool() {
                     </div>
                     ${tx.note ? '<div style="color:#888; font-size:11px; margin-top:3px;">备注: ' + escapeHtml(tx.note) + '</div>' : ''}
                     <div style="color:#666; font-size:10px; margin-top:3px; font-family:monospace;">txid: ${shortAddr(tx.id, 20)}</div>
-                    ${tx.signature ? '<div style="color:#4ade80; font-size:10px; margin-top:2px;">✅ 已 ECDSA 签名</div>' : ''}
+                    ${tx.signature ? '<div style="color:#4ade80; font-size:10px; margin-top:2px;">✅ 已 ECDSA 签名' + (tx.nonce !== undefined && tx.nonce !== null ? ' · nonce=' + tx.nonce : '') + '</div>' : ''}
                 </div>
             `;}).join('');
         }
@@ -264,9 +264,10 @@ async function refreshChain() {
                 if (!tx.from) {
                     return `<div class="${cls}">${prefix}备注: ${escapeHtml(tx.note || tx.to || '')}</div>`;
                 }
-                // 普通交易：显示币种 + 手续费标签
+                // 普通交易：显示币种 + 手续费标签 + nonce
                 const feeTag = fee > 0 ? `<span class="fee-tag">🔥${formatBalance(fee)} ${cur}</span>` : '';
-                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${tx.amount} ${cur}${tx.fee ? '(费'+formatBalance(tx.fee)+' '+cur+')':''}${feeTag}</div>`;
+                const nonceTag = (tx.nonce !== undefined && tx.nonce !== null) ? `<span style="color:#a78bfa; font-size:10px;"> #n=${tx.nonce}</span>` : '';
+                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${tx.amount} ${cur}${tx.fee ? '(费'+formatBalance(tx.fee)+' '+cur+')':''}${feeTag}${nonceTag}</div>`;
             }).join('');
 
             // 本块燃烧手续费汇总

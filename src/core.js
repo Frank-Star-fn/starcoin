@@ -95,17 +95,23 @@ function effectiveCurrency(txOrCurrency) {
 }
 
 // ============================================================
-// Transaction 类 - 结构化交易对象（带 ECDSA 签名 + 多币种）
-// 兼容策略：currency === undefined  → 旧格式交易（hash 公式与上线前完全一致）
-//          currency === 'STC'/'cBTC'/'cETH' → 新格式多币种交易
+// Transaction 类 - 结构化交易对象（带 ECDSA 签名 + 多币种 + nonce）
+// 兼容策略（向后兼容链上已有数据）：
+//   currency === undefined  → 旧格式交易（hash 公式与上线前完全一致）
+//   currency === 'STC'/...  → 新格式多币种交易
+//   nonce   === undefined  → 旧格式（无 nonce 字段，hash 不引入 nonce）
+//   nonce   为数字        → 新格式（引入 nonce 参与 hash，防重放攻击）
 // ============================================================
 class Transaction {
-    constructor(from, to, amount, fee = 0, note = '', currency) {
+    constructor(from, to, amount, fee = 0, note = '', currency, nonce) {
         this.currency = normalizeCurrency(currency);
-        // id：旧格式（无 currency）不引入 currency；新格式引入 currency 参与 id hash
+        // id：参与 hash 的字段取决于是否有 currency / nonce（旧格式尽量不引入新字段）
         const idInput = from + to + amount + fee + note +
-            (this.currency || '') + Date.now() + Math.random();
+            (this.currency || '') +
+            (nonce !== undefined && nonce !== null ? String(nonce) : '') +
+            Date.now() + Math.random();
         this.id = crypto.createHash('sha256').update(idInput).digest('hex');
+        this.nonce = (nonce !== undefined && nonce !== null) ? Number(nonce) : undefined;
         this.from = from;
         this.to = to;
         this.amount = Number(amount);
@@ -117,23 +123,27 @@ class Transaction {
     }
 
     /**
-     * 计算 hash：
-     * - 若 this.currency 为 undefined（旧格式交易）：hash 公式与旧代码完全一致，
-     *   保证已签名交易的签名仍然有效。
-     * - 若 this.currency 有值：引入 currency 参与 hash，防止"币种伪造"。
+     * 计算 hash（向后兼容策略：
+     *   旧格式交易：nonce === undefined && currency === undefined
+     *             → hash 公式与旧代码完全一致，保证已签名交易仍然有效；
+     *   带 nonce 的新交易：nonce 参与 hash，防止"重放旧交易"；
+     *   带 currency 的新交易：currency 参与 hash，防止"币种伪造"。
+     * ）
      */
     calculateHash() {
-        if (!this.currency) {
-            // 旧格式：完全兼容旧链（已持久化的区块、已签名的交易 hash 不变）
+        // 旧格式：nonce 与 currency 均为 undefined → 完全兼容旧链
+        if (this.nonce === undefined && !this.currency) {
             return crypto.createHash('sha256').update(
                 this.id + this.from + this.to + this.amount +
                 this.fee + this.note + this.timestamp
             ).digest('hex');
         }
-        // 新格式：引入 currency 参与 hash
+        // 新格式：按"有什么就 hash 什么"的原则组装
+        const nonceStr = (this.nonce !== undefined && this.nonce !== null) ? String(this.nonce) : '';
+        const currencyStr = this.currency || '';
         return crypto.createHash('sha256').update(
-            this.id + this.from + this.to + this.amount +
-            this.fee + this.note + this.currency + this.timestamp
+            this.id + nonceStr + this.from + this.to + this.amount +
+            this.fee + this.note + currencyStr + this.timestamp
         ).digest('hex');
     }
 
@@ -156,8 +166,16 @@ class Transaction {
     }
 
     isValid() {
+        // SYSTEM / 空 from 的交易：允许（用于挖矿奖励、备注文本等）
         if (!this.from || this.from === '' || this.from === 'SYSTEM') {
             return this.amount >= 0;
+        }
+
+        // nonce 自洽性检查：如果提供了 nonce，必须是非负整数
+        if (this.nonce !== undefined && this.nonce !== null) {
+            if (!Number.isInteger(this.nonce) || this.nonce < 0) {
+                return false;
+            }
         }
 
         if (!this.signature || this.signature.length === 0) {
@@ -220,9 +238,10 @@ function calculateMerkleRoot(transactions) {
             return tx.calculateHash();
         }
         // 普通 JSON 对象：直接用字段计算 hash
-        // ★ 包含 currency 字段，保持与 Transaction.calculateHash() 新格式一致
+        // ★ 包含 currency 字段 + nonce 字段，保持与 Transaction.calculateHash() 新格式一致
+        const nonceStr = (tx.nonce !== undefined && tx.nonce !== null) ? String(Number(tx.nonce)) : '';
         return crypto.createHash('sha256').update(
-            (tx.id || '') + (tx.from || '') + (tx.to || '') + (Number(tx.amount) || 0) +
+            (tx.id || '') + nonceStr + (tx.from || '') + (tx.to || '') + (Number(tx.amount) || 0) +
             (Number(tx.fee) || 0) + (tx.note || '') + (tx.currency || '') + (tx.timestamp || '')
         ).digest('hex');
     });
