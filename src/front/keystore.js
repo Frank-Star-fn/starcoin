@@ -213,3 +213,22 @@ async function decryptPrivateKey(enc, masterKey) {
 
     return bytesToString(new Uint8Array(decrypted));
 }
+
+// ============================================================
+// 兼容 Node.js 环境（用于单元测试）
+// ============================================================
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        openKeystoreDB,
+        loadMasterKeyFromDB,
+        saveMasterKeyToDB,
+        getOrCreateMasterKey,
+        deleteMasterKey,
+        encryptPrivateKey,
+        decryptPrivateKey,
+        stringToBytes,
+        bytesToString,
+        arrayBufferToBase64,
+        base64ToBytes,
+    };
+}
