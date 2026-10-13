@@ -19,12 +19,27 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@ethereumjs/binarytree": "10.1.0",
+    "@ethereumjs/block": "10.1.0",
+    "@ethereumjs/common": "10.1.0",
+    "@ethereumjs/evm": "10.1.0",
+    "@ethereumjs/mpt": "10.1.0",
+    "@ethereumjs/rlp": "10.1.0",
+    "@ethereumjs/statemanager": "10.1.0",
+    "@ethereumjs/tx": "10.1.0",
+    "@ethereumjs/util": "10.1.0",
+    "@ethereumjs/vm": "10.1.0",
     "bip32": "5.0.1",
     "bip39": "^3.1.0",
     "dotenv": "^17.4.2",
+    "ethers": "6.16.0",
     "express": "^4.18.2",
     "tiny-secp256k1": "2.2.4",
     "ws": "^8.14.2"
+  },
+  "overrides": {
+    "@ethereumjs/util": "$@ethereumjs/util",
+    "@ethereumjs/rlp": "$@ethereumjs/rlp"
   },
   "devDependencies": {
     "@apidevtools/swagger-parser": "12.1.0",
