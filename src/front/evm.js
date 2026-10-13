@@ -33,15 +33,17 @@ async function evmAction(action) {
     finally { evmUi.busy = false; buttons.forEach(button => { button.disabled = false; }); }
 }
 async function refreshEvmWallet() {
+    if (typeof mmMode === 'function' && mmMode()) { await mmRefreshWallet(); return; }
     const wallet = state.wallets[state.selectedWallet];
     try {
-        if (!evmUi.network) evmUi.network = await evmApi('status');
+        evmUi.network = await evmApi('status');
         const network = evmUi.network;
-        evmEl('evmNetwork').textContent = `Chain ID ${network.chainId} · ${network.hardfork} · Gas 价格 ${ethers.formatUnits(network.gasPriceWei, 'gwei')} gwei · 激活高度 ${network.activationHeight}`;
+        const fee = network.metamask ? `动态 baseFee ${ethers.formatUnits(network.metamask.baseFeePerGas, 'gwei')} gwei` : `Gas 价格 ${ethers.formatUnits(network.gasPriceWei, 'gwei')} gwei`;
+        evmEl('evmNetwork').textContent = `Chain ID ${network.chainId} · ${network.hardfork} · ${fee} · 激活高度 ${network.activationHeight}`;
         if (!wallet) { evmUi.address = null; evmEl('evmWallet').textContent = '请选择一个钱包'; return; }
         const derived = await evmApi('address', { publicKey: wallet.publicKey });
         const account = await evmApi('account/' + derived.address);
-        if (wallet !== state.wallets[state.selectedWallet]) return;
+        if (wallet !== state.wallets[state.selectedWallet] || (typeof mmMode === 'function' && mmMode())) return;
         evmUi.address = derived.address;
         evmEl('evmWallet').textContent = `${wallet.label} · ${derived.address}\nEVM 余额 ${account.balanceSTC} STC · 已确认 nonce ${account.nonce}`;
         if (evmEl('evmReceiptId').value) await evmReadReceipt();
@@ -50,7 +52,7 @@ async function refreshEvmWallet() {
 async function evmReadReceipt() {
     const id = evmEl('evmReceiptId').value.trim();
     if (!id) throw new Error('请填写交易 ID');
-    const { receipt } = await evmApi('receipt/' + id);
+    const receipt = id.startsWith('0x') ? await mmReceipt(id) : (await evmApi('receipt/' + id)).receipt;
     const states = { pending: '待打包，请挖矿确认', reverted: '已因分叉回滚', unknown: '未找到该交易', 0: '执行失败，Gas 已扣除', 1: '已确认，执行成功' };
     evmEl('evmReceiptStatus').textContent = `${states[receipt.status]}${receipt.gasUsed ? ' · Gas ' + receipt.gasUsed : ''}${receipt.confirmations ? ' · ' + receipt.confirmations + ' 个确认' : ''}`;
     if (receipt.contractAddress && receipt.status === 1 && evmUi.lastDeployment !== id) {
@@ -71,8 +73,12 @@ function evmSubmitted(result) {
 }
 function evmBridge(kind) {
     return evmAction(async () => {
+        if (kind === 'withdraw' && mmMode()) { await mmWithdraw(); return; }
         const privateKey = await evmSecret();
-        evmSubmitted(await evmApi(kind, { privateKey, amount: evmEl('evmBridgeAmount').value.trim() }));
+        const evmAddress = evmEl('evmDepositTarget').value.trim() || (mmMode() ? mmState.address : undefined);
+        if (kind === 'deposit' && mmMode() && !evmAddress) throw new Error('请连接 MetaMask 或填写存入地址');
+        evmSubmitted(await evmApi(kind, { privateKey, amount: evmEl('evmBridgeAmount').value.trim(),
+            ...(kind === 'deposit' ? { evmAddress } : { nativeAddress: evmEl('evmNativeRecipient').value.trim() || undefined }) }));
     });
 }
 function evmLoadMethods() {
@@ -120,6 +126,7 @@ function evmTxOptions(deploy) {
 }
 function evmEstimate(deploy) {
     return evmAction(async () => {
+        if (mmMode()) { await mmEstimate(deploy); return; }
         const result = await evmApi('estimate', { ...evmTxOptions(deploy), gasLimit: String(evmUi.network?.transactionGasLimit || 5000000), privateKey: await evmSecret() });
         // Keep a modest buffer for subsequent state changes; all values remain decimal strings.
         const gas = BigInt(result.gasLimit) * 120n / 100n;
@@ -129,6 +136,7 @@ function evmEstimate(deploy) {
 }
 function evmExecute(deploy) {
     return evmAction(async () => {
+        if (mmMode()) { await mmExecute(deploy); return; }
         const options = evmTxOptions(deploy);
         const readonly = !deploy && ['view', 'pure'].includes(evmInterface().getFunction(evmEl('evmMethod').value).stateMutability);
         if (readonly) {

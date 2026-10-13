@@ -73,18 +73,33 @@ HD 功能沿用此 demo 的后端生成、派生和交易签名方式：助记�
 
 ## EVM 智能合约
 
-基于 [EthereumJS VM](https://github.com/ethereumjs/ethereumjs-monorepo/tree/master/packages/vm) 10.1.0，固定使用 Shanghai 规则和 EIP-155 签名的 legacy Ethereum 交易。支持合约部署、调用、STC value 转账、合约存储、事件日志和回执。现有钱包的 secp256k1 私钥同时控制原生 16 字节地址和标准 20 字节 EVM 地址，两个地址分别记账。HD 子地址可以直接使用。
+基于 [EthereumJS VM](https://github.com/ethereumjs/ethereumjs-monorepo/tree/master/packages/vm) 10.1.0，固定使用 Shanghai 规则。支持合约部署、调用、STC value 转账、合约存储、事件日志和回执；通过 `/rpc` 支持 MetaMask、ethers 等 Ethereum 客户端。支持 EIP-155 legacy、EIP-2930 access-list 和 EIP-1559 交易（type 0/1/2）。现有钱包的 secp256k1 私钥同时控制原生 16 字节地址和标准 20 字节 EVM 地址，两个地址分别记账。HD 子地址可以直接使用。
 
 ### 首次升级已有网络
 
 1. 停止所有节点和自动挖矿，保留 `.env` 中原生链的共识参数，并备份 `data` 目录。
-2. 安装依赖，在保存了该网络完整链的机器运行 `npm run evm:prepare`。工具审计 `data/blockchain_<port>.json`，选取累计工作量最高的有效链，生成 `data/evm-network.json`，固定激活高度、检查点、EVM chainId 和执行规则。不会改写原链文件。
-3. 本机各端口共用这一配置；跨机器节点须复制相同的 `evm-network.json` 到各自 `data` 目录。新加入已有网络的空节点也须先复制配置，再启动并同步完整链。
+2. 安装依赖，在保存了该网络完整链的机器依次运行 `npm run evm:prepare`、`npm run metamask:prepare`。工具审计 `data/blockchain_<port>.json`，选取累计工作量最高的有效链，生成 `data/evm-network.json` 和 `data/metamask-network.json`，固定激活高度、检查点、EVM chainId 和执行规则。不会改写原链文件。
+3. 本机各端口共用这两份配置；跨机器节点须复制相同的 `evm-network.json`、`metamask-network.json` 到各自 `data` 目录。新加入已有网络的空节点也须先复制配置，再启动并同步完整链。
 4. 重启全部节点，例如 `npm run start:node1`、`npm run start:node2`。首次加载旧存档时自动保留 `<链文件>.pre-evm.json`。所有节点升级后再恢复挖矿。
 
-全新网络可直接启动，默认从高度 1 激活；没有配置文件时服务会执行同样的准备流程。已有网络请先统一准备配置，避免不同机器各自选择检查点。升级后的区块使用 v3，历史区块哈希、原生余额和 nonce 保持原值。过了检查点仍生产 v2 区块的旧节点会被拒绝。已迁移网络禁止重置到检查点之前。
+全新网络可直接启动，默认从高度 1 激活 EVM 和 MetaMask 协议；没有配置文件时服务会执行准备流程，分别生成 `evm-network.json` 和 `metamask-network.json`。已有网络须先统一准备配置。EVM 升级使用 v3，MetaMask 升级使用 v4；历史区块哈希、原生余额和 nonce 保持原值。所有节点必须使用相同配置，旧节点在新协议激活后无法继续出块。已迁移网络禁止重置到检查点之前。
 
-`EVM_CHAIN_ID` 默认 `155001`；配置生成后不得单独修改。每块默认最多 30000000 Gas，每交易最多 5000000 Gas，固定 Gas 价格 10 gwei。执行规则写入配置指纹，节点参数不一致时无法采用对方的 v3 链。开发模式和 `npm run start:prod` 使用同一份 `data` 和页面文件；生产模式先运行 `npm run build`。
+`EVM_CHAIN_ID` 默认 `155001`；配置生成后不得单独修改。每块默认最多 30000000 Gas，每交易最多 5000000 Gas。历史 v3 交易固定 10 gwei；v4 从 10 gwei 开始按 EIP-1559 调整 baseFee，默认建议优先费 1 gwei。执行规则写入配置指纹。开发模式和 `npm run start:prod` 使用同一份 `data` 和页面文件；生产模式先运行 `npm run build`。
+
+### 已有 EVM 网络升级 MetaMask
+
+1. 停止所有节点和自动挖矿，备份 `data`，保留现有 `.env` 和 `evm-network.json`。
+2. 在保存完整链的机器执行 `npm run metamask:prepare`。工具审计原链，生成 `data/metamask-network.json`，固定下一高度和当前主链检查点，不改写链文件。
+3. 把同一份 `evm-network.json`、`metamask-network.json` 复制到其他机器的 `data` 目录。空节点也需要这两份配置。
+4. 重启全部节点，再恢复挖矿。节点保留原存档的 `.pre-metamask.json` 备份，后续存档版本为 6.0。
+
+### 使用 MetaMask
+
+访问节点页面，在 EVM 面板点击“连接 MetaMask”，再点击“添加 / 切换 StarCoin”，在扩展中确认。手动添加网络时使用：网络名称 `StarCoin`、RPC URL `http://localhost:3000/rpc`、Chain ID `155001`、货币符号 `STC`。连接其他机器或端口时替换 RPC URL；chainId 以该节点配置为准。
+
+MetaMask 显示 EVM 余额。先选择本地钱包，在“存入的 EVM 地址”填写 MetaMask 地址，存入 STC 并挖矿确认，即可通过 MetaMask 转账、部署和调用合约。选择“MetaMask”签名模式，写入会在扩展内确认；查看交易回执后可将 ERC20 示例导入扩展。取回时填写原生收款地址和最多八位小数的金额，在扩展内签署 EIP-712 授权，再挖矿确认。
+
+MetaMask 模式的私钥和助记词由扩展保管，页面和节点只接收签名结果。项目原有 HD 路径 `m/44'/1'/0'/0/i` 与 MetaMask 的 Ethereum 路径不同，同一助记词不会自动得到同一地址。RPC 方法、签名取回、费用及兼容范围见 [Ethereum JSON-RPC 文档](docs/ethereum-rpc.md)。
 
 ### 页面使用
 
@@ -100,11 +115,11 @@ HD 功能沿用此 demo 的后端生成、派生和交易签名方式：助记�
 
 ### 资金与确认规则
 
-原生 STC 最小单位是 `10^-8 STC`，EVM 使用 `10^-18 STC` 的 wei。存入和取回通过签名的链上交易完成，内部使用 BigInt 精确换算；取回最多八位小数，更小的 wei 留在 EVM。所有 Gas 费用燃烧。REVERT 和 out-of-gas 是已入块的失败执行：合约/value 状态回滚，Gas 扣除，原生和 EVM 交易 nonce 仍递增。
+原生 STC 最小单位是 `10^-8 STC`，EVM 使用 `10^-18 STC` 的 wei。存入和取回通过签名的链上交易完成，内部使用 BigInt 精确换算；取回最多八位小数，更小的 wei 留在 EVM。所有 Gas 费用（包括优先费）燃烧。REVERT 和 out-of-gas 是已入块的失败执行：合约/value 状态回滚，Gas 扣除，EVM nonce 递增。外部原始交易不占用原生 nonce，签名取回使用独立授权 nonce；历史 v3 封装还占用原生 nonce。
 
-v3 区块哈希包含 EVM 状态根、回执承诺和 Gas，接收节点重新执行交易验证。重启从区块重放代码、余额和存储；分叉切换恢复对应状态，回滚交易重新校验后回池，旧分支日志不再返回。只读调用及 Gas 估算使用已确认状态的副本，估算后状态变化仍可能影响实际执行。当前通过 REST API 使用，尚未提供完整 Ethereum JSON-RPC 或 MetaMask 接入。
+v3 区块哈希包含 EVM 状态根、回执承诺和 Gas；v4 再包含 MetaMask 配置指纹及 baseFee，接收节点重新执行交易验证。重启从区块重放代码、余额和存储；分叉切换恢复对应状态，回滚交易重新校验后回池，旧分支日志不再返回。只读调用及 Gas 估算使用状态副本；RPC Gas 估算默认使用 pending 状态，后续状态变化仍可能影响实际执行。
 
-此 demo 沿用后端签名方式，合约写入和估算请求会把 PEM 私钥发送到所连接的节点；浏览器复用现有加密钱包存储，后端不持久化私钥。
+本地加密钱包模式沿用后端签名方式，REST 合约写入和估算请求会把 PEM 私钥发送到所连接的节点；浏览器复用现有加密钱包存储，后端不持久化私钥。MetaMask 的 RPC 估算无需私钥。
 
 ### EVM API
 
@@ -123,4 +138,4 @@ v3 区块哈希包含 EVM 状态根、回执承诺和 Gas，接收节点重新�
 | `GET /api/evm/receipt/:id` | 用 StarCoin 原生交易 ID 查询回执；包含对应 Ethereum transactionHash |
 | `GET /api/evm/logs` | 当前主链事件，支持 fromBlock/toBlock/address/topic 过滤 |
 
-验证覆盖真实 Solidity 合约、失败执行、精确资金换算、错误状态根、签名/nonce、防重放、持久化失败、重启、分叉回滚、历史升级和多节点 WebSocket 同步。
+验证覆盖真实 Solidity 合约、失败执行、精确资金换算、错误状态根、签名/nonce、防重放、持久化失败、重启、分叉回滚、历史升级和多节点 WebSocket 同步。独立测试链中还使用 MetaMask 13.50.0 验证了网络添加、type-2 STC 转账、Counter 部署/读写、ERC20 导入/转账、EIP-712 取回和取消签名；手机页面无横向溢出。

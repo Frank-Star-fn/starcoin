@@ -235,6 +235,13 @@
     <section class="panel wide-panel" id="evmPanel">
         <h2>EVM 智能合约</h2>
         <div class="hint" id="evmNetwork">正在读取网络配置…</div>
+        <div class="evm-actions">
+            <label for="evmSigner">签名钱包</label>
+            <select id="evmSigner" onchange="refreshEvmWallet()" style="width:auto;"><option value="local">本地加密钱包</option><option value="metamask">MetaMask</option></select>
+            <button class="secondary small" onclick="mmConnect()">连接 MetaMask</button>
+            <button class="secondary small" onclick="mmSwitchNetwork()">添加 / 切换 StarCoin</button>
+        </div>
+        <div class="hint" id="mmConnection">MetaMask 模式在钱包内签名，显示 EVM STC 余额。</div>
         <div class="evm-account" id="evmWallet">请选择一个钱包</div>
         <div class="evm-grid">
             <div>
@@ -242,10 +249,21 @@
                 <p class="hint">当前钱包的原生 STC 与 EVM 余额分别记账。存入和取回都需挖矿确认。</p>
                 <label for="evmBridgeAmount">STC 金额（最多 8 位小数）</label>
                 <input id="evmBridgeAmount" value="1" inputmode="decimal">
+                <label for="evmDepositTarget">存入的 EVM 地址（留空为当前签名钱包）</label>
+                <input id="evmDepositTarget" spellcheck="false" placeholder="0x…">
+                <label for="evmNativeRecipient">取回的原生地址（MetaMask 模式必填，可使用上方选中的本地钱包）</label>
+                <input id="evmNativeRecipient" spellcheck="false" placeholder="32 位十六进制原生地址">
                 <div class="evm-actions">
                     <button onclick="evmBridge('deposit')">存入 EVM</button>
                     <button class="secondary" onclick="evmBridge('withdraw')">取回原生账户</button>
                 </div>
+                <p class="hint">存入使用上方选中的本地钱包支付原生 STC，可指定 MetaMask 地址。取回使用当前签名钱包授权。</p>
+                <details>
+                    <summary>通过 MetaMask 转账 EVM STC</summary>
+                    <label for="mmRecipient">EVM 收款地址</label><input id="mmRecipient" placeholder="0x…" spellcheck="false">
+                    <label for="mmAmount">STC 金额</label><input id="mmAmount" value="0.1" inputmode="decimal">
+                    <button class="secondary small" onclick="mmTransfer()">MetaMask 转账</button>
+                </details>
                 <h3>2. 加载与部署</h3>
                 <div class="evm-actions">
                     <button class="secondary small" onclick="evmLoadExample('Counter')">Counter 示例</button>
@@ -285,9 +303,10 @@
                 <div class="evm-actions">
                     <button class="secondary" onclick="evmEstimate(false)">估算调用 Gas</button>
                     <button id="evmExecuteBtn" onclick="evmExecute(false)">执行方法</button>
+                    <button class="secondary small" onclick="mmWatchToken()">导入 ERC20 到 MetaMask</button>
                 </div>
                 <h3>4. 查看回执</h3>
-                <label for="evmReceiptId">StarCoin 交易 ID</label>
+                <label for="evmReceiptId">交易 ID / Ethereum transactionHash</label>
                 <input id="evmReceiptId" spellcheck="false" placeholder="提交后自动填入">
                 <button class="secondary small" onclick="evmReceiptAction()">查询回执</button>
                 <div class="hint" id="evmReceiptStatus">合约写入和资金操作通过上方“挖矿”打包。</div>
@@ -362,6 +381,7 @@
 <script src="src/front/hd-wallet-manager.js"></script>
 <script src="src/front/search.js"></script>
 <script src="vendor/ethers.js"></script>
+<script src="src/front/metamask.js"></script>
 <script src="src/front/evm.js"></script>
 <script src="src/front/main.js"></script>
 <script src="src/front/mining.js"></script>

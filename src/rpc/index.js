@@ -146,6 +146,7 @@ function createRpc(chain, p2p, broadcast) {
                 const tx = await chain.submitRaw(hex(first)); announce(tx); return keccak256(tx.rawTransaction);
             }
             case 'starcoin_getNetwork': return { chainId: q(chain.consensus.evm.chainId), chainName: 'StarCoin', nativeCurrency: { name: 'StarCoin', symbol: 'STC', decimals: 18 },
+                rpcConsensusHash: chain.consensus.rpcFingerprint,
                 activationHeight: chain.consensus.rpc.activationHeight, active: chain.chain.length >= chain.consensus.rpc.activationHeight,
                 gasLimit: q(chain.consensus.evm.transactionGasLimit), baseFeePerGas: q(context.baseFeePerGas), priorityFeePerGas: q(chain.consensus.rpc.priorityFeeWei) };
             case 'starcoin_getBridgeNonce': return q((await view.stateAt(second)).state.bridgeNonces.get(address(first)) || 0n);

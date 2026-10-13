@@ -139,6 +139,14 @@ async function submitTransaction() {
 /* ============================================================
    渲染：交易池 + 地址榜 + 区块链
    ============================================================ */
+function transactionDisplay(tx) {
+    if (tx.rawTransaction && ['evm', 'evmRaw'].includes(tx.kind)) {
+        try { const raw = ethers.Transaction.from(tx.rawTransaction); return { amount: ethers.formatEther(raw.value), label: 'EVM STC', signed: true }; }
+        catch { return { amount: '0', label: 'EVM STC', signed: true }; }
+    }
+    if (tx.kind === 'evmWithdraw') return { amount: ethers.formatUnits(tx.amountUnits, 8), label: 'STC 取回', signed: true };
+    return { amount: tx.amount, label: (tx.currency || 'STC').toUpperCase(), signed: !!tx.signature };
+}
 async function refreshMempool() {
     try {
         const data = await api('/api/mempool');
@@ -149,16 +157,16 @@ async function refreshMempool() {
             el.innerHTML = '<div class="mempool-empty">交易池为空，提交一笔转账后会出现在这里</div>';
         } else {
             el.innerHTML = data.transactions.map(tx => {
-                const cur = (tx.currency || 'STC').toUpperCase();
+                const display = transactionDisplay(tx), cur = display.label;
                 return `
                 <div class="mempool-item">
                     <div style="font-weight:bold; color:#60a5fa;">
-                        ${shortAddr(tx.from, 10)} → ${shortAddr(tx.to, 10)}: <b>${tx.amount} ${cur}</b>
-                        ${tx.fee ? ' <span style="color:#f87171;">🔥 手续费 ' + formatBalance(tx.fee) + ' ' + cur + '（即将燃烧）</span>' : ''}
+                        ${shortAddr(tx.from, 10)} → ${shortAddr(tx.to, 10)}: <b>${display.amount} ${cur}</b>
+                        ${Number(tx.fee) > 0 ? ' <span style="color:#f87171;">🔥 手续费 ' + formatBalance(tx.fee) + ' STC（即将燃烧）</span>' : ''}
                     </div>
                     ${tx.note ? '<div style="color:#888; font-size:11px; margin-top:3px;">备注: ' + escapeHtml(tx.note) + '</div>' : ''}
                     <div style="color:#666; font-size:10px; margin-top:3px; font-family:monospace;">txid: ${shortAddr(tx.id, 20)}</div>
-                    ${tx.signature ? '<div style="color:#4ade80; font-size:10px; margin-top:2px;">✅ 已 ECDSA 签名' + (tx.nonce !== undefined && tx.nonce !== null ? ' · nonce=' + tx.nonce : '') + '</div>' : ''}
+                    ${display.signed ? '<div style="color:#4ade80; font-size:10px; margin-top:2px;">✅ 已 ECDSA 签名' + (tx.nonce !== undefined && tx.nonce !== null ? ' · nonce=' + tx.nonce : '') + '</div>' : ''}
                 </div>
             `;}).join('');
         }
@@ -253,10 +261,11 @@ async function refreshChain() {
             let blockBurnedFees = 0;
             let feeTxCount = 0;
             const txList = (b.transactions || []).map(tx => {
+                const display = transactionDisplay(tx);
                 let cls = 'block-tx ';
                 let prefix = '';
                 if (tx.from === 'SYSTEM' || !tx.from) { cls += 'reward'; prefix = '🎁 '; }
-                else if (tx.signature) { cls += 'signed'; prefix = '✍️ '; }
+                else if (display.signed) { cls += 'signed'; prefix = '✍️ '; }
                 else { cls += 'unsigned'; prefix = '⚠ '; }
 
                 const fee = Number(tx.fee) || 0;
@@ -265,7 +274,7 @@ async function refreshChain() {
                     feeTxCount++;
                 }
 
-                const cur = (tx.currency || 'STC').toUpperCase();
+                const cur = display.label;
                 if (tx.from === 'SYSTEM') {
                     return `<div class="${cls}">${prefix}奖励 → ${shortAddr(tx.to, 10)}: ${tx.amount} ${cur}</div>`;
                 }
@@ -275,7 +284,7 @@ async function refreshChain() {
                 // 普通交易：显示币种 + 手续费标签 + nonce
                 const feeTag = fee > 0 ? `<span class="fee-tag">🔥${formatBalance(fee)} STC</span>` : '';
                 const nonceTag = (tx.nonce !== undefined && tx.nonce !== null) ? `<span style="color:#a78bfa; font-size:10px;"> #n=${tx.nonce}</span>` : '';
-                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${tx.amount} ${cur}${feeTag}${nonceTag}</div>`;
+                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${display.amount} ${cur}${feeTag}${nonceTag}</div>`;
             }).join('');
 
             // 本块燃烧手续费汇总
