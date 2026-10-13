@@ -101,6 +101,7 @@ class EvmEngine {
         const tx = createTxFromRLP(hexToBytes(hex(raw)), { common: this.vm.common });
         if (tx.type !== 0 || !tx.isSigned() || !tx.verifySignature()
             || tx.common.chainId() !== BigInt(this.settings.chainId)
+            || (tx.v !== BigInt(this.settings.chainId) * 2n + 35n && tx.v !== BigInt(this.settings.chainId) * 2n + 36n)
             || tx.gasPrice !== BigInt(this.settings.gasPriceWei)
             || tx.gasLimit > BigInt(this.settings.transactionGasLimit)
             || tx.nonce > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('EVM 签名、chainId、Gas 价格、Gas 上限或 nonce 无效');
