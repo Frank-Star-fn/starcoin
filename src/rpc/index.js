@@ -139,7 +139,7 @@ function createRpc(chain, p2p, broadcast) {
             case 'eth_estimateGas': return estimate(first, second);
             case 'eth_call': {
                 const state = await view.stateAt(second), input = options(first, state.context, settings(), true);
-                const result = await state.engine.call(input, state.context);
+                const result = await state.engine.call({ ...input, transactionGas: true }, state.context);
                 if (!result.status) throw new RpcError(3, 'execution reverted: ' + result.error, result.returnData); return result.returnData;
             }
             case 'eth_sendRawTransaction': {

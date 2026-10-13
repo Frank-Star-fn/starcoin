@@ -1,5 +1,5 @@
 const http = require('http');
-const { Interface } = require('ethers');
+const { Interface, Wallet } = require('ethers');
 const { createP2P } = require('../../src/p2p/p2p');
 const { EvmBlockchain } = require('../../src/evm/blockchain');
 const { generateWallet } = require('../../src/core');
@@ -9,14 +9,31 @@ async function eventually(check) {
     while (Date.now() < deadline) { if (await check()) return; await new Promise(resolve => setTimeout(resolve, 25)); }
     throw new Error('P2P 同步超时');
 }
-async function node() {
+async function node(rpc = null) {
     const chain = new EvmBlockchain(45040, true, { consensus: { initialDifficulty: 1, difficultyMin: 0,
-        coinbaseMaturity: 0, difficultyAdjustInterval: 1000000, activationHeight: 1 } }); await chain.ready;
+        coinbaseMaturity: 0, difficultyAdjustInterval: 1000000, activationHeight: 1 }, rpc }); await chain.ready;
     const server = http.createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const port = server.address().port, p2p = createP2P(server, chain, port);
     return { chain, server, p2p, port };
 }
 describe('EVM over real P2P sockets', () => {
+    it('replicates externally signed MetaMask transactions and receipts across nodes', async () => {
+        const nodes = await Promise.all([node({ activationHeight: 1 }), node({ activationHeight: 1 })]);
+        try {
+            const [first, second] = nodes, wallet = generateWallet(), external = Wallet.createRandom();
+            second.p2p.connectToPeer('ws://127.0.0.1:' + first.port);
+            await eventually(() => first.p2p.getConnectedCount() > 0);
+            const mine = async () => { await first.chain.mineBlock(wallet.address); first.p2p.broadcastLatest();
+                await eventually(() => second.chain.getLatestBlock().hash === first.chain.getLatestBlock().hash); };
+            await mine(); await first.chain.submitEvm(wallet.privateKey, { kind: 'deposit', amount: '1', evmAddress: external.address }); await mine();
+            const signed = await external.signTransaction({ type: 2, chainId: 155001, nonce: 0, to: external.address, gasLimit: 21000,
+                maxFeePerGas: 30000000000n, maxPriorityFeePerGas: 1000000000n });
+            const tx = await first.chain.submitRaw(signed); first.p2p.broadcastTransaction(tx);
+            await eventually(() => second.chain.hasPendingTransaction(tx.id)); await mine();
+            expect(second.chain.receipt(tx.id).transactionHash).toBe(first.chain.receipt(tx.id).transactionHash);
+            expect(second.chain._evaluation.evmStateRoot).toBe(first.chain._evaluation.evmStateRoot);
+        } finally { for (const n of nodes) { n.p2p.stopDiscovery(); n.p2p.stopHealthCheck(); for (const client of n.p2p.wss.clients) client.terminate(); n.p2p.wss.close(); n.server.close(); } }
+    }, 20000);
     it('replicates deposits, contract transactions and replayed roots across three nodes', async () => {
         const nodes = await Promise.all([node(), node(), node()]);
         try {

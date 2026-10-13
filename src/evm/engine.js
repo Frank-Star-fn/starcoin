@@ -157,9 +157,23 @@ class EvmEngine {
 
     async call(options, context) {
         const isolated = await this.fork();
-        const gasLimit = uint(String(options.gasLimit ?? this.settings.transactionGasLimit), 'gasLimit');
+        let gasLimit = uint(String(options.gasLimit ?? this.settings.transactionGasLimit), 'gasLimit');
         if (gasLimit > BigInt(this.settings.transactionGasLimit)) throw new Error('调用 Gas 上限过大');
         const from = createAddressFromString(address(options.from || '0x' + '0'.repeat(40)));
+        if (options.transactionGas) {
+            // JSON-RPC call gas includes intrinsic cost, just like a submitted transaction.
+            const tx = createTx({ type: options.accessList === undefined ? 0 : 1, to: options.to, data: hexToBytes(hex(options.data || '0x')),
+                gasLimit, gasPrice: 0n, accessList: options.accessList || [] }, { common: isolated.vm.common });
+            const intrinsic = tx.getIntrinsicGas();
+            if (gasLimit < intrinsic) return { status: 0, returnData: '0x', executionGasUsed: '0', error: 'intrinsic gas too low' };
+            gasLimit -= intrinsic;
+            const journal = isolated.vm.evm.journal;
+            for (const target of [from.toString(), options.to, GAS_ACCOUNT, ...isolated.vm.evm.precompiles.keys()]) if (target) journal.addAlwaysWarmAddress(target.replace(/^0x/, ''));
+            for (const item of options.accessList || []) {
+                journal.addAlwaysWarmAddress(item.address.slice(2));
+                for (const slot of item.storageKeys) journal.addAlwaysWarmSlot(item.address.slice(2), slot.slice(2));
+            }
+        }
         const result = await isolated.vm.evm.runCall({ caller: from, origin: from, to: options.to ? createAddressFromString(address(options.to)) : undefined,
             data: hexToBytes(hex(options.data || '0x')), value: uint(options.valueWei ?? '0'), gasLimit,
             gasPrice: uint(options.gasPrice ?? '0'), block: isolated.block(context) });

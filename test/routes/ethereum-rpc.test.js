@@ -82,6 +82,55 @@ describe('Ethereum JSON-RPC', () => {
         expect(gasPrice - tip).toBe(BigInt(history.baseFeePerGas.at(-1)));
         expect((await ctx.rpc('eth_feeHistory', ['0x3', 'latest', [90, 10]])).error.code).toBe(-32602);
     });
+    it('includes intrinsic and access-list gas in eth_call without changing state', async () => {
+        const ctx = await setup(), to = Wallet.createRandom().address;
+        expect((await ctx.rpc('eth_call', [{ to, gas: '0x5208' }])).result).toBe('0x');
+        expect((await ctx.rpc('eth_call', [{ to, gas: '0x5207' }])).error.code).toBe(3);
+        const accessList = [{ address: to, storageKeys: [] }];
+        expect((await ctx.rpc('eth_call', [{ to, accessList, gas: '0x5b68' }])).result).toBe('0x');
+        expect((await ctx.rpc('eth_call', [{ to, accessList, gas: '0x5b67' }])).error.code).toBe(3);
+        const hash = (await ctx.rpc('eth_sendRawTransaction', [await ctx.sign({ data: '0x6009600c60003960096000f35a60005260206000f3' })])).result;
+        await ctx.chain.mineBlock(ctx.native.address);
+        const contract = (await ctx.rpc('eth_getTransactionReceipt', [hash])).result.contractAddress, root = ctx.chain._evaluation.evmStateRoot;
+        const result = await ctx.rpc('eth_call', [{ to: contract, gas: '0xc350' }]);
+        expect(BigInt(result.result)).toBe(28998n); expect(ctx.chain._evaluation.evmStateRoot).toBe(root);
+    });
+    it('returns failed type-2 receipts while burning gas and preserving value and storage', async () => {
+        const ctx = await setup(), before = await ctx.chain._evaluation.engine.balance(ctx.wallet.address);
+        let spent = 0n;
+        for (const [nonce, data, gasLimit] of [[0, '0x60006000fd', 100000], [1, '0x5b600056', 60000]]) {
+            const hash = (await ctx.rpc('eth_sendRawTransaction', [await ctx.sign({ nonce, data, gasLimit, value: 100n })])).result;
+            await ctx.chain.mineBlock(ctx.native.address);
+            const receipt = (await ctx.rpc('eth_getTransactionReceipt', [hash])).result;
+            expect(receipt.status).toBe('0x0'); expect(receipt.type).toBe('0x2'); expect(receipt.contractAddress).toBeNull();
+            expect(receipt.logs).toEqual([]); if (nonce === 1) expect(BigInt(receipt.gasUsed)).toBe(BigInt(gasLimit));
+            spent += BigInt(receipt.gasUsed) * BigInt(receipt.effectiveGasPrice);
+        }
+        expect((await ctx.rpc('eth_getTransactionCount', [ctx.wallet.address])).result).toBe('0x2');
+        expect(await ctx.chain._evaluation.engine.balance(ctx.wallet.address)).toBe(before - spent);
+        expect(await ctx.chain._evaluation.engine.balance('0x000000000000000000000000000000000000dead')).toBe(0n);
+    });
+    it('removes orphaned receipts and logs and rebuilds pending state after a reorg', async () => {
+        const ctx = await setup(), iface = new Interface(artifact.abi);
+        const deployHash = (await ctx.rpc('eth_sendRawTransaction', [await ctx.sign({ data: artifact.bytecode })])).result;
+        await ctx.chain.mineBlock(ctx.native.address);
+        const to = (await ctx.rpc('eth_getTransactionReceipt', [deployHash])).result.contractAddress;
+        const other = new EvmBlockchain(45091, true, { consensus: ctx.chain.consensus.params, evm: ctx.chain.consensus.evm, rpc: ctx.chain.consensus.rpc });
+        await other.ready; await other.replaceChain(ctx.chain.chain);
+        const hash = (await ctx.rpc('eth_sendRawTransaction', [await ctx.sign({ nonce: 1, to, data: iface.encodeFunctionData('set', [42]) })])).result;
+        await ctx.chain.mineBlock(ctx.native.address);
+        const orphan = (await ctx.rpc('eth_getTransactionReceipt', [hash])).result;
+        expect((await ctx.rpc('eth_getLogs', [{ address: to, fromBlock: '0x0' }])).result).toHaveLength(1);
+        await other.mineBlock(ctx.native.address); await other.mineBlock(ctx.native.address);
+        expect(await ctx.chain.replaceChain(other.chain)).toBe(true);
+        expect((await ctx.rpc('eth_getTransactionReceipt', [hash])).result).toBeNull();
+        expect((await ctx.rpc('eth_getLogs', [{ address: to, fromBlock: '0x0' }])).result).toEqual([]);
+        expect((await ctx.rpc('eth_getBalance', [ctx.wallet.address, { blockHash: orphan.blockHash }])).error).toBeDefined();
+        expect((await ctx.rpc('eth_getStorageAt', [to, '0x0', 'latest'])).result).toBe('0x' + '0'.repeat(64));
+        expect(BigInt((await ctx.rpc('eth_getStorageAt', [to, '0x0', 'pending'])).result)).toBe(42n);
+        expect((await ctx.rpc('eth_getTransactionCount', [ctx.wallet.address, 'latest'])).result).toBe('0x1');
+        expect((await ctx.rpc('eth_getTransactionCount', [ctx.wallet.address, 'pending'])).result).toBe('0x2');
+    });
     it('verifies and confirms a MetaMask EIP-712 withdrawal through RPC', async () => {
         const ctx = await setup();
         const typed = (await ctx.rpc('starcoin_getWithdrawalTypedData', [{ owner: ctx.wallet.address, nativeAddress: ctx.native.address, amount: '1.00000001' }])).result;
