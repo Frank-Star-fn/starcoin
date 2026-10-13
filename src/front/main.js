@@ -247,9 +247,7 @@ async function refreshChain() {
             el.innerHTML = '<div class="mempool-empty">暂无区块</div>';
             return;
         }
-        const deepReorg = (data.stats?.reorgEvents || []).filter(event => event.deep).at(-1);
-        const reorgAlert = deepReorg ? `<div style="color:#fbbf24; margin-bottom:12px;">⚠️ 曾发生深度链重组：回滚 ${Number(deepReorg.depth)} 个区块，请核对收款状态。</div>` : '';
-        el.innerHTML = reorgAlert + chain.slice().reverse().map(b => {
+        el.innerHTML = chain.slice().reverse().map(b => {
             const isGenesis = b.index === 0;
             // 计算本块总燃烧手续费
             let blockBurnedFees = 0;
