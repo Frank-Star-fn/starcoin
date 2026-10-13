@@ -30,25 +30,31 @@ function createMiningRoutes(starCoin, p2p, broadcastToFrontend) {
             transactionCount: block.transactions.length, difficulty: starCoin.difficulty });
     }
     async function run(job, minerAddress, data) {
+        let terminal;
         try {
             let result;
             do {
-                result = await starCoin.mineBlockAsync(minerAddress, data, progress => publish(job, progress), () => job.stopped);
+                result = await starCoin.mineBlockAsync(minerAddress, data, progress => {
+                    // Finding a nonce does not mean validation and persistence have finished.
+                    if (!progress.found) publish(job, progress);
+                }, () => job.stopped);
                 if (result?.canceled && !job.stopped) await new Promise(resolve => setTimeout(resolve, 200));
             } while (result?.canceled && !job.stopped);
-            if (job.stopped || result?.canceled) publish(job, { stopped: true, message: '挖矿已停止' });
+            if (job.stopped || result?.canceled) terminal = { stopped: true, message: '挖矿已停止' };
             else {
                 if (!result?.hash) throw new Error('挖矿未返回有效区块');
                 broadcast(result);
-                publish(job, { found: true, nonce: result.nonce, hash: result.hash, difficulty: starCoin.difficulty,
+                terminal = { found: true, nonce: result.nonce, hash: result.hash, difficulty: starCoin.difficulty,
                     block: { index: result.index, hash: result.hash, previousHash: result.previousHash,
                         nonce: result.nonce, timestamp: result.timestamp, transactionCount: result.transactions.length },
-                    reward: starCoin.miningReward });
+                    reward: starCoin.miningReward };
             }
-        } catch { publish(job, { error: '挖矿失败，请检查节点日志' }); }
+        } catch { terminal = { error: '挖矿失败，请检查节点日志' }; }
         finally {
             job.done = true;
             if (active === job) active = null;
+            // A subscriber may start its next round as soon as it receives this event.
+            publish(job, terminal);
             for (const res of job.subscribers) res.end();
             const timer = setTimeout(() => jobs.delete(job.id), 120000); timer.unref();
         }

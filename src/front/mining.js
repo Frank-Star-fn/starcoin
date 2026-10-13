@@ -90,24 +90,29 @@ function openMiningStream(minerAddress) {
             const response = await fetch('/api/mine/stream?jobId=' + encodeURIComponent(jobId), {
                 headers: adminHeaders(), signal: controller.signal
             });
-            if (!response.ok) throw new Error('进度连接失败：HTTP ' + response.status);
+            if (!response.ok) {
+                const error = new Error('进度连接失败：HTTP ' + response.status);
+                error.statusCode = response.status;
+                throw error;
+            }
             const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';
-            while (!closed) {
+            while (!closed && !done) {
                 const chunk = await reader.read();
                 if (chunk.done) break;
                 buffer += decoder.decode(chunk.value, { stream: true });
                 if (buffer.length > 65536) throw new Error('进度消息过大');
                 let index;
-                while ((index = buffer.indexOf('\n\n')) !== -1) {
+                while (!closed && !done && (index = buffer.indexOf('\n\n')) !== -1) {
                     const event = buffer.slice(0, index); buffer = buffer.slice(index + 2);
                     const line = event.split('\n').find(value => value.startsWith('data: '));
                     if (line) {
                         const payload = line.slice(6), value = JSON.parse(payload);
-                        if (value.found || value.error || value.stopped) done = true;
+                        if ((value.found && value.block) || value.error || value.stopped) done = true;
                         source.onmessage?.({ data: payload });
                     }
                 }
             }
+            if (done) await source.close();
             if (!closed && !done) throw new Error('进度连接已断开');
         } catch (error) { if (!closed) source.onerror?.(error); }
     })();
@@ -180,7 +185,7 @@ async function mineBlock() {
                 return;
             }
 
-            if (data.found) {
+            if (data.found && data.block) {
                 // 挖矿完成！
                 miningCompleted = true;
                 eventSource.close();
@@ -381,6 +386,7 @@ async function toggleAutoMine() {
     // 初始化状态
     autoMineState.active = true;
     autoMineState.blocksMined = 0;
+    autoMineState.consecutiveFailures = 0;
     autoMineState.startTime = Date.now();
     autoMineState.minerAddress = minerAddr;
 
@@ -404,7 +410,11 @@ async function toggleAutoMine() {
 }
 
 async function startNextAutoMine() {
-    if (!autoMineState.active) return;
+    if (!autoMineState.active || autoMineState.eventSource) return;
+    if (autoMineState.timeoutId) {
+        clearTimeout(autoMineState.timeoutId);
+        autoMineState.timeoutId = null;
+    }
 
     const animContainer = document.getElementById('miningAnimation');
     const nonceDisplay = document.getElementById('miningNonce');
@@ -451,11 +461,12 @@ async function startNextAutoMine() {
     let miningCompleted = false;
 
     eventSource.onmessage = (event) => {
+        if (miningCompleted || autoMineState.eventSource !== eventSource) return;
         try {
             const data = JSON.parse(event.data);
 
             // 如果已被停止，忽略后续所有事件并关闭连接
-            if (!autoMineState.active && !data.found) {
+            if (!autoMineState.active) {
                 eventSource.close();
                 if (autoMineState.eventSource === eventSource) {
                     autoMineState.eventSource = null;
@@ -475,7 +486,7 @@ async function startNextAutoMine() {
                 return;
             }
 
-            if (data.found) {
+            if (data.found && data.block) {
                 miningCompleted = true;
                 eventSource.close();
                 if (autoMineState.eventSource === eventSource) {
@@ -585,28 +596,30 @@ async function startNextAutoMine() {
         }
     };
 
-    eventSource.onerror = (error) => {
-        if ([401, 403, 503].includes(error?.statusCode)) { eventSource.close(); stopAutoMineOnError(error.message); return; }
-        if (autoMineState.eventSource === eventSource) {
-            autoMineState.eventSource = null;
+    eventSource.onerror = async (error) => {
+        if (miningCompleted || !autoMineState.active || autoMineState.eventSource !== eventSource) return;
+        miningCompleted = true;
+        // Cancel the old task before allowing a retry to start another one.
+        await eventSource.close();
+        if (!autoMineState.active || autoMineState.eventSource !== eventSource) return;
+        autoMineState.eventSource = null;
+        if ([401, 403, 409, 503].includes(error?.statusCode)) {
+            stopAutoMineOnError(error.message);
+            return;
         }
-        if (!miningCompleted && autoMineState.active) {
-            eventSource.close();
-            // EventSource 在网络异常/限流（429）时都会触发 onerror，
-            // 此时不直接永久停止，而是退避重试。累计失败过多才停止。
-            autoMineState.consecutiveFailures = (autoMineState.consecutiveFailures || 0) + 1;
-            const maxFailures = 5;
-            if (autoMineState.consecutiveFailures >= maxFailures) {
-                stopAutoMineOnError('连续失败，已停止');
-                return;
-            }
-            const delay = Math.min(500 * Math.pow(2, autoMineState.consecutiveFailures - 1), 5000);
-            statusText.textContent = `⚠️ 连接中断，${Math.round(delay / 1000)}s 后重试（${autoMineState.consecutiveFailures}/${maxFailures}）`;
-            animContainer.className = 'mining-animation mining-error';
-            autoMineState.timeoutId = setTimeout(() => {
-                if (autoMineState.active) startNextAutoMine();
-            }, delay);
+        // 网络异常或限流时退避重试，保留最后一次失败原因。
+        autoMineState.consecutiveFailures = (autoMineState.consecutiveFailures || 0) + 1;
+        const maxFailures = 5;
+        if (autoMineState.consecutiveFailures >= maxFailures) {
+            stopAutoMineOnError('连续失败，已停止（' + (error?.message || '连接中断') + '）');
+            return;
         }
+        const delay = Math.min(500 * Math.pow(2, autoMineState.consecutiveFailures - 1), 5000);
+        statusText.textContent = `⚠️ ${error?.message || '连接中断'}，${Math.ceil(delay / 1000)}s 后重试（${autoMineState.consecutiveFailures}/${maxFailures}）`;
+        animContainer.className = 'mining-animation mining-error';
+        autoMineState.timeoutId = setTimeout(() => {
+            if (autoMineState.active) startNextAutoMine();
+        }, delay);
     };
 }
 

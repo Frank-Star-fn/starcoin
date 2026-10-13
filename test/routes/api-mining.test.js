@@ -85,6 +85,55 @@ describe('api-mining 路由 — 挖矿', () => {
   // GET /mine/stream — SSE 挖矿流（只做基本验证）
   // ============================================================
   describe('GET /mine/stream (SSE)', () => {
+    it.each(['accepted', 'rejected'])('does not finish on a solved nonce before the block is %s', async outcome => {
+      let report, finish, fail;
+      const pending = new Promise((resolve, reject) => { finish = resolve; fail = reject; });
+      starCoin.mineBlockAsync = (_address, _data, progress) => { report = progress; return pending; };
+      const events = [];
+      const fixture = express();
+      fixture.use(express.json(), (req, res, next) => {
+        req.headers.authorization = 'Bearer test-admin';
+        if (req.path === '/mine/stream') {
+          const write = res.write.bind(res);
+          res.write = (chunk, ...args) => {
+            if (typeof chunk === 'string' && chunk.startsWith('data: ')) events.push(JSON.parse(chunk.slice(6)));
+            return write(chunk, ...args);
+          };
+        }
+        next();
+      });
+      fixture.use(createMiningRoutes(starCoin, p2p, broadcastSpy));
+      const server = require('http').createServer(fixture);
+      await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+      const url = 'http://127.0.0.1:' + server.address().port;
+      try {
+        const start = await (await fetch(url + '/mine/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).json();
+        const stream = await fetch(url + '/mine/stream?jobId=' + start.jobId);
+        const body = stream.text();
+        report({ nonce: 1, found: false });
+        report({ nonce: 2, found: true });
+        expect(events.some(event => event.found)).toBe(false);
+        await request(fixture).post('/mine/start').send({}).expect(409);
+        if (outcome === 'accepted') finish(starCoin.mineBlock());
+        else fail(new Error('候选区块验证失败'));
+        await body;
+        if (outcome === 'accepted') {
+          expect(events.filter(event => event.found)).toHaveLength(1);
+          expect(events.find(event => event.found).block.index).toBe(6);
+          // The completion event permits an immediate new task.
+          starCoin.mineBlockAsync = async () => starCoin.mineBlock();
+          await request(fixture).post('/mine/start').send({}).expect(202);
+        } else {
+          expect(events.some(event => event.found)).toBe(false);
+          expect(events.at(-1).error).toBeDefined();
+        }
+      } finally {
+        finish(starCoin.mineBlock());
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(resolve));
+      }
+    });
+
     it('返回 text/event-stream 响应头', async () => {
       const job = await request(app).post('/mine/start').send({});
       // SSE 是长连接，这里只验证初始响应头
