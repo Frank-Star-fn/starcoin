@@ -70,6 +70,7 @@ describe('rate-limit 中间件', () => {
     describe('IP 隔离', () => {
         it('不同 IP 拥有独立的计数器', async () => {
             const app = express();
+            app.set('trust proxy', ['loopback']);
             app.use(createRateLimiter({ windowMs: 60000, max: 1 }));
             app.get('/test', (req, res) => res.json({ ok: true }));
 
@@ -83,24 +84,39 @@ describe('rate-limit 中间件', () => {
             expect(rB.status).toBe(200);
         });
 
-        it('X-Forwarded-For 中的第一个 IP 被用作 key', async () => {
+        it('可信代理链只使用最近的不可信 IP，忽略客户端伪造的左侧地址', async () => {
             const app = express();
+            app.set('trust proxy', ['loopback']);
             app.use(createRateLimiter({ windowMs: 60000, max: 1 }));
             app.get('/test', (req, res) => res.json({ ok: true }));
 
             await request(app).get('/test').set('X-Forwarded-For', '10.0.0.3, 10.0.0.99');
-            const res = await request(app).get('/test').set('X-Forwarded-For', '10.0.0.3, 10.0.0.99');
+            const res = await request(app).get('/test').set('X-Forwarded-For', '10.0.0.88, 10.0.0.99');
             expect(res.status).toBe(429);
         });
 
-        it('X-Real-IP 作为 fallback', async () => {
+        it('更换 X-Real-IP 不能绕过默认限流', async () => {
             const app = express();
             app.use(createRateLimiter({ windowMs: 60000, max: 1 }));
             app.get('/test', (req, res) => res.json({ ok: true }));
 
             await request(app).get('/test').set('X-Real-IP', '10.0.0.4');
-            const res = await request(app).get('/test').set('X-Real-IP', '10.0.0.4');
+            const res = await request(app).get('/test').set('X-Real-IP', '10.0.0.5');
             expect(res.status).toBe(429);
+        });
+        it('默认忽略伪造的 X-Forwarded-For 与多个代理地址', async () => {
+            const app = express(); app.use(createRateLimiter({ max: 1 }));
+            app.get('/test', (_req, res) => res.json({ ok: true }));
+            await request(app).get('/test').set('X-Forwarded-For', '1.2.3.4').expect(200);
+            await request(app).get('/test').set('X-Forwarded-For', '8.8.8.8, 9.9.9.9').expect(429);
+        });
+        it('规范化 IPv6 和 IPv4 映射地址且限制计数器数量', () => {
+            const clientIp = require('../../src/middleware/client-ip');
+            expect(clientIp({ ip: '::ffff:127.0.0.1' })).toBe('127.0.0.1');
+            expect(clientIp({ ip: '2001:0db8:0:0:0:0:0:1' })).toBe('2001:db8::1');
+            const limiter = createRateLimiter({ maxClients: 1 }), res = { setHeader: vi.fn(), status: vi.fn().mockReturnThis(), json: vi.fn() };
+            const next = vi.fn(); limiter({ ip: '1.2.3.4' }, res, next); limiter({ ip: '1.2.3.5' }, res, next);
+            expect(next).toHaveBeenCalledTimes(1); expect(res.status).toHaveBeenCalledWith(429);
         });
     });
 

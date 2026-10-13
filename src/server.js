@@ -30,6 +30,7 @@ logger.configure({
 
 const log = logger.module('Server');
 const app = express();
+app.set('trust proxy', config.TRUSTED_PROXIES.length ? config.TRUSTED_PROXIES : false);
 app.use(protectHttp);
 const PORT = config.PORT;
 

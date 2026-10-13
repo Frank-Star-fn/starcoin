@@ -1,19 +1,4 @@
-/**
- * 从请求中获取客户端 IP
- * 优先级：X-Forwarded-For 头（第一个 IP）→ X-Real-IP → req.ip
- */
-function _getClientIp(req) {
-    const xff = req.headers['x-forwarded-for'];
-    if (xff && typeof xff === 'string') {
-        const first = xff.split(',')[0].trim();
-        if (first) return first;
-    }
-    const xRealIp = req.headers['x-real-ip'];
-    if (xRealIp && typeof xRealIp === 'string') {
-        return xRealIp.trim();
-    }
-    return (req.ip && req.ip !== '::ffff:127.0.0.1') ? req.ip : '127.0.0.1';
-}
+const clientIp = require('./client-ip');
 
 /**
  * 创建一个基于滑动窗口的 IP 限流中间件
@@ -30,6 +15,7 @@ function createRateLimiter(options = {}) {
     const max = options.max || 60;
     const message = options.message || '请求过于频繁，请稍后再试';
     const cleanupIntervalMs = options.cleanupIntervalMs || windowMs * 2;
+    const maxClients = options.maxClients || 5000;
 
     // key: ip, value: [{ timestamp: ms }, ...]
     const requests = new Map();
@@ -54,11 +40,15 @@ function createRateLimiter(options = {}) {
      * Express 中间件
      */
     return function rateLimiter(req, res, next) {
-        const ip = _getClientIp(req);
+        const ip = clientIp(req);
         const now = Date.now();
 
         let timestamps = requests.get(ip);
         if (!timestamps) {
+            if (requests.size >= maxClients) {
+                res.setHeader('Retry-After', String(Math.ceil(windowMs / 1000)));
+                return res.status(429).json({ success: false, error: message, code: 'TOO_MANY_REQUESTS', statusCode: 429 });
+            }
             timestamps = [];
             requests.set(ip, timestamps);
         }

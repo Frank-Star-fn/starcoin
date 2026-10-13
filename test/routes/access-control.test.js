@@ -51,4 +51,23 @@ describe('node access boundaries', () => {
         await request(app).post('/api/mine/stop').send({ jobId: start.body.jobId }).expect(401);
         await request(app).post('/api/mine/stop').set('Authorization', 'Bearer test-admin-token').send({ jobId: start.body.jobId }).expect(200);
     });
+    it('bounds simultaneous progress subscriptions independently of request headers', async () => {
+        const previousLimit = config.MINING_MAX_STREAMS; config.MINING_MAX_STREAMS = 1;
+        const server = require('http').createServer(app);
+        await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+        const url = 'http://127.0.0.1:' + server.address().port;
+        const headers = { Authorization: 'Bearer test-admin-token', 'Content-Type': 'application/json' };
+        chain.mineBlockAsync.mockImplementation((_address, _data, _progress, cancel) => new Promise(resolve => {
+            const timer = setInterval(() => { if (cancel()) { clearInterval(timer); resolve({ canceled: true }); } }, 5);
+        }));
+        let first;
+        try {
+            const job = await (await fetch(url + '/api/mine/start', { method: 'POST', headers, body: '{}' })).json();
+            first = await fetch(url + '/api/mine/stream?jobId=' + job.jobId, { headers }); expect(first.status).toBe(200);
+            const second = await fetch(url + '/api/mine/stream?jobId=' + job.jobId, { headers: { ...headers, 'X-Forwarded-For': '8.8.8.8' } });
+            expect(second.status).toBe(429);
+            await fetch(url + '/api/mine/stop', { method: 'POST', headers, body: JSON.stringify({ jobId: job.jobId }) });
+        } finally { await first?.body.cancel(); config.MINING_MAX_STREAMS = previousLimit;
+            server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+    });
 });

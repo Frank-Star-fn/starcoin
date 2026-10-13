@@ -1,6 +1,7 @@
 const express = require('express');
 const { keccak256 } = require('ethers');
 const config = require('../config');
+const clientIp = require('../middleware/client-ip');
 const { toUnits } = require('../protocol');
 const { withdrawalData } = require('../evm/external-transaction');
 const { nextBaseFee } = require('../evm/rpc-settings');
@@ -25,6 +26,7 @@ function createRpc(chain, p2p, broadcast) {
     function checkRate(ip, method) {
         const consume = (key, window, max) => {
             const now = Date.now(), bucket = (limits.get(key) || []).filter(t => t > now - window);
+            if (!limits.has(key) && limits.size >= 10000) throw new RpcError(-32005, '限流客户端数量超限');
             if (bucket.length >= max) throw new RpcError(-32005, '请求过于频繁，请稍后再试');
             bucket.push(now); limits.set(key, bucket);
         };
@@ -187,7 +189,7 @@ function createRpc(chain, p2p, broadcast) {
         try {
             const input = req.body, batch = Array.isArray(input), responses = [];
             if (batch && (!input.length || input.length > 20)) return res.json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Batch size must be 1–20' } });
-            for (const item of batch ? input : [input]) { const response = await handle(item, req.ip); if (response) responses.push(response); }
+            for (const item of batch ? input : [input]) { const response = await handle(item, clientIp(req)); if (response) responses.push(response); }
             if (!responses.length) return res.sendStatus(204); res.json(batch ? responses : responses[0]);
         } catch { res.status(500).json({ jsonrpc: '2.0', id: null, error: { code: -32603, message: 'Internal error' } }); }
     });
