@@ -2,7 +2,6 @@
 // routes/api-net.js — P2P 同步 + 数据持久化 + 节点连接 + 发现
 // ============================================================
 const express = require('express');
-const { Block } = require('../blockchain/blockchain');
 const { AppError, wrapAsync } = require('./error-handler');
 
 /**
@@ -38,7 +37,8 @@ function createNetRoutes(starCoin, p2p, PORT) {
         const peerSummary = syncData.candidates.map(c => ({
             node: c.fromNode,
             length: c.length,
-            valid: c.valid
+            valid: c.valid,
+            chainWork: c.valid ? starCoin.getChainWork(c.chain).toString() : null
         }));
 
         res.json({
@@ -47,6 +47,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
             lastSyncAt: syncData.lastSyncAt,
             selfChain: {
                 length: starCoin.chain.length,
+                chainWork: starCoin.getChainWork().toString(),
                 latestHash: latestBlock.hash,
                 valid: starCoin.isChainValid()
             },
@@ -162,7 +163,9 @@ function createNetRoutes(starCoin, p2p, PORT) {
             chain: starCoin.chain,
             exportedAt: new Date().toISOString(),
             port: PORT,
-            version: '1.0'
+            version: '4.0',
+            consensusHash: starCoin.consensus.fingerprint,
+            consensus: starCoin.consensus.params
         };
         res.setHeader('Content-Type', 'application/json');
         res.setHeader('Content-Disposition', `attachment; filename="starcoin_chain_${PORT}_${Date.now()}.json"`);
@@ -177,14 +180,9 @@ function createNetRoutes(starCoin, p2p, PORT) {
         if (!starCoin.isChainValid(chain)) {
             throw new AppError(400, '导入的区块链验证失败：数据不完整或哈希不匹配', 'CHAIN_VALIDATION_FAILED');
         }
-        starCoin.chain = chain.map(b => {
-            const txSrc = b.transactions || (b.data ? b.data : []);
-            const block = new Block(b.index, b.timestamp, txSrc, b.previousHash);
-            block.nonce = b.nonce;
-            block.hash = b.hash;
-            return block;
-        });
-        starCoin.saveToFile();
+        if (!starCoin.replaceChain(chain)) {
+            throw new AppError(400, '导入链必须具有更高的累计工作量', 'INSUFFICIENT_CHAIN_WORK');
+        }
         p2p.broadcastLatest();
         res.json({
             success: true,

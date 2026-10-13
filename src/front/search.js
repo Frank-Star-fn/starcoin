@@ -179,7 +179,10 @@ function renderBlockResult(content, result, query) {
 function renderTxResult(content, result, query) {
     const tx = result.transaction;
     const isReward = tx.from === 'SYSTEM' || !tx.from;
-    const status = result.confirmations >= 6 ? '✅ 已确认' : `⏳ ${result.confirmations} 个确认`;
+    const status = result.status === 'confirmed' ? `✅ 已达到确认阈值（${result.confirmations}）`
+        : result.status === 'pending' ? '⏳ 待打包'
+        : result.status === 'reverted' ? '⚠️ 已被链重组回滚'
+        : `⏳ 已入块：${result.confirmations}/${result.requiredConfirmations} 个确认`;
 
     content.innerHTML = `<div class="search-result-card">
         <span class="search-result-type tx-type">✍️ 交易</span>
@@ -191,13 +194,12 @@ function renderTxResult(content, result, query) {
         <div class="search-result-row">
             <span class="search-result-label">所在区块</span>
             <span class="search-result-value highlight">
-                <a onclick="searchBlock('${result.blockIndex}')">#${result.blockIndex}</a>
-                (${shortAddr(result.blockHash, 16)})
+                ${result.blockIndex === null ? '尚未进入当前主链' : `<a onclick="searchBlock('${result.blockIndex}')">#${result.blockIndex}</a> (${shortAddr(result.blockHash, 16)})`}
             </span>
         </div>
         <div class="search-result-row">
             <span class="search-result-label">确认数</span>
-            <span class="search-result-value" style="color:${result.confirmations >= 6 ? '#4ade80' : '#fbbf24'};">${status}</span>
+            <span class="search-result-value" style="color:${result.status === 'confirmed' ? '#4ade80' : '#fbbf24'};">${status}</span>
         </div>
         ${isReward ? `<div class="search-result-row">
             <span class="search-result-label">类型</span>
@@ -214,7 +216,7 @@ function renderTxResult(content, result, query) {
         `}
         <div class="search-result-row">
             <span class="search-result-label">金额</span>
-            <span class="search-result-value highlight">${tx.amount} STC</span>
+            <span class="search-result-value highlight">${tx.amount} ${tx.currency || 'STC'}</span>
         </div>
         ${tx.fee ? `<div class="search-result-row">
             <span class="search-result-label">🔥 手续费</span>

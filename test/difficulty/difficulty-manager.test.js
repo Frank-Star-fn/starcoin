@@ -103,14 +103,14 @@ describe('难度解析与验证 (_parseDifficulty / _meetsDifficulty)', () => {
         const result = Block._parseDifficulty(5.5);
         expect(result.prefixLength).toBe(5);
         // 0.5 * 256 = 128 → maxNextByte = 128 (不含)
-        expect(result.maxNextByte).toBe(128);
+        expect(result.maxNextByte).toBe(30);
     });
 
     it('浮点难度 3.25 要求 3 个前导零 + 下一字节 ≤ 0x3f', () => {
         const result = Block._parseDifficulty(3.25);
         expect(result.prefixLength).toBe(3);
         // 0.25 * 256 = 64 → maxNextByte = 64 (不含)
-        expect(result.maxNextByte).toBe(64);
+        expect(result.maxNextByte).toBe(53);
     });
 
     it('难度 0 不要求前导零，也不限制下一字节', () => {
@@ -137,7 +137,7 @@ describe('难度解析与验证 (_parseDifficulty / _meetsDifficulty)', () => {
 
     it('_meetsDifficulty: 满足浮点难度（前缀零够 + 下字节在范围内）', () => {
         // 5 个前导零, 下一字节 0x7a = 122 < 128 → 满足 5.5
-        const hash = '000007a' + 'a'.repeat(57);
+        const hash = '000001a' + 'a'.repeat(57);
         expect(Block._meetsDifficulty(hash, 5.5)).toBe(true);
     });
 
@@ -332,11 +332,11 @@ describe('recalculateDifficulty 全链重放', () => {
     it('空链或单区块恢复默认值', () => {
         const dm = new DifficultyManager({ initialDifficulty: 7 });
         dm.recalculateDifficulty([]);
-        expect(dm.difficulty).toBe(5);
+        expect(dm.difficulty).toBe(7);
         expect(dm.lastAdjustmentBlock).toBe(0);
 
         dm.recalculateDifficulty([{ index: 0 }]);
-        expect(dm.difficulty).toBe(5);
+        expect(dm.difficulty).toBe(7);
         expect(dm.lastAdjustmentBlock).toBe(0);
     });
 

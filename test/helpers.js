@@ -8,6 +8,7 @@
 'use strict';
 
 const { Blockchain, Block, Transaction, generateWallet } = require('../src/blockchain/blockchain');
+const { Consensus } = require('../src/consensus');
 
 // ============================================================
 // 第一部分: 区块链核心测试辅助
@@ -16,11 +17,12 @@ const { Blockchain, Block, Transaction, generateWallet } = require('../src/block
 /**
  * 创建一个全新的测试链（不加载旧数据、关闭 coinbase 锁、低难度）
  */
-function newFreshChain() {
+function newFreshChain(overrides = {}) {
   const randomPort = Math.floor(Math.random() * 90000) + 10000;
-  const chain = new Blockchain(randomPort, /* testMode */ true);
-  chain.coinbaseMaturity = 0;
-  chain.difficulty = 1;
+  const chain = new Blockchain(randomPort, true, { consensus: {
+    initialDifficulty: 1, difficultyMin: 0, coinbaseMaturity: 0,
+    difficultyAdjustInterval: 1000000, ...overrides
+  } });
   chain.pendingTransactions = [];
   return chain;
 }
@@ -29,22 +31,25 @@ function newFreshChain() {
  * 给指定地址充值（添加挖矿奖励并挖矿确认）
  */
 function fundAddress(chain, address, amount) {
-  const rewardTx = new Transaction('SYSTEM', address, amount, 0, 'Test Fund');
-  const block = new Block(
-    chain.chain.length,
-    new Date().toISOString(),
-    [rewardTx],
-    chain.getLatestBlock().hash,
-  );
-  block.mineBlock(chain.difficulty);
-  chain.chain.push(block);
+  // Set a test network's subsidy before its first block, never bypass block validation.
+  if (chain.chain.length === 1 && amount !== chain.miningReward) {
+    chain.consensus = new Consensus(chain.createGenesisBlock(), { ...chain.consensus.params, miningReward: amount });
+    chain.diffManager = chain.consensus.difficultyManager();
+  }
+  if (amount === chain.miningReward) return chain.mineBlock(address);
+  const funder = generateWallet();
+  for (let i = 0; i < Math.ceil(amount / chain.miningReward); i++) chain.mineBlock(funder.address);
+  const tx = chain.createTransaction(funder.address, address, amount, 0, 'Test Fund', 'STC', 0);
+  tx.signTransaction(funder.privateKey, funder.publicKey);
+  chain.addTransaction(tx);
+  return chain.mineBlock('TEST_MINER');
 }
 
 /**
  * 生成一个已签名的转账交易
  */
-function createSignedTx(wallet, to, amount, fee = 0, note = '', currency) {
-  const tx = new Transaction(wallet.address, to, amount, fee, note, currency);
+function createSignedTx(wallet, to, amount, fee = 0, note = '', currency = 'STC', nonce = 0) {
+  const tx = new Transaction(wallet.address, to, amount, fee, note, currency, nonce, { version: 2 });
   tx.signTransaction(wallet.privateKey, wallet.publicKey);
   return tx;
 }
@@ -133,6 +138,11 @@ function createMockStarCoin(overrides = {}) {
         miningAddress: 'TEST_MINER_ADDR',
         dataFile: '/tmp/test_starcoin_data.json',
         freshStart: false,
+        consensus: { params: { chainId: 'starcoin-main-v2', activationHeight: 1 }, fingerprint: 'test-consensus' },
+        reorgEvents: [],
+        paymentConfirmations: 6,
+        getChainWork(chain) { return BigInt((chain || mock.chain).length); },
+        replaceChain(chain) { mock.chain = chain; return true; },
 
         isChainValid() { return true; },
         getTotalBurnedFees() { return 0; },

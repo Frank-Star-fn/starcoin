@@ -9,14 +9,8 @@ const { newFreshChain } = require('../helpers');
 // 辅助：构造仅含奖励交易的挖矿区块
 // ============================================================
 function makeMiningBlock(chain, minerAddr) {
-    const rewardTx = new Transaction('SYSTEM', minerAddr, 50, 0, 'Miner Reward');
-    const block = new Block(
-        chain.chain.length,
-        new Date().toISOString(),
-        [rewardTx],
-        chain.getLatestBlock().hash
-    );
-    block.mineBlock(chain.difficulty);
+    const { block, difficulty } = chain.buildCandidate(minerAddr);
+    block.mineBlock(difficulty);
     return block;
 }
 
@@ -99,7 +93,7 @@ describe('ChainSync._findFirstInvalidIndex', () => {
         chain.chain[0].hash = 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd';
         // 因为只改创世块不改其他块，区块 1 的 previousHash 仍指向旧 genesis hash，所以 1 会断裂
         const result = chain.sync._findFirstInvalidIndex();
-        expect(result).toBe(1);
+        expect(result).toBe(0);
     });
 
     it('连续多区块 previousHash 断裂 → 返回第一个', () => {

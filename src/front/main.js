@@ -229,14 +229,14 @@ async function refreshChain() {
             const zeros = '0'.repeat(prefixLen);
             let targetText;
             if (fraction > 0) {
-                const maxNext = Math.max(0, Math.min(255, Math.floor(fraction * 256)));
+                const maxNext = Math.floor(256 / (1 + 15 * fraction));
                 targetText = zeros + `[≤0x${maxNext.toString(16).padStart(2,'0')}]…`;
             } else {
                 targetText = zeros + '…';
             }
             const targetTime = data.stats.targetBlockTime || 12;
             difficultyEl.innerHTML = `${diff} <span style="font-size:9px;color:#888;">(目标: 0x${targetText} · ${targetTime}s/块)</span>`;
-            difficultyEl.title = `当前前缀零目标: ${targetText}\n目标出块时间: ${targetTime}秒\n支持小数难度（如 5.5），每次调整约变化 ${Math.round(16**0.1*100)/100}x 工作量`;
+            difficultyEl.title = `完整目标: ${data.stats.target}\n目标出块时间: ${targetTime}秒\n区块哈希必须不大于目标`;
         } else {
             difficultyEl.textContent = '--';
         }
@@ -247,7 +247,9 @@ async function refreshChain() {
             el.innerHTML = '<div class="mempool-empty">暂无区块</div>';
             return;
         }
-        el.innerHTML = chain.slice().reverse().map(b => {
+        const deepReorg = (data.stats?.reorgEvents || []).filter(event => event.deep).at(-1);
+        const reorgAlert = deepReorg ? `<div style="color:#fbbf24; margin-bottom:12px;">⚠️ 曾发生深度链重组：回滚 ${Number(deepReorg.depth)} 个区块，请核对收款状态。</div>` : '';
+        el.innerHTML = reorgAlert + chain.slice().reverse().map(b => {
             const isGenesis = b.index === 0;
             // 计算本块总燃烧手续费
             let blockBurnedFees = 0;
@@ -273,9 +275,9 @@ async function refreshChain() {
                     return `<div class="${cls}">${prefix}备注: ${escapeHtml(tx.note || tx.to || '')}</div>`;
                 }
                 // 普通交易：显示币种 + 手续费标签 + nonce
-                const feeTag = fee > 0 ? `<span class="fee-tag">🔥${formatBalance(fee)} ${cur}</span>` : '';
+                const feeTag = fee > 0 ? `<span class="fee-tag">🔥${formatBalance(fee)} STC</span>` : '';
                 const nonceTag = (tx.nonce !== undefined && tx.nonce !== null) ? `<span style="color:#a78bfa; font-size:10px;"> #n=${tx.nonce}</span>` : '';
-                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${tx.amount} ${cur}${tx.fee ? '(费'+formatBalance(tx.fee)+' '+cur+')':''}${feeTag}${nonceTag}</div>`;
+                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${tx.amount} ${cur}${feeTag}${nonceTag}</div>`;
             }).join('');
 
             // 本块燃烧手续费汇总

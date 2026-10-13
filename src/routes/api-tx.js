@@ -186,14 +186,16 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
                    && typeof starCoin.query.getAddressNonce === 'function') {
             txNonce = starCoin.query.getAddressNonce(from, true);
         }
-
-        const tx = new Transaction(
-            from, to, Number(amount), Number(fee) || 0, note || '', currency, txNonce
-        );
-        tx.signTransaction(privateKey, publicKey);
+        if (txNonce === null) txNonce = 0;
+        if (currency !== undefined && !['STC', 'cBTC', 'cETH'].includes(currency)) {
+            throw new AppError(400, '不支持的币种', 'INVALID_CURRENCY');
+        }
 
         let savedTx;
         try {
+            const tx = new Transaction(from, to, amount, fee ?? 0, note || '', currency,
+                txNonce, { version: 2, chainId: starCoin.consensus?.params.chainId });
+            tx.signTransaction(privateKey, publicKey);
             savedTx = starCoin.addTransaction(tx);
         } catch (err) {
             throw new AppError(400, err.message, 'TX_REJECTED');
@@ -236,6 +238,11 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
             confirmedNonce,
             pendingInPool: nextNonce - confirmedNonce,
         });
+    }));
+
+    router.get('/transaction/:id/status', wrapAsync(async (req, res) => {
+        if (!/^[0-9a-f]{64}$/.test(req.params.id)) throw new AppError(400, '无效交易 ID', 'INVALID_TX_ID');
+        res.json({ success: true, ...starCoin.getTransactionStatus(req.params.id) });
     }));
 
     // ============================================================

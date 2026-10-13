@@ -25,6 +25,13 @@ function bool(val, defaultVal) {
 }
 
 const config = {
+    // These are consensus parameters: all peers must use the same values.
+    CHAIN_ID: process.env.CHAIN_ID || 'starcoin-main-v2',
+    PROTOCOL_ACTIVATION_HEIGHT: int(process.env.PROTOCOL_ACTIVATION_HEIGHT, 1),
+    LEGACY_CHECKPOINT_HASH: process.env.LEGACY_CHECKPOINT_HASH || '',
+    MAX_FUTURE_BLOCK_SECONDS: int(process.env.MAX_FUTURE_BLOCK_SECONDS, 120),
+    PAYMENT_CONFIRMATIONS: int(process.env.PAYMENT_CONFIRMATIONS, 6),
+    DEEP_REORG_THRESHOLD: int(process.env.DEEP_REORG_THRESHOLD, 6),
     // ======== 节点配置 ========
     /** HTTP/WS 服务端口 */
     PORT: int(process.env.PORT, 3000),

@@ -159,9 +159,9 @@ describe('手续费扣除', () => {
 // ============================================================
 describe('coinbase 成熟度（锁定期）', () => {
     it('默认 _isCoinbaseMature 逻辑正确', () => {
-        const chain = newFreshChain();
+        const chain = newFreshChain({ coinbaseMaturity: 3 });
         // 手动设置 coinbaseMaturity = 3
-        chain.coinbaseMaturity = 3;
+
 
         // 模拟链上有 5 个块 (0..4)
         const alice = generateWallet();
@@ -186,8 +186,8 @@ describe('coinbase 成熟度（锁定期）', () => {
     });
 
     it('getBalance 默认排除未成熟奖励', () => {
-        const chain = newFreshChain();
-        chain.coinbaseMaturity = 3;
+        const chain = newFreshChain({ coinbaseMaturity: 3 });
+
         const alice = generateWallet();
 
         // 区块 1: 给 Alice 100
@@ -224,8 +224,8 @@ describe('coinbase 成熟度（锁定期）', () => {
     });
 
     it('getBalance 使用 includeImmature=true 时包含未成熟奖励', () => {
-        const chain = newFreshChain();
-        chain.coinbaseMaturity = 3;
+        const chain = newFreshChain({ coinbaseMaturity: 3 });
+
         const alice = generateWallet();
 
         const block = new Block(1, new Date().toISOString(),
@@ -239,8 +239,8 @@ describe('coinbase 成熟度（锁定期）', () => {
     });
 
     it('getLockedRewards 正确返回未成熟奖励总额', () => {
-        const chain = newFreshChain();
-        chain.coinbaseMaturity = 2;
+        const chain = newFreshChain({ coinbaseMaturity: 2 });
+
         const alice = generateWallet();
 
         // 区块 1: +100
@@ -266,8 +266,8 @@ describe('coinbase 成熟度（锁定期）', () => {
     });
 
     it('奖励成熟后自动计入可用余额', () => {
-        const chain = newFreshChain();
-        chain.coinbaseMaturity = 2;
+        const chain = newFreshChain({ coinbaseMaturity: 2 });
+
         const alice = generateWallet();
 
         // 区块 1: +100 (未成熟)

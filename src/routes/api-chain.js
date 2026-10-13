@@ -2,6 +2,7 @@
 // routes/api-chain.js — 区块链信息与验证路由
 // ============================================================
 const express = require('express');
+const { targetForDifficulty, targetHex } = require('../protocol');
 
 /**
  * 创建区块链信息相关的路由
@@ -22,7 +23,14 @@ function createChainRoutes(starCoin, p2p, PORT) {
             isValid: starCoin.isChainValid(),
             stats: {
                 totalBlocks: starCoin.chain.length,
+                chainWork: starCoin.getChainWork().toString(),
+                chainId: starCoin.consensus.params.chainId,
+                protocolVersion: 2,
+                activationHeight: starCoin.consensus.params.activationHeight,
+                paymentConfirmations: starCoin.paymentConfirmations,
+                reorgEvents: starCoin.reorgEvents,
                 difficulty: starCoin.difficulty,
+                target: targetHex(targetForDifficulty(starCoin.difficulty)),
                 targetBlockTime: starCoin.targetBlockTime,
                 difficultyHistory: starCoin.difficultyHistory.slice(-10),
                 genesisBlock: starCoin.chain[0].hash.substring(0, 16) + '...',

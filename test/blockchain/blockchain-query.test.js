@@ -107,7 +107,7 @@ describe('findTransactionById', () => {
     it('confirmations 反映了当前链尾高度与区块索引之差', () => {
         const result = chain.findTransactionById(transferTxId);
         const latestIndex = chain.getLatestBlock().index;
-        expect(result.confirmations).toBe(latestIndex - result.blockIndex);
+        expect(result.confirmations).toBe(latestIndex - result.blockIndex + 1);
     });
 
     it('遍历全链找到所有交易（系统奖励交易也能找到）', () => {

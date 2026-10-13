@@ -207,7 +207,7 @@ async function mineBlock() {
                     if (matchLen === prefixLen && Number(data.difficulty) - prefixLen > 0) {
                         const nextByteHex = data.hash.substring(prefixLen, prefixLen + 2);
                         const nextByteVal = parseInt(nextByteHex, 16);
-                        const maxNextByte = Math.floor((Number(data.difficulty) - prefixLen) * 256);
+                        const maxNextByte = Math.floor(256 / (1 + 15 * (Number(data.difficulty) - prefixLen)));
                         if (!isNaN(nextByteVal) && maxNextByte > 0) {
                             const fracPct = Math.min(100, (nextByteVal / maxNextByte) * 100);
                             pct = pct + (fracPct / baseLen) * 0.5;
@@ -503,7 +503,7 @@ async function startNextAutoMine() {
                     if (matchLen === prefixLen && Number(data.difficulty) - prefixLen > 0) {
                         const nextByteHex = data.hash.substring(prefixLen, prefixLen + 2);
                         const nextByteVal = parseInt(nextByteHex, 16);
-                        const maxNextByte = Math.floor((Number(data.difficulty) - prefixLen) * 256);
+                        const maxNextByte = Math.floor(256 / (1 + 15 * (Number(data.difficulty) - prefixLen)));
                         if (!isNaN(nextByteVal) && maxNextByte > 0) {
                             const fracPct = Math.min(100, (nextByteVal / maxNextByte) * 100);
                             pct = pct + (fracPct / baseLen) * 0.5;

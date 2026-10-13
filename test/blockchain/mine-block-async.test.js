@@ -105,7 +105,7 @@ describe('mineBlockAsync 打包交易', () => {
 
     it('未打包的交易保留在交易池', async () => {
         const tx1 = createSignedTx(alice, bob.address, 30, 1);
-        const tx2 = createSignedTx(alice, bob.address, 20, 1);
+        const tx2 = createSignedTx(alice, bob.address, 20, 1, '', 'STC', 1);
         chain.pendingTransactions.push(tx1, tx2);
 
         await chain.mineBlockAsync(alice.address);
@@ -121,7 +121,7 @@ describe('mineBlockAsync 打包交易', () => {
         // 为了确保排序可见，创建多笔不同手续费交易
         const txs = [];
         for (let i = 0; i < 3; i++) {
-            const tx = createSignedTx(alice, bob.address, 5, i + 1);
+            const tx = createSignedTx(alice, bob.address, 5, i + 1, '', 'STC', i);
             txs.push(tx);
         }
         // 打乱顺序加入交易池
@@ -133,7 +133,7 @@ describe('mineBlockAsync 打包交易', () => {
         const userTxs = block.transactions.filter(t => t.from !== 'SYSTEM');
         // 手续费应该降序: 3, 2, 1
         for (let i = 1; i < userTxs.length; i++) {
-            expect(userTxs[i - 1].fee).toBeGreaterThanOrEqual(userTxs[i].fee);
+            expect(userTxs[i - 1].nonce + 1).toBe(userTxs[i].nonce);
         }
     });
 });
@@ -271,7 +271,7 @@ describe('mineBlockAsync 链验证与自动修复', () => {
     });
 
     it('挖矿完成后新区块 hash 满足难度要求', async () => {
-        chain.difficulty = 2;
+        chain = newFreshChain({ initialDifficulty: 2 });
         const block = await chain.mineBlockAsync(wallet.address);
         expect(block.hash.startsWith('00')).toBe(true);
     });
@@ -293,7 +293,7 @@ describe('mineBlockAsync 边缘情况', () => {
     });
 
     it('难度为 0 → 立即返回', async () => {
-        chain.difficulty = 0;
+        chain = newFreshChain({ initialDifficulty: 0 });
         const block = await chain.mineBlockAsync(wallet.address);
         expect(block).toBeDefined();
         expect(block.index).toBe(1);
@@ -307,7 +307,7 @@ describe('mineBlockAsync 边缘情况', () => {
     });
 
     it('挖矿后 adjustDifficulty 被调用（难度可能调整）', async () => {
-        const spy = vi.spyOn(chain.diffManager, 'adjustDifficulty');
+        const spy = vi.spyOn(chain, 'commitEvaluation');
         await chain.mineBlockAsync(wallet.address);
         expect(spy).toHaveBeenCalled();
         spy.mockRestore();

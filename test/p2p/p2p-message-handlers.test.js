@@ -27,19 +27,21 @@ describe('p2p-message-handlers', () => {
         { index: 0, hash: '0'.repeat(64), previousHash: '0'.repeat(64), transactions: [] }
       ],
       pendingTransactions: [],
+      getChainWork(chain) { return BigInt((chain || this.chain).length); },
+      consensus: { fingerprint: 'test-consensus' },
       getLatestBlock() {
         return this.chain[this.chain.length - 1];
       },
       addBlock(block) {
         const latest = this.getLatestBlock();
-        if (latest.hash === block.previousHash) {
+        if (latest.hash === block.previousHash && block.index === latest.index + 1) {
           this.chain.push(block);
           return true;
         }
         return false;
       },
       replaceChain(chain) {
-        if (chain && chain.length > 0) {
+        if (chain && chain.length > this.chain.length && this.isChainValid(chain)) {
           this.chain = [...chain];
           return true;
         }
@@ -101,6 +103,7 @@ describe('p2p-message-handlers', () => {
       expect(mockNetwork.sendMessage).toHaveBeenCalledWith(ws, {
         type: 'CHAIN_LENGTH',
         length: mockStarCoin.chain.length,
+        chainWork: mockStarCoin.getChainWork().toString(),
         latestHash: mockStarCoin.getLatestBlock().hash,
         fromNode: 'ws://localhost:3000'
       });

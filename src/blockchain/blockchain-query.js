@@ -1,5 +1,6 @@
 const { Block, Transaction,
         SUPPORTED_CURRENCIES, DEFAULT_CURRENCY, effectiveCurrency } = require('../core');
+const { toUnits, fromUnits } = require('../protocol');
 
 /**
  * 查询引擎：只读查询操作（区块/交易/地址/备注搜索、余额、手续费统计）
@@ -41,18 +42,31 @@ class QueryEngine {
                 if (!tx.id) continue;
                 const txIdLower = tx.id.toLowerCase();
                 // 支持完整匹配和前缀匹配（用户可能只输入前几位）
-                if (txIdLower === query || txIdLower.startsWith(query) || query.startsWith(txIdLower)) {
+                if (txIdLower === query || txIdLower.startsWith(query)) {
                     return {
                         block,
                         blockIndex: block.index,
                         blockHash: block.hash,
                         transaction: tx,
-                        confirmations: latestIndex - block.index
+                        confirmations: latestIndex - block.index + 1,
+                        requiredConfirmations: this.blockchain.paymentConfirmations,
+                        status: latestIndex - block.index + 1 >= this.blockchain.paymentConfirmations ? 'confirmed' : 'included'
                     };
                 }
             }
         }
         return null;
+    }
+
+    getTransactionStatus(id) {
+        const confirmed = this.findTransactionById(id);
+        if (confirmed && confirmed.transaction.id === id) return { id, ...confirmed };
+        const pending = this.blockchain.pendingTransactions.find(tx => tx.id === id);
+        const reverted = this.blockchain.revertedTransactions.get(id);
+        return { id, status: pending ? 'pending' : reverted ? 'reverted' : 'unknown',
+            confirmations: 0, requiredConfirmations: this.blockchain.paymentConfirmations,
+            blockIndex: null, blockHash: null, transaction: pending || reverted || null,
+            wasReverted: !!reverted };
     }
 
     /**
@@ -68,6 +82,10 @@ class QueryEngine {
         }
 
         const q = query.trim();
+        if (/^[0-9a-fA-F]{64}$/.test(q)) {
+            const status = this.getTransactionStatus(q.toLowerCase());
+            if (status.transaction) return { type: 'transaction', result: status, query: q };
+        }
 
         // ── 1) 纯数字 → 按区块号搜索 ──
         const asNumber = Number(q);
@@ -256,7 +274,7 @@ class QueryEngine {
     getBalance(address, includeImmature = false, currency = DEFAULT_CURRENCY) {
         if (!address) return 0;
         const targetCurrency = effectiveCurrency(currency);
-        let balance = 0;
+        let balance = 0n;
         for (const block of this.blockchain.chain) {
             for (const tx of block.transactions) {
                 const c = effectiveCurrency(tx);
@@ -264,11 +282,11 @@ class QueryEngine {
                 if (tx.from === address) {
                     // amount 始终按交易币种扣除
                     if (c === targetCurrency) {
-                        balance -= Number(tx.amount) || 0;
+                        balance -= toUnits(tx.amount);
                     }
                     // fee 始终从 STC 扣除（无论交易币种）
                     if (targetCurrency === DEFAULT_CURRENCY) {
-                        balance -= Number(tx.fee) || 0;
+                        balance -= toUnits(tx.fee);
                     }
                 }
                 if (tx.to === address) {
@@ -276,11 +294,11 @@ class QueryEngine {
                     if (tx.from === 'SYSTEM' && !includeImmature) {
                         if (!this.blockchain._isCoinbaseMature(block.index)) continue;
                     }
-                    balance += Number(tx.amount) || 0;
+                    balance += toUnits(tx.amount);
                 }
             }
         }
-        return balance;
+        return fromUnits(balance);
     }
 
     /** 内部：返回 { STC: 0, cBTC: 0, cETH: 0 } */
@@ -296,26 +314,26 @@ class QueryEngine {
      */
     getAllBalances(address, includeImmature = false) {
         if (!address) return this._emptyBalances();
-        const balances = this._emptyBalances();
+        const balances = Object.fromEntries(SUPPORTED_CURRENCIES.map(currency => [currency, 0n]));
         for (const block of this.blockchain.chain) {
             for (const tx of block.transactions) {
                 const c = effectiveCurrency(tx);
                 if (!balances.hasOwnProperty(c)) continue;
                 if (tx.from === address) {
                     // amount 按交易币种扣除
-                    balances[c] -= Number(tx.amount) || 0;
+                    balances[c] -= toUnits(tx.amount);
                     // fee 始终从 STC 扣除
-                    balances[DEFAULT_CURRENCY] -= Number(tx.fee) || 0;
+                    balances[DEFAULT_CURRENCY] -= toUnits(tx.fee);
                 }
                 if (tx.to === address) {
                     if (tx.from === 'SYSTEM' && !includeImmature) {
                         if (!this.blockchain._isCoinbaseMature(block.index)) continue;
                     }
-                    balances[c] += Number(tx.amount) || 0;
+                    balances[c] += toUnits(tx.amount);
                 }
             }
         }
-        return balances;
+        return Object.fromEntries(Object.entries(balances).map(([currency, units]) => [currency, fromUnits(units)]));
     }
 
     /**
@@ -426,45 +444,17 @@ class QueryEngine {
      */
     getAddressNonce(address, includePending = true) {
         if (!address) return 0;
-        let count = 0;
-        for (const block of this.blockchain.chain) {
-            if (!block.transactions || !Array.isArray(block.transactions)) continue;
-            for (const tx of block.transactions) {
-                if (tx.from !== address) continue;
-                if (!tx.from || tx.from === '' || tx.from === 'SYSTEM') continue;
-                if (tx.amount <= 0) continue; // 忽略备注交易（amount=0）
-                count++;
-            }
-        }
-        if (includePending) {
-            for (const tx of this.blockchain.pendingTransactions) {
-                if (tx.from !== address) continue;
-                if (!tx.from || tx.from === '' || tx.from === 'SYSTEM') continue;
-                if (Number(tx.amount) <= 0) continue;
-                count++;
-            }
-        }
-        return count;
+        const bc = this.blockchain, evaluation = bc.evaluateChain();
+        if (!evaluation.valid) throw new Error(evaluation.error);
+        const state = includePending ? bc.consensus.rebuildPool(evaluation, bc.pendingTransactions).state : evaluation.state;
+        return state.nonces.get(address) || 0;
     }
 
     /**
      * 仅统计链上已确认的 nonce（不含交易池）。
      * 用于链验证逻辑（验证链上每笔交易的 nonce 是否按顺序递增）。
      */
-    getConfirmedNonce(address) {
-        if (!address) return 0;
-        let count = 0;
-        for (const block of this.blockchain.chain) {
-            if (!block.transactions || !Array.isArray(block.transactions)) continue;
-            for (const tx of block.transactions) {
-                if (tx.from !== address) continue;
-                if (!tx.from || tx.from === '' || tx.from === 'SYSTEM') continue;
-                if (Number(tx.amount) <= 0) continue;
-                count++;
-            }
-        }
-        return count;
-    }
+    getConfirmedNonce(address) { return this.getAddressNonce(address, false); }
 
     /**
      * 获取所有地址及其余额（用于排名展示，每项包含 balances: {STC, cBTC, cETH}）

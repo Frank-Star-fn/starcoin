@@ -1,325 +1,119 @@
-// ============================================================
-// StorageManager 非 testMode 持久化单元测试
-// 覆盖: loadFromFile（真实文件读写）、saveToFile（真实文件）、clearDataFile（真实文件）
-// ============================================================
 const fs = require('fs');
-const path = require('path');
 const os = require('os');
+const path = require('path');
 const { Blockchain, Block, Transaction, generateWallet } = require('../../src/blockchain/blockchain');
-const { createSignedTx } = require('../helpers');
+const { Consensus } = require('../../src/consensus');
+const { auditChain } = require('../../scripts/audit-chain');
 
-// ============================================================
-// 辅助：创建非 testMode 的链（指向临时文件）
-// ============================================================
-function newNonTestChain() {
-    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'stc-test-'));
-    const dataFile = path.join(tmpDir, 'blockchain_test.json');
-    const chain = new Blockchain(9999, false);
-    // 覆盖 dataFile 为临时路径，避免污染真实数据
-    chain.dataFile = dataFile;
-    chain.storage.blockchain.dataFile = dataFile;
-    chain.coinbaseMaturity = 0;
-    chain.difficulty = 1;
-    chain.pendingTransactions = [];
-    return { chain, dataFile, tmpDir };
+const params = { initialDifficulty: 1, difficultyMin: 0, coinbaseMaturity: 0, difficultyAdjustInterval: 1000000 };
+function legacyHistory() {
+    const genesis = new Blockchain(0, true, { consensus: params }).createGenesisBlock();
+    const chain = [genesis];
+    const alice = generateWallet();
+    for (let index = 1; index <= 2; index++) {
+        const reward = new Transaction('SYSTEM', alice.address, 50, 0, 'Miner Reward');
+        const block = new Block(index, new Date(Date.now() - 10000 + index * 1000).toISOString(), [reward], chain.at(-1).hash);
+        block.mineBlock(1); chain.push(block);
+    }
+    return { chain, alice };
 }
 
-function cleanupChain({ tmpDir }) {
-    try {
-        fs.rmSync(tmpDir, { recursive: true, force: true });
-    } catch { /* ignore */ }
-}
-
-// ============================================================
-// 第1组: saveToFile（非 testMode 真实写入）
-// ============================================================
-describe('StorageManager.saveToFile (非 testMode)', () => {
-    let env;
-
+describe('原子持久化与启动审计', () => {
+    let directory, filename, chain;
     beforeEach(() => {
-        env = newNonTestChain();
+        directory = fs.mkdtempSync(path.join(os.tmpdir(), 'stc-security-'));
+        filename = path.join(directory, 'chain.json');
+        chain = new Blockchain(9999, false, { dataFile: filename, consensus: params });
     });
-
     afterEach(() => {
-        cleanupChain(env);
+        const resolved = path.resolve(directory);
+        if (!resolved.startsWith(path.join(os.tmpdir(), 'stc-security-'))) throw new Error('Unexpected cleanup path');
+        fs.rmSync(resolved, { recursive: true, force: true });
+    });
+    function load(options = params) { return new Blockchain(9999, false, { dataFile: filename, consensus: options }); }
+    it('缺失文件返回 freshStart，内存保留创世块', () => {
+        expect(chain.freshStart).toBe(true); expect(chain.chain).toHaveLength(1);
+    });
+    it('格式 4.0 包含固定共识摘要，并完整恢复区块', () => {
+        chain.mineBlock('miner'); const data = JSON.parse(fs.readFileSync(filename, 'utf8'));
+        expect(data.version).toBe('4.0'); expect(data.consensusHash).toBe(chain.consensus.fingerprint);
+        const restored = load(); expect(restored.freshStart).toBe(false);
+        expect(restored.getLatestBlock().hash).toBe(chain.getLatestBlock().hash); expect(restored.isChainValid()).toBe(true);
+    });
+    it('保存的难度被篡改也不会覆盖重放计算结果', () => {
+        chain.mineBlock('miner'); const data = JSON.parse(fs.readFileSync(filename, 'utf8')); data.difficulty = 30;
+        fs.writeFileSync(filename, JSON.stringify(data)); expect(load().difficulty).toBe(1);
+    });
+    it('启动时重新验证待打包交易并保留完整签名', () => {
+        const alice = generateWallet(); chain.mineBlock(alice.address);
+        const tx = chain.createTransaction(alice.address, 'bob', 1, 0, '', 'STC', 0);
+        tx.signTransaction(alice.privateKey, alice.publicKey); chain.addTransaction(tx); chain.saveToFile();
+        const restored = load(); expect(restored.pendingTransactions).toEqual([tx]); expect(restored.pendingTransactions[0].isValid()).toBe(true);
+    });
+    it('非法的持久化交易池不会被恢复', () => {
+        chain.mineBlock('miner'); const data = JSON.parse(fs.readFileSync(filename, 'utf8'));
+        data.pendingTransactions = [data.chain[1].transactions[0], null]; fs.writeFileSync(filename, JSON.stringify(data));
+        expect(load().pendingTransactions).toHaveLength(0);
+    });
+    it.each(['json', 'hash', 'merkle', 'signature', 'genesis'])('启动审计拒绝 %s 损坏，保留原文件', type => {
+        const alice = generateWallet(); chain.mineBlock(alice.address);
+        const tx = chain.createTransaction(alice.address, 'bob', 1, 0, '', 'STC', 0);
+        tx.signTransaction(alice.privateKey, alice.publicKey); chain.addTransaction(tx); chain.mineBlock('miner');
+        const data = JSON.parse(fs.readFileSync(filename, 'utf8'));
+        if (type === 'hash') data.chain[2].hash = 'a'.repeat(64);
+        if (type === 'merkle') data.chain[2].merkleRoot = 'a'.repeat(64);
+        if (type === 'signature') data.chain[2].transactions[1].signature = 'a'.repeat(64);
+        if (type === 'genesis') data.chain[0].transactions[0].amount = 100;
+        const original = type === 'json' ? '{bad JSON' : JSON.stringify(data);
+        fs.writeFileSync(filename, original);
+        expect(() => load()).toThrow(/审计|读取/); expect(fs.readFileSync(filename, 'utf8')).toBe(original);
+    });
+    it('共识参数改变后拒绝加载现有文件', () => {
+        chain.mineBlock('miner'); expect(() => load({ ...params, miningReward: 100 })).toThrow(/共识参数/);
+    });
+    it('持久化写失败保持原文件、内存链和交易池', () => {
+        chain.mineBlock('miner'); const original = fs.readFileSync(filename, 'utf8'), tip = chain.getLatestBlock().hash;
+        const spy = vi.spyOn(fs, 'renameSync').mockImplementation(() => { throw new Error('disk error'); });
+        try { expect(() => chain.mineBlock('miner')).toThrow(/持久化失败/); } finally { spy.mockRestore(); }
+        expect(chain.getLatestBlock().hash).toBe(tip); expect(fs.readFileSync(filename, 'utf8')).toBe(original);
+        expect(fs.existsSync(filename + '.tmp')).toBe(false);
+    });
+    it('清除操作原子保存有效的创世状态并清理交易池', () => {
+        chain.mineBlock('miner'); expect(chain.clearDataFile()).toBe(true);
+        expect(chain.chain).toHaveLength(1); expect(chain.difficulty).toBe(1); expect(chain.pendingTransactions).toHaveLength(0);
+        expect(load().chain).toHaveLength(1);
+    });
+    it('saveToFile 和 loadFromFile 委托仍正常工作', () => {
+        chain.mineBlock('miner'); expect(chain.saveToFile()).toBe(true); expect(chain.loadFromFile()).toBe(true);
     });
 
-    it('保存后文件实际存在于磁盘', () => {
-        const result = env.chain.storage.saveToFile();
-        expect(result).toBe(true);
-        expect(fs.existsSync(env.dataFile)).toBe(true);
+    it('旧链审计成功生成固定检查点，激活后可以继续挖矿', () => {
+        const history = legacyHistory(), report = auditChain(history, params);
+        expect(report.valid).toBe(true); expect(report.migration.PROTOCOL_ACTIVATION_HEIGHT).toBe(3);
+        fs.writeFileSync(filename, JSON.stringify({ chain: history.chain, version: '3.0' }));
+        const migrated = load(report.consensus);
+        expect(migrated.chain).toHaveLength(3); expect(migrated.mineBlock('miner').version).toBe(2);
+        expect(load(report.consensus).isChainValid()).toBe(true);
     });
-
-    it('保存的文件内容为合法 JSON', () => {
-        env.chain.storage.saveToFile();
-        const raw = fs.readFileSync(env.dataFile, 'utf8');
-        const parsed = JSON.parse(raw);
-        expect(parsed).toBeDefined();
-        expect(parsed.chain).toBeDefined();
-        expect(Array.isArray(parsed.chain)).toBe(true);
+    it('旧签名只在检查点之前有效，激活后不能入池', () => {
+        const history = legacyHistory(), report = auditChain(history, params);
+        fs.writeFileSync(filename, JSON.stringify(history)); const migrated = load(report.consensus);
+        const tx = new Transaction(history.alice.address, 'bob', 10); tx.signTransaction(history.alice.privateKey, history.alice.publicKey);
+        expect(migrated.addPendingTransaction(tx).success).toBe(false);
     });
-
-    it('保存的文件包含 version 字段', () => {
-        env.chain.storage.saveToFile();
-        const raw = fs.readFileSync(env.dataFile, 'utf8');
-        const parsed = JSON.parse(raw);
-        expect(parsed.version).toBe('3.0');
+    it('激活高度大于 1 必须提供检查点', () => {
+        expect(() => new Consensus(chain.createGenesisBlock(), { ...params, activationHeight: 3 })).toThrow(/检查点/);
     });
-
-    it('保存后文件中的链长度与内存一致', () => {
-        const wallet = generateWallet();
-        // 添加几个区块
-        const rewardTx = new Transaction('SYSTEM', wallet.address, 50, 0, 'Miner Reward');
-        for (let i = 0; i < 3; i++) {
-            const block = new Block(
-                env.chain.chain.length,
-                new Date().toISOString(),
-                [rewardTx],
-                env.chain.getLatestBlock().hash
-            );
-            block.mineBlock(env.chain.difficulty);
-            env.chain.chain.push(block);
-        }
-        env.chain.storage.saveToFile();
-
-        const raw = fs.readFileSync(env.dataFile, 'utf8');
-        const parsed = JSON.parse(raw);
-        expect(parsed.chain.length).toBe(env.chain.chain.length);
+    it('旧历史检查点不同，拒绝启动并保留文件', () => {
+        const history = legacyHistory(), report = auditChain(history, params); fs.writeFileSync(filename, JSON.stringify(history));
+        expect(() => load({ ...report.consensus, legacyCheckpointHash: 'a'.repeat(64) })).toThrow(/检查点/);
     });
-
-    it('保存后文件中的 difficulty 与内存一致', () => {
-        env.chain.difficulty = 5;
-        env.chain.storage.saveToFile();
-
-        const raw = fs.readFileSync(env.dataFile, 'utf8');
-        const parsed = JSON.parse(raw);
-        expect(parsed.difficulty).toBe(5);
+    it('审计工具不会信任声明的区块哈希或跳过签名', () => {
+        const history = legacyHistory(); history.chain[2].hash = 'a'.repeat(64);
+        const report = auditChain(history, params); expect(report.valid).toBe(false); expect(report.invalidBlock).toBe(2);
     });
-
-    it('多次保存文件内容可覆盖且保持最新', () => {
-        env.chain.storage.saveToFile();
-
-        const wallet = generateWallet();
-        const rewardTx = new Transaction('SYSTEM', wallet.address, 50, 0, 'Miner Reward');
-        const block = new Block(
-            env.chain.chain.length,
-            new Date().toISOString(),
-            [rewardTx],
-            env.chain.getLatestBlock().hash
-        );
-        block.mineBlock(env.chain.difficulty);
-        env.chain.chain.push(block);
-        env.chain.storage.saveToFile();
-
-        const raw = fs.readFileSync(env.dataFile, 'utf8');
-        const parsed = JSON.parse(raw);
-        expect(parsed.chain.length).toBe(2); // 创世块 + 新区块
-    });
-});
-
-// ============================================================
-// 第2组: loadFromFile（非 testMode 真实读取）
-// ============================================================
-describe('StorageManager.loadFromFile (非 testMode)', () => {
-    let env;
-
-    beforeEach(() => {
-        env = newNonTestChain();
-    });
-
-    afterEach(() => {
-        cleanupChain(env);
-    });
-
-    it('文件不存在时返回 false', () => {
-        // 确保文件不存在
-        if (fs.existsSync(env.dataFile)) {
-            fs.unlinkSync(env.dataFile);
-        }
-        const result = env.chain.storage.loadFromFile();
-        expect(result).toBe(false);
-    });
-
-    it('从有效文件加载后返回 true', () => {
-        // 先保存
-        env.chain.storage.saveToFile();
-        // 新建一个链实例，指向同一个文件
-        const chain2 = new Blockchain(9999, false);
-        chain2.dataFile = env.dataFile;
-        chain2.storage.blockchain.dataFile = env.dataFile;
-
-        const result = chain2.storage.loadFromFile();
-        expect(result).toBe(true);
-    });
-
-    it('加载后链的区块数量与保存时一致', () => {
-        const wallet = generateWallet();
-        for (let i = 0; i < 3; i++) {
-            const rewardTx = new Transaction('SYSTEM', wallet.address, 50, 0, 'Miner Reward');
-            const block = new Block(
-                env.chain.chain.length,
-                new Date().toISOString(),
-                [rewardTx],
-                env.chain.getLatestBlock().hash
-            );
-            block.mineBlock(env.chain.difficulty);
-            env.chain.chain.push(block);
-        }
-        env.chain.storage.saveToFile();
-        const savedLen = env.chain.chain.length;
-
-        // 新建链加载
-        const chain2 = new Blockchain(9999, false);
-        chain2.dataFile = env.dataFile;
-        chain2.storage.blockchain.dataFile = env.dataFile;
-        chain2.storage.loadFromFile();
-
-        expect(chain2.chain.length).toBe(savedLen);
-    });
-
-    it('加载后链的 difficulty 从文件恢复并重新计算', () => {
-        env.chain.difficulty = 3;
-        env.chain.storage.saveToFile();
-
-        // 验证文件中的 difficulty
-        const raw = fs.readFileSync(env.dataFile, 'utf8');
-        const saved = JSON.parse(raw);
-        expect(saved.difficulty).toBe(3);
-
-        const chain2 = new Blockchain(9999, false);
-        chain2.dataFile = env.dataFile;
-        chain2.storage.blockchain.dataFile = env.dataFile;
-        chain2.storage.loadFromFile();
-
-        // loadFromFile 成功后会调用 recalculateDifficulty，该值可能因区块时间戳而调整
-        expect(chain2.difficulty).toBeGreaterThan(0);
-        expect(typeof chain2.difficulty).toBe('number');
-    });
-
-    it('加载后区块的 hash 链式引用有效', () => {
-        const wallet = generateWallet();
-        for (let i = 0; i < 2; i++) {
-            const rewardTx = new Transaction('SYSTEM', wallet.address, 50, 0, 'Miner Reward');
-            const block = new Block(
-                env.chain.chain.length,
-                new Date().toISOString(),
-                [rewardTx],
-                env.chain.getLatestBlock().hash
-            );
-            block.mineBlock(env.chain.difficulty);
-            env.chain.chain.push(block);
-        }
-        env.chain.storage.saveToFile();
-
-        const chain2 = new Blockchain(9999, false);
-        chain2.dataFile = env.dataFile;
-        chain2.storage.blockchain.dataFile = env.dataFile;
-        chain2.storage.loadFromFile();
-
-        // 验证链完整性
-        for (let i = 1; i < chain2.chain.length; i++) {
-            expect(chain2.chain[i].previousHash).toBe(chain2.chain[i - 1].hash);
-        }
-    });
-
-    it('文件内容损坏时返回 false 并保留原链', () => {
-        // 写入非法 JSON
-        fs.writeFileSync(env.dataFile, 'not valid json{{{', 'utf8');
-        const result = env.chain.storage.loadFromFile();
-        expect(result).toBe(false);
-    });
-});
-
-// ============================================================
-// 第3组: clearDataFile（非 testMode 真实删除）
-// ============================================================
-describe('StorageManager.clearDataFile (非 testMode)', () => {
-    let env;
-
-    beforeEach(() => {
-        env = newNonTestChain();
-    });
-
-    afterEach(() => {
-        cleanupChain(env);
-    });
-
-    it('clearDataFile 后文件被删除', () => {
-        env.chain.storage.saveToFile();
-        expect(fs.existsSync(env.dataFile)).toBe(true);
-
-        env.chain.storage.clearDataFile();
-        expect(fs.existsSync(env.dataFile)).toBe(false);
-    });
-
-    it('clearDataFile 后链重置为仅创世块', () => {
-        const wallet = generateWallet();
-        const rewardTx = new Transaction('SYSTEM', wallet.address, 50, 0, 'Miner Reward');
-        const block = new Block(
-            env.chain.chain.length,
-            new Date().toISOString(),
-            [rewardTx],
-            env.chain.getLatestBlock().hash
-        );
-        block.mineBlock(env.chain.difficulty);
-        env.chain.chain.push(block);
-        expect(env.chain.chain.length).toBe(2);
-
-        env.chain.storage.clearDataFile();
-        expect(env.chain.chain.length).toBe(1);
-        expect(env.chain.chain[0].index).toBe(0);
-    });
-
-    it('clearDataFile 后难度重置为初始值', () => {
-        const config = require('../../src/config');
-        env.chain.difficulty = 8;
-        env.chain.storage.clearDataFile();
-        expect(env.chain.difficulty).toBe(config.DIFFICULTY_INITIAL);
-    });
-
-    it('clearDataFile 后返回 true', () => {
-        // 文件尚未创建，clear 应该仍然成功
-        const result = env.chain.storage.clearDataFile();
-        expect(result).toBe(true);
-    });
-});
-
-// ============================================================
-// 第4组: 通过 Blockchain 委托方法调用
-// ============================================================
-describe('Blockchain 委托 storage 方法 (非 testMode)', () => {
-    let env;
-
-    beforeEach(() => {
-        env = newNonTestChain();
-    });
-
-    afterEach(() => {
-        cleanupChain(env);
-    });
-
-    it('blockchain.saveToFile() 委托正常工作', () => {
-        const result = env.chain.saveToFile();
-        expect(result).toBe(true);
-        expect(fs.existsSync(env.dataFile)).toBe(true);
-    });
-
-    it('blockchain.loadFromFile() 委托正常工作', () => {
-        env.chain.saveToFile();
-        const chain2 = new Blockchain(9999, false);
-        chain2.dataFile = env.dataFile;
-        chain2.storage.blockchain.dataFile = env.dataFile;
-
-        const result = chain2.loadFromFile();
-        expect(result).toBe(true);
-    });
-
-    it('blockchain.clearDataFile() 委托正常工作', () => {
-        env.chain.saveToFile();
-        expect(fs.existsSync(env.dataFile)).toBe(true);
-
-        const result = env.chain.clearDataFile();
-        expect(result).toBe(true);
-        expect(fs.existsSync(env.dataFile)).toBe(false);
+    it('迁移链禁止清除到检查点之前', () => {
+        const history = legacyHistory(), report = auditChain(history, params); fs.writeFileSync(filename, JSON.stringify(history));
+        const migrated = load(report.consensus); expect(() => migrated.clearDataFile()).toThrow(/检查点/);
     });
 });

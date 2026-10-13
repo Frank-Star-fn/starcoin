@@ -53,80 +53,37 @@ function createMessageHandlers(network, starCoin, options = {}) {
     /** 更新节点信息中的链状态 */
     function updateNodeInfo() {
         network.nodeInfo.chainLength = starCoin.chain.length;
+        network.nodeInfo.chainWork = starCoin.getChainWork().toString();
+        network.nodeInfo.consensusHash = starCoin.consensus.fingerprint;
         network.nodeInfo.lastUpdated = new Date().toISOString();
     }
 
     // 链/区块消息处理
 
+    function notifyChainChange() {
+        broadcastLatest();
+        updateNodeInfo();
+        if (options.onChainChange) options.onChainChange();
+    }
+
     function handleChainResponse(chain, fromNode) {
-        if (!chain || !Array.isArray(chain) || chain.length === 0) {
-            log.warn('收到空链，忽略');
+        if (!Array.isArray(chain) || !chain.length) return;
+        if (chain.length === 1 && chain[0].index !== 0) {
+            handleBlockResponse(chain[0]);
             return;
         }
-
-        const latestBlockReceived = chain[chain.length - 1];
-        const latestBlockHeld = starCoin.getLatestBlock();
-
-        if (latestBlockReceived.index > latestBlockHeld.index) {
-            log.info('收到更长的链', { length: chain.length, currentLength: starCoin.chain.length });
-
-            if (latestBlockHeld.hash === latestBlockReceived.previousHash) {
-                if (starCoin.addBlock(latestBlockReceived)) {
-                    if (!starCoin.isChainValid()) {
-                        log.warn('添加区块后链状态无效，自动修复');
-                        starCoin.repairChain();
-                    }
-                    broadcastLatest();
-                    updateNodeInfo();
-                    if (options.onChainChange) options.onChainChange();
-                }
-            } else if (chain.length === 1) {
-                log.info('收到创世区块');
-            } else {
-                log.info('需要替换整个链，正在验证');
-                if (!starCoin.isChainValid(chain)) {
-                    log.warn('收到的链无效，拒绝替换');
-                    return;
-                }
-                if (starCoin.replaceChain(chain)) {
-                    log.info('已替换为更长的链', { newLength: starCoin.chain.length });
-                    if (!starCoin.isChainValid()) {
-                        log.warn('替换链后状态无效，自动修复');
-                        starCoin.repairChain();
-                    }
-                    broadcastLatest();
-                    updateNodeInfo();
-                    if (options.onChainChange) options.onChainChange();
-                }
-            }
-        } else {
-            log.info('收到的链不更长，忽略', { received: chain.length, current: starCoin.chain.length });
-        }
+        // replaceChain validates all blocks and compares locally computed work.
+        if (starCoin.replaceChain(chain)) notifyChainChange();
     }
 
     function handleBlockResponse(block) {
-        const latestBlockHeld = starCoin.getLatestBlock();
-
-        if (block.index <= latestBlockHeld.index) {
-            if (block.index === latestBlockHeld.index && !starCoin.isChainValid()) {
-                log.warn('收到同索引区块且本地链无效，自动修复');
-                starCoin.repairChain();
-            }
-            return;
-        }
-
-        if (latestBlockHeld.hash === block.previousHash) {
-            if (starCoin.addBlock(block)) {
-                if (!starCoin.isChainValid()) {
-                    log.warn('添加区块后链无效，自动修复');
-                    starCoin.repairChain();
-                }
-                broadcastLatest();
-                updateNodeInfo();
-                if (options.onChainChange) options.onChainChange();
-            }
+        if (!block || typeof block.hash !== 'string') return;
+        const latest = starCoin.getLatestBlock();
+        if (block.hash === latest.hash) return;
+        if (block.previousHash === latest.hash) {
+            if (starCoin.addBlock(block)) notifyChainChange();
         } else {
-            log.info('需要查询完整链');
+            // A shorter/equal-height branch may have more work. Ask for its proof.
             broadcastQueryAll();
         }
     }
@@ -181,6 +138,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
                 network.sendMessage(ws, {
                     type: MESSAGE_TYPES.CHAIN_LENGTH,
                     length: starCoin.chain.length,
+                    chainWork: starCoin.getChainWork().toString(),
                     latestHash: starCoin.getLatestBlock().hash,
                     fromNode: network.nodeInfo.url
                 });

@@ -1,6 +1,6 @@
 /**
  * 难度管理器：基于链上区块时间戳动态调整挖矿难度，确保全网共识
- * 支持浮点难度（如 5.5 = 5个零 + 下字节≤0x7f）
+ * 支持单调的小数难度，完整整数目标由 protocol.js 计算。
  */
 const config = require('./config');
 const logger = require('./logger');
@@ -18,6 +18,7 @@ class DifficultyManager {
      * @param {Array}  [options.difficultyHistory]     难度变更历史
      */
     constructor(options = {}) {
+        this.initialDifficulty = options.initialDifficulty ?? config.DIFFICULTY_INITIAL;
         this.difficulty = options.initialDifficulty ?? config.DIFFICULTY_INITIAL;
         this.targetBlockTime = options.targetBlockTime ?? config.DIFFICULTY_TARGET_TIME;
         this.difficultyAdjustInterval = options.difficultyAdjustInterval ?? config.DIFFICULTY_ADJUST_INTERVAL;
@@ -111,81 +112,12 @@ class DifficultyManager {
      * @param {Array} chain 区块链数组
      */
     recalculateDifficulty(chain) {
-        if (chain.length < 2) {
-            this.difficulty = 5;
-            this.lastAdjustmentBlock = 0;
-            this.difficultyHistory = [];
-            return;
-        }
-
-        let diff = 5;
-        let lastAdj = 0;
-        const history = [];
-
-        for (let i = 1; i < chain.length; i++) {
-            const blocksSinceLast = i - lastAdj;
-            if (blocksSinceLast >= this.difficultyAdjustInterval && i >= 2) {
-                const startIdx = Math.max(1, i - this.difficultyAdjustInterval + 1);
-                let totalTime = 0;
-                let count = 0;
-                for (let j = startIdx + 1; j <= i; j++) {
-                    const prevB = chain[j - 1];
-                    const currB = chain[j];
-                    const timeDiff = (new Date(currB.timestamp) - new Date(prevB.timestamp)) / 1000;
-                    if (timeDiff > 0 && timeDiff < 3600) {
-                        totalTime += timeDiff;
-                        count++;
-                    }
-                }
-
-                if (count >= 2) {
-                    const avgTime = totalTime / count;
-                    const ratio = avgTime / this.targetBlockTime;
-                    let delta = 0;
-                    if (ratio > 1.15) {
-                        delta = -this.difficultyStep;
-                    } else if (ratio < 0.85) {
-                        delta = +this.difficultyStep;
-                    }
-                    if (delta !== 0) {
-                        const oldDiffBefore = diff;
-                        const raw = diff + delta;
-                        diff = Math.max(
-                            this.difficultyMin,
-                            Math.min(this.difficultyMax, Math.round(raw * 10) / 10)
-                        );
-                        history.push({
-                            blockIndex: i,
-                            oldDifficulty: oldDiffBefore,
-                            newDifficulty: diff,
-                            avgTime: Math.round(avgTime * 10) / 10,
-                            targetTime: this.targetBlockTime,
-                            reason: avgTime > this.targetBlockTime * 1.3 ? '出块偏慢 ↓' : '出块偏快 ↑'
-                        });
-                    }
-                    lastAdj = i;
-                }
-            }
-        }
-
-        const oldDiff = this.difficulty;
-        this.difficulty = diff;
-        this.lastAdjustmentBlock = lastAdj;
-        this.difficultyHistory = history;
-
-        if (Math.abs(this.difficulty - oldDiff) > 0.01) {
-            this.log.info('难度重新计算（全链重放）', {
-                oldDifficulty: oldDiff,
-                newDifficulty: this.difficulty,
-                chainLength: chain.length,
-                adjustmentCount: history.length
-            });
-        }
+        this.difficulty = this.initialDifficulty;
+        this.lastAdjustmentBlock = 0;
+        this.difficultyHistory = [];
+        for (let i = 1; i < chain.length; i++) this.adjustDifficulty(chain, i);
     }
 
-    /**
-     * 序列化难度数据（用于持久化）
-     */
     toJSON() {
         return {
             difficulty: this.difficulty,

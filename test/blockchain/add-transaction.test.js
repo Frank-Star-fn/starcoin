@@ -64,7 +64,7 @@ describe('给自己转账', () => {
   it('from === to 时抛出 "不能给自己转账"', () => {
     const chain = newFreshChain();
     const wallet = generateWallet();
-    const tx = new Transaction(wallet.address, wallet.address, 10);
+    const tx = chain.createTransaction(wallet.address, wallet.address, 10, 0, '', 'STC', 0);
     expect(() => chain.addTransaction(tx)).toThrow(/不能给自己转账/);
   });
 
@@ -73,7 +73,7 @@ describe('给自己转账', () => {
     const wallet = generateWallet();
     fundAddress(chain, wallet.address, 100);
 
-    const tx = new Transaction(wallet.address, wallet.address, 10);
+    const tx = chain.createTransaction(wallet.address, wallet.address, 10, 0, '', 'STC', 0);
     tx.signTransaction(wallet.privateKey, wallet.publicKey);
     expect(() => chain.addTransaction(tx)).toThrow(/不能给自己转账/);
   });
@@ -94,7 +94,7 @@ describe('签名验证', () => {
     const chain = newFreshChain();
     fundAddress(chain, alice.address, 100);
 
-    const tx = new Transaction(alice.address, bob.address, 10);
+    const tx = chain.createTransaction(alice.address, bob.address, 10, 0, '', 'STC', 0);
     expect(() => chain.addTransaction(tx)).toThrow(/签名验证失败/);
   });
 

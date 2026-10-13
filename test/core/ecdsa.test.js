@@ -126,101 +126,29 @@ describe('安全测试 —— 防止冒名签名', () => {
 // ============================================================
 // 第4组: Blockchain 集成测试
 // ============================================================
-describe('Blockchain 集成', () => {
-  let walletA, walletB;
-
-  beforeAll(() => {
-    walletA = generateWallet();
-    walletB = generateWallet();
-  });
-
-  it('addTransaction 接受已正确签名的交易', () => {
-    const chain = newFreshChain();
-    const tx = new Transaction(walletA.address, walletB.address, 10, 1, '集成测试');
-    tx.signTransaction(walletA.privateKey, walletA.publicKey);
-    // 先给 walletA 发一笔挖矿奖励让它有钱
-    chain.chain.push(new Block(1, new Date().toISOString(),
-      [new Transaction('SYSTEM', walletA.address, 100, 0, 'Initial Coin')],
-      chain.chain[0].hash,
-    ));
-    chain.chain[1].mineBlock(chain.difficulty);
-    const saved = chain.addTransaction(tx);
-    expect(saved).toBeTruthy();
-  });
-
-  it('addTransaction 拒绝未签名的普通交易', () => {
-    const chain = newFreshChain();
-    chain.chain.push(new Block(1, new Date().toISOString(),
-      [new Transaction('SYSTEM', walletA.address, 100, 0, 'Initial Coin')],
-      chain.chain[0].hash,
-    ));
-    chain.chain[1].mineBlock(chain.difficulty);
-    const tx = new Transaction(walletA.address, walletB.address, 10);
-    expect(() => chain.addTransaction(tx)).toThrow();
-  });
-});
-
-// ============================================================
-// 第5组: 完整流程测试
-// ============================================================
-describe('完整流程: 转账 → 挖矿 → 验证', () => {
-  it('完整流程: 生成钱包 → 获得奖励 → 转账 → 挖矿 → 链有效', () => {
-    const chain = newFreshChain();
-    const alice = generateWallet();
-    const bob = generateWallet();
-
-    // 区块 1: 给 Alice 100 币
-    const rewardTx1 = new Transaction('SYSTEM', alice.address, 100, 0, 'Mining Reward');
-    const block1 = new Block(1, new Date().toISOString(), [rewardTx1], chain.chain[0].hash);
-    block1.mineBlock(chain.difficulty);
-    chain.chain.push(block1);
-
-    // Alice 给 Bob 转 30 币
-    const transferTx = new Transaction(alice.address, bob.address, 30, 2, '转账测试');
-    transferTx.signTransaction(alice.privateKey, alice.publicKey);
-    expect(transferTx.isValid()).toBe(true);
-    chain.pendingTransactions.push(transferTx);
-
-    // 区块 2: 打包转账交易 + 新奖励
-    const rewardTx2 = new Transaction('SYSTEM', alice.address, 50, 0, 'Mining Reward');
-    const block2 = new Block(2, new Date().toISOString(),
-      [rewardTx2, transferTx], chain.chain[1].hash);
-    block2.mineBlock(chain.difficulty);
-    chain.chain.push(block2);
-
-    const valid = chain.isChainValid();
-    const aliceBal = chain.getBalance(alice.address);
-    const bobBal = chain.getBalance(bob.address);
-
-    expect(valid).toBe(true);
-    expect(aliceBal).toBe(118);
-    expect(bobBal).toBe(30);
-  });
-
-  it('篡改链上交易后 isChainValid 返回 false', () => {
-    const chain = newFreshChain();
-    const alice = generateWallet();
-
-    const rewardTx = new Transaction('SYSTEM', alice.address, 100, 0, 'Mining Reward');
-    const block1 = new Block(1, new Date().toISOString(), [rewardTx], chain.chain[0].hash);
-    block1.mineBlock(chain.difficulty);
-    chain.chain.push(block1);
-
-    const before = chain.isChainValid();
-    expect(before).toBe(true);
-
-    const tx = new Transaction(alice.address, 'attacker', 20);
+describe('Blockchain 集成与完整流程', () => {
+  it('已签名 v2 交易经过入池、打包和完整验证', () => {
+    const chain = newFreshChain(), alice = generateWallet(), bob = generateWallet();
+    chain.mineBlock(alice.address); chain.mineBlock(alice.address);
+    const tx = chain.createTransaction(alice.address, bob.address, 30, 2, '集成测试', 'STC', 0);
     tx.signTransaction(alice.privateKey, alice.publicKey);
-    chain.pendingTransactions.push(tx);
-    const rewardTx2 = new Transaction('SYSTEM', alice.address, 50, 0, 'Mining Reward');
-    const block2 = new Block(2, new Date().toISOString(),
-      [rewardTx2, tx], chain.chain[1].hash);
-    block2.mineBlock(chain.difficulty);
-    chain.chain.push(block2);
-
-    // 故意篡改
-    chain.chain[2].transactions[1].amount = 999999;
-
+    expect(chain.addTransaction(tx).isValid()).toBe(true);
+    chain.mineBlock(alice.address);
+    expect(chain.isChainValid()).toBe(true);
+    expect(chain.getBalance(alice.address)).toBe(118);
+    expect(chain.getBalance(bob.address)).toBe(30);
+  });
+  it('未签名 v2 交易拒绝入池', () => {
+    const chain = newFreshChain(), alice = generateWallet();
+    chain.mineBlock(alice.address);
+    expect(() => chain.addTransaction(chain.createTransaction(alice.address, 'bob', 10, 0, '', 'STC', 0))).toThrow(/签名/);
+  });
+  it('篡改已入块交易使全链验证失败', () => {
+    const chain = newFreshChain(), alice = generateWallet();
+    chain.mineBlock(alice.address);
+    const tx = chain.createTransaction(alice.address, 'bob', 10, 0, '', 'STC', 0);
+    tx.signTransaction(alice.privateKey, alice.publicKey); chain.addTransaction(tx); chain.mineBlock('miner');
+    chain.getLatestBlock().transactions[1].amount = 999999;
     expect(chain.isChainValid()).toBe(false);
   });
 });

@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const bip39 = require('bip39');
+const config = require('./config');
+const { hash, transactionPayload, targetForDifficulty, meetsTarget, targetHex } = require('./protocol');
 
 const EC_CURVE = 'secp256k1';
 
@@ -94,7 +96,9 @@ function effectiveCurrency(txOrCurrency) {
 // Transaction 类：ECDSA 签名 + 多币种 + nonce 防重放
 // 向后兼容：currency===undefined / nonce===undefined 表示旧格式，hash 公式与旧链一致
 class Transaction {
-    constructor(from, to, amount, fee = 0, note = '', currency, nonce) {
+    constructor(from, to, amount, fee = 0, note = '', currency, nonce, options = {}) {
+        this.version = options.version ?? 1;
+        if (this.version === 2) this.chainId = options.chainId || config.CHAIN_ID;
         this.currency = normalizeCurrency(currency);
         // id：参与 hash 的字段取决于是否有 currency / nonce（旧格式尽量不引入新字段）
         const idInput = from + to + amount + fee + note +
@@ -111,6 +115,25 @@ class Transaction {
         this.timestamp = new Date().toISOString();
         this.publicKey = '';
         this.signature = '';
+        if (options.blockHeight !== undefined) this.blockHeight = options.blockHeight;
+        if (this.version === 2) {
+            this.currency = currency === undefined ? DEFAULT_CURRENCY : currency;
+            this.amount = amount;
+            this.fee = fee;
+            this.nonce = nonce;
+            this.id = this.calculateHash();
+        }
+    }
+
+    static fromJSON(data) {
+        if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('无效交易对象');
+        const tx = Object.create(Transaction.prototype);
+        for (const key of ['version', 'chainId', 'id', 'from', 'to', 'amount', 'fee', 'note',
+            'currency', 'nonce', 'timestamp', 'publicKey', 'signature', 'blockHeight']) {
+            if (Object.hasOwn(data, key)) tx[key] = data[key];
+        }
+        tx.version = data.version ?? 1;
+        return tx;
     }
 
     /**
@@ -122,6 +145,7 @@ class Transaction {
      * ）
      */
     calculateHash() {
+        if (this.version === 2) return hash(transactionPayload(this));
         // 旧格式：nonce 与 currency 均为 undefined → 完全兼容旧链
         if (this.nonce === undefined && !this.currency) {
             return crypto.createHash('sha256').update(
@@ -139,6 +163,7 @@ class Transaction {
     }
 
     signTransaction(privateKeyPem, publicKeyHex) {
+        if (this.version === 2) this.id = this.calculateHash();
         if (!this.from || this.from === '' || this.from === 'SYSTEM') {
             return;
         }
@@ -157,6 +182,10 @@ class Transaction {
     }
 
     isValid() {
+        if (this.version !== 1 && this.version !== 2) return false;
+        if (this.version === 2) {
+            try { if (this.id !== this.calculateHash()) return false; } catch { return false; }
+        }
         // SYSTEM / 空 from 的交易：允许（用于挖矿奖励、备注文本等）
         if (!this.from || this.from === '' || this.from === 'SYSTEM') {
             return this.amount >= 0;
@@ -225,6 +254,7 @@ function calculateMerkleRoot(transactions) {
     // 注意：从其他节点或文件加载的 tx 可能是普通 JSON 对象（非 Transaction 实例），
     // 此时 tx.calculateHash 不存在，需要直接计算 hash
     let layer = transactions.map(tx => {
+        if (tx.version === 2) return Transaction.fromJSON(tx).calculateHash();
         if (typeof tx.calculateHash === 'function') {
             return tx.calculateHash();
         }
@@ -262,7 +292,13 @@ function calculateMerkleRoot(transactions) {
 // Block 类 - 现在包含 transactions 数组 和 Merkle 根
 // ============================================================
 class Block {
-    constructor(index, timestamp, dataOrTransactions, previousHash = '') {
+    constructor(index, timestamp, dataOrTransactions, previousHash = '', options = {}) {
+        this.version = options.version ?? 1;
+        if (this.version === 2) {
+            this.chainId = options.chainId;
+            this.consensusHash = options.consensusHash;
+            this.target = options.target;
+        }
         this.index = index;
         this.timestamp = timestamp;
         this.previousHash = previousHash;
@@ -300,6 +336,11 @@ class Block {
     }
 
     calculateHash() {
+        if (this.version === 2) {
+            return hash(JSON.stringify(['StarCoin/block', this.version, this.chainId,
+                this.consensusHash, this.index, this.previousHash, this.timestamp,
+                this.target, this.merkleRoot, this.nonce]));
+        }
         let dataForHash;
         if (this.merkleRoot) {
             // 新区块：使用 Merkle 根作为数据指纹
@@ -314,19 +355,14 @@ class Block {
         ).digest('hex');
     }
 
-    // 静态：根据难度值生成 {prefixLength, maxNextByte, targetText}
-    //   整数部分 = 前导零位数
-    //   小数部分 = 对"前导零后第一字节"的上限约束（0x00 ~ 0xff 映射到 0.00~1.00）
-    //   例：difficulty = 5.5  →  要求哈希以 "00000" 开头，且下一个 hex 值 ≤ 0x7f
+    // Approximate display information only; mining and validation use the full
+    // integer target. Fractional difficulty interpolates monotonically to 16x.
     static _parseDifficulty(difficulty) {
         const d = Math.max(0, Number(difficulty) || 0);
         const prefixLength = Math.floor(d);            // 前导零位数（整数部分）
         const fraction = d - prefixLength;             // 小数部分，0.00 ~ 0.999...
-        // 小数部分约束下一个 hex 字节的上限（00~ff 共 256 个值，映射 fraction*256）
-        // fraction=0 → 不额外约束（相当于只看前缀零）
-        // fraction=1 → 等价于 prefixLength+1（下一个字节必须是 0x00，即多一位零）
         const maxNextByte = fraction > 0
-            ? Math.max(0, Math.min(255, Math.floor(fraction * 256))) // 上限（不含）
+            ? Math.floor(256 / (1 + 15 * fraction))
             : null;
         const targetText = '0'.repeat(prefixLength) +
             (maxNextByte != null ? `(≤${maxNextByte.toString(16).padStart(2,'0')})` : '');
@@ -335,26 +371,15 @@ class Block {
 
     // 静态：判断一个 hash 是否满足指定难度（供挖矿、验证共用）
     static _meetsDifficulty(hash, difficulty) {
-        const { prefixLength, maxNextByte } = Block._parseDifficulty(difficulty);
-        // 1) 前缀零检查
-        if (hash.substring(0, prefixLength) !== '0'.repeat(prefixLength)) return false;
-        // 2) 小数部分：检查前缀之后的下一个字节（2 位 hex）是否在约束内
-        if (maxNextByte != null) {
-            const nextByteHex = hash.substring(prefixLength, prefixLength + 2);
-            if (nextByteHex.length < 2) return false;
-            const nextByteVal = parseInt(nextByteHex, 16);
-            // 注意：maxNextByte 是"上限（不含）"。fraction=1 → maxNextByte=256 时
-            // 实际上被上面 clamp 成 255，效果等价于"再加一位零"的近似。
-            if (nextByteVal >= maxNextByte) return false;
-        }
-        return true;
+        try { return meetsTarget(hash, targetForDifficulty(Math.max(0, difficulty))); }
+        catch { return false; }
     }
 
     // 同步挖矿（用于测试）
     mineBlock(difficulty) {
-        const { targetText } = Block._parseDifficulty(difficulty);
-        this.targetText = targetText;
-        while (!Block._meetsDifficulty(this.hash, difficulty)) {
+        const target = this.target ? BigInt('0x' + this.target) : targetForDifficulty(difficulty);
+        this.targetText = targetHex(target);
+        while (!meetsTarget(this.hash, target)) {
             this.nonce++;
             this.hash = this.calculateHash();
         }
@@ -365,10 +390,11 @@ class Block {
     // 增加 minIntervalMs 参数：距上次回调至少间隔此毫秒数，防止高频回调压垮前端
     // @param {function} [shouldAbort] - 可选函数，每次让步时调用，返回 true 则中止挖矿
     async mineBlockAsync(difficulty, onProgress, stepInterval = 5000, shouldAbort, minIntervalMs = 0) {
-        const { targetText } = Block._parseDifficulty(difficulty);
-        this.targetText = targetText;
         let lastCallbackTime = 0;
-        while (!Block._meetsDifficulty(this.hash, difficulty)) {
+        const target = this.target ? BigInt('0x' + this.target) : targetForDifficulty(difficulty);
+        const targetText = targetHex(target);
+        this.targetText = targetText;
+        while (!meetsTarget(this.hash, target)) {
             // 检查是否需要中止（例如外部链已更新）
             if (shouldAbort && shouldAbort()) {
                 if (onProgress) {

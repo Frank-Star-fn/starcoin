@@ -97,7 +97,7 @@ describe('StorageManager.clearDataFile', () => {
         const config = require('../../src/config');
         chain.difficulty = 10;
         chain.storage.clearDataFile();
-        expect(chain.difficulty).toBe(config.DIFFICULTY_INITIAL);
+        expect(chain.difficulty).toBe(chain.consensus.params.initialDifficulty);
     });
 
     it('清除后 lastAdjustmentBlock 重置为 0', () => {

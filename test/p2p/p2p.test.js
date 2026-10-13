@@ -33,13 +33,15 @@ function createMockStarCoin() {
       { index: 0, hash: '0'.repeat(64), previousHash: '0'.repeat(64), transactions: [] }
     ],
     pendingTransactions,
+    getChainWork(chain) { return BigInt((chain || this.chain).length); },
+    consensus: { fingerprint: 'test-consensus' },
     _addBlockCalls: [],
 
     getLatestBlock() { return this.chain[this.chain.length - 1]; },
 
     addBlock(block) {
       const latest = this.getLatestBlock();
-      if (latest.hash === block.previousHash) {
+      if (latest.hash === block.previousHash && block.index === latest.index + 1) {
         this.chain.push(block);
         this._addBlockCalls.push(block);
         return true;
@@ -102,6 +104,8 @@ describe('p2p — 完整 P2P 网络层', () => {
     return {
       chain: [{ index: 0, hash: '0'.repeat(64), previousHash: '0'.repeat(64) }],
       pendingTransactions: [],
+      getChainWork(chain) { return BigInt((chain || this.chain).length); },
+      consensus: { fingerprint: 'test-consensus' },
       getLatestBlock() { return this.chain[this.chain.length - 1]; },
       addBlock(block) { this.chain.push(block); return true; },
       replaceChain(chain) { this.chain = [...chain]; return true; },

@@ -52,12 +52,15 @@ function createP2P(server, starCoin, PORT, options = {}) {
         expectedCount: 0,
         resolved: false
     };
+    let syncTimeout = null;
 
     // ========== 同步候选链解析 ==========
 
     function resolveSyncCandidates() {
         if (syncState.resolved) return;
         syncState.resolved = true;
+        if (syncTimeout) clearTimeout(syncTimeout);
+        syncTimeout = null;
         syncState.isSyncing = false;
 
         const currentLength = starCoin.chain.length;
@@ -81,29 +84,14 @@ function createP2P(server, starCoin, PORT, options = {}) {
             return;
         }
 
-        validCandidates.sort((a, b) => b.length - a.length);
-        const best = validCandidates[0];
-
-        log.info('最佳候选', { fromNode: best.fromNode, length: best.length });
-
-        if (best.length <= currentLength) {
-            log.info('当前链已是最长，无需替换');
+        const scored = validCandidates.map(candidate => ({
+            ...candidate, work: starCoin.getChainWork(candidate.chain)
+        }));
+        scored.sort((a, b) => a.work > b.work ? -1 : a.work < b.work ? 1 : 0);
+        const best = scored[0];
+        if (!starCoin.replaceChain(best.chain)) {
             syncState.lastSyncAt = new Date().toISOString();
             return;
-        }
-
-        const myLatest = starCoin.getLatestBlock();
-        const theirLatest = best.chain[best.chain.length - 1];
-        if (myLatest.hash === theirLatest.previousHash) {
-            log.info('最佳链与当前链尾部连续，直接追加');
-            best.chain.slice(currentLength).forEach(b => starCoin.addBlock(b));
-        } else {
-            log.info('发生分叉，用最长有效链替换整条链');
-            if (!starCoin.replaceChain(best.chain)) {
-                log.warn('替换失败');
-                syncState.lastSyncAt = new Date().toISOString();
-                return;
-            }
         }
 
         handlers.updateNodeInfo();
@@ -131,6 +119,8 @@ function createP2P(server, starCoin, PORT, options = {}) {
         }
 
         syncState.isSyncing = true;
+        if (syncTimeout) clearTimeout(syncTimeout);
+        syncTimeout = null;
         syncState.resolved = false;
         syncState.candidates = [];
         syncState.syncCount = 0;
@@ -171,7 +161,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
             };
         }
 
-        setTimeout(() => {
+        syncTimeout = setTimeout(() => {
             if (!syncState.resolved) {
                 log.warn('同步超时，用已收到的候选进行解析');
                 resolveSyncCandidates();
@@ -193,6 +183,8 @@ function createP2P(server, starCoin, PORT, options = {}) {
     const origHandleMessage = handlers.handleMessage;
     handlers.handleMessage = function enhancedHandleMessage(ws, message, connectionId) {
         switch (message.type) {
+            case MESSAGE_TYPES.CHAIN:
+                return handlers.handleChainResponse(message.chain, message.fromNode);
             case MESSAGE_TYPES.NODE_LIST:
                 if (message.nodes && Array.isArray(message.nodes)) {
                     // 收到节点列表响应，处理发现的节点
@@ -266,8 +258,8 @@ function createP2P(server, starCoin, PORT, options = {}) {
 
         log.info('收到来自节点的交易', { fromNode, txId: transaction.id.substring(0, 16) });
 
-        // 使用 blockchain 的 addPendingTransaction 方法（跳过余额检查）
-        const result = starCoin.addPendingTransaction(transaction, true);
+        // 所有网络交易都必须验证余额、nonce 和签名
+        const result = starCoin.addPendingTransaction(transaction);
         if (result.success) {
             log.info('交易已加入本地交易池', { poolSize: starCoin.pendingTransactions.length });
         } else {
@@ -285,11 +277,11 @@ function createP2P(server, starCoin, PORT, options = {}) {
         let added = 0;
         let skipped = 0;
         for (const tx of transactions) {
-            if (starCoin.hasPendingTransaction(tx.id)) {
+            if (!tx || typeof tx.id !== 'string' || starCoin.hasPendingTransaction(tx.id)) {
                 skipped++;
                 continue;
             }
-            const result = starCoin.addPendingTransaction(tx, true);
+            const result = starCoin.addPendingTransaction(tx);
             if (result.success) {
                 added++;
             } else {
@@ -366,6 +358,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
     const origHandleChainResponse = handlers.handleChainResponse;
     handlers.handleChainResponse = function enhancedHandleChainResponse(chain, fromNode) {
         // ------ 同步汇聚模式 ------
+        if (!Array.isArray(chain) || !chain.length) return;
         if (syncState.isSyncing && fromNode) {
             log.info('收到节点的链', { fromNode, length: chain.length });
             syncState.candidates.push({
