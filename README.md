@@ -73,6 +73,8 @@ HD 功能沿用此 demo 的后端生成、派生和交易签名方式：助记�
 
 ## EVM 智能合约
 
+页面操作教程见 [智能合约使用指南](docs/smart-contract-guide.md)，包含 MetaMask、Counter、ERC20、资金存取和常见报错。
+
 基于 [EthereumJS VM](https://github.com/ethereumjs/ethereumjs-monorepo/tree/master/packages/vm) 10.1.0，固定使用 Shanghai 规则。支持合约部署、调用、STC value 转账、合约存储、事件日志和回执；通过 `/rpc` 支持 MetaMask、ethers 等 Ethereum 客户端。支持 EIP-155 legacy、EIP-2930 access-list 和 EIP-1559 交易（type 0/1/2）。现有钱包的 secp256k1 私钥同时控制原生 16 字节地址和标准 20 字节 EVM 地址，两个地址分别记账。HD 子地址可以直接使用。
 
 ### 首次升级已有网络
