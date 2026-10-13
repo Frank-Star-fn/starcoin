@@ -4,10 +4,14 @@
 const express = require('express');
 const request = require('supertest');
 const createMiningRoutes = require('../../src/routes/api-mining');
+const config = require('../../src/config');
 const { createMockStarCoin, createMockP2P, createSpy } = require('../helpers');
 
 describe('api-mining 路由 — 挖矿', () => {
   let starCoin, p2p, broadcastSpy, app;
+  const previousToken = config.ADMIN_TOKEN;
+  beforeAll(() => { config.ADMIN_TOKEN = 'test-admin'; });
+  afterAll(() => { config.ADMIN_TOKEN = previousToken; });
 
   beforeEach(() => {
     starCoin = createMockStarCoin();
@@ -15,6 +19,7 @@ describe('api-mining 路由 — 挖矿', () => {
     broadcastSpy = createSpy();
     app = express();
     app.use(express.json());
+    app.use((req, _res, next) => { req.headers.authorization = 'Bearer test-admin'; next(); });
     app.use(createMiningRoutes(starCoin, p2p, broadcastSpy));
   });
 
@@ -81,9 +86,10 @@ describe('api-mining 路由 — 挖矿', () => {
   // ============================================================
   describe('GET /mine/stream (SSE)', () => {
     it('返回 text/event-stream 响应头', async () => {
+      const job = await request(app).post('/mine/start').send({});
       // SSE 是长连接，这里只验证初始响应头
       const res = await request(app)
-        .get('/mine/stream')
+        .get('/mine/stream?jobId=' + job.body.jobId)
         .buffer(false)
         .parse((res, cb) => {
           let data = '';
@@ -98,7 +104,7 @@ describe('api-mining 路由 — 挖矿', () => {
 
       // 验证 SSE 响应头
       expect(res.headers['content-type']).toBe('text/event-stream');
-      expect(res.headers['cache-control']).toBe('no-cache');
+      expect(res.headers['cache-control']).toBe('no-store');
       expect(res.headers['connection']).toBe('keep-alive');
     }, 10000);
   });

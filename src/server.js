@@ -10,6 +10,7 @@ const createRoutes = require('./routes');
 const { EvmBlockchain } = require('./evm/blockchain');
 const projectRoot = require('./project-root');
 const createRpc = require('./rpc');
+const { protectHttp } = require('./middleware/access-control');
 const {
     createNotFoundMiddleware,
     createErrorMiddleware
@@ -29,6 +30,7 @@ logger.configure({
 
 const log = logger.module('Server');
 const app = express();
+app.use(protectHttp);
 const PORT = config.PORT;
 
 // 初始化区块链
@@ -95,7 +97,7 @@ async function start() {
     // 静态文件服务
     app.use(express.static(path.join(projectRoot, 'public')));
     // 同时提供 src/ 目录下的 JS 文件的访问
-    app.use('/src', express.static(path.join(projectRoot, 'src')));
+    app.use('/src/front', express.static(path.join(projectRoot, 'src/front')));
     app.get('/vendor/ethers.js', (_req, res) => res.sendFile(require.resolve('ethers').replace(/lib.commonjs[\\/]index.js$/, 'dist/ethers.umd.min.js')));
     app.use('/rpc', createRpc(starCoin, p2p, broadcastToFrontend));
     app.use(express.json({ limit: '1mb' }));
@@ -112,7 +114,7 @@ async function start() {
     app.use(createErrorMiddleware());
 
     // 启动服务器
-    server.listen(PORT, () => {
+    server.listen(PORT, config.HOST, () => {
         log.info('StarCoin 服务器已启动', { port: PORT, blocks: starCoin.chain.length, nodeId: p2p.nodeInfo.id });
 
         // ---------- 种子节点发现与启动同步 ----------

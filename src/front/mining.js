@@ -65,6 +65,46 @@ function _cancelMiningFlush() {
 // ============================================================
 // 单次挖矿（SSE 流，用于前端动画）
 // ============================================================
+// Fetch supports an Authorization header; native EventSource does not.
+function openMiningStream(minerAddress) {
+    const controller = new AbortController();
+    let closed = false, done = false, jobId = null;
+    const source = { onmessage: null, onerror: null, async close() {
+        if (closed) return;
+        closed = true; controller.abort();
+        if (jobId && !done) await api('/api/mine/stop', 'POST', { jobId }).catch(() => {});
+    } };
+    (async () => {
+        try {
+            const job = await api('/api/mine/start', 'POST', { minerAddress }); jobId = job.jobId;
+            if (closed) { await api('/api/mine/stop', 'POST', { jobId }); return; }
+            const response = await fetch('/api/mine/stream?jobId=' + encodeURIComponent(jobId), {
+                headers: adminHeaders(), signal: controller.signal
+            });
+            if (!response.ok) throw new Error('进度连接失败：HTTP ' + response.status);
+            const reader = response.body.getReader(), decoder = new TextDecoder(); let buffer = '';
+            while (!closed) {
+                const chunk = await reader.read();
+                if (chunk.done) break;
+                buffer += decoder.decode(chunk.value, { stream: true });
+                if (buffer.length > 65536) throw new Error('进度消息过大');
+                let index;
+                while ((index = buffer.indexOf('\n\n')) !== -1) {
+                    const event = buffer.slice(0, index); buffer = buffer.slice(index + 2);
+                    const line = event.split('\n').find(value => value.startsWith('data: '));
+                    if (line) {
+                        const payload = line.slice(6), value = JSON.parse(payload);
+                        if (value.found || value.error || value.stopped) done = true;
+                        source.onmessage?.({ data: payload });
+                    }
+                }
+            }
+            if (!closed && !done) throw new Error('进度连接已断开');
+        } catch (error) { if (!closed) source.onerror?.(error); }
+    })();
+    return source;
+}
+
 async function mineBlock() {
     const btn = document.getElementById('mineBtn');
     const minerAddr = document.getElementById('minerAddress').value.trim();
@@ -109,8 +149,7 @@ async function mineBlock() {
     let startTime = Date.now();
 
     // 使用 EventSource (SSE) 接收挖矿进度
-    const url = `/api/mine/stream?minerAddress=${encodeURIComponent(minerAddr)}`;
-    const eventSource = new EventSource(url);
+    const eventSource = openMiningStream(minerAddr);
     let miningCompleted = false;
     // 保存引用到全局变量，以便自动挖矿启动时能关闭此连接
     singleMineEventSource = eventSource;
@@ -303,7 +342,7 @@ async function toggleAutoMine() {
         }
         // 立即关闭正在运行的 SSE 连接，终止当前挖矿动画
         if (autoMineState.eventSource) {
-            autoMineState.eventSource.close();
+            await autoMineState.eventSource.close();
             autoMineState.eventSource = null;
         }
         // 清理 RAF 队列
@@ -347,7 +386,7 @@ async function toggleAutoMine() {
     // 关闭任何正在进行的单次挖矿 SSE，防止两个 SSE 同时更新同一批 DOM 导致文字抖动
     if (singleMineEventSource) {
         singleMineCancelled = true;         // 标记单次挖矿是被主动取消的，阻止 onerror 显示错误
-        singleMineEventSource.close();
+        await singleMineEventSource.close();
         singleMineEventSource = null;
     }
 
@@ -397,8 +436,7 @@ async function startNextAutoMine() {
     }
 
     const startTime = Date.now();
-    const url = `/api/mine/stream?minerAddress=${encodeURIComponent(autoMineState.minerAddress)}`;
-    const eventSource = new EventSource(url);
+    const eventSource = openMiningStream(autoMineState.minerAddress);
     // 保存 SSE 引用，方便停止时立即关闭
     autoMineState.eventSource = eventSource;
     let miningCompleted = false;

@@ -1,196 +1,105 @@
-// ============================================================
-// routes/api-mining.js — 挖矿相关路由
-// ============================================================
 const express = require('express');
-const { Block } = require('../blockchain/blockchain');
+const { randomUUID } = require('crypto');
+const config = require('../config');
 const { AppError, wrapAsync } = require('./error-handler');
-const logger = require('../logger');
+const { requireAdmin } = require('../middleware/access-control');
 
-/**
- * 创建挖矿相关的路由
- * @param {object} starCoin               - Blockchain 实例
- * @param {object} p2p                    - P2P 网络层实例
- * @param {function} broadcastToFrontend  - WebSocket 广播函数
- * @returns {express.Router}
- */
 function createMiningRoutes(starCoin, p2p, broadcastToFrontend) {
-    const router = express.Router();
+    const router = express.Router(), jobs = new Map();
+    let active = null, singleMining = false, streams = 0;
+    router.use('/mine', requireAdmin);
 
-    // ============================================================
-    // 8. 挖矿（从交易池打包交易）
-    // ============================================================
-    router.post('/mine', wrapAsync(async (req, res) => {
-        const { minerAddress, data } = req.body;
-        if (!minerAddress && !starCoin.miningAddress) {
-            throw new AppError(400, '必须提供 minerAddress 参数，或先配置 miningAddress', 'MISSING_MINER');
+    function address(body = {}) {
+        const value = body.minerAddress || starCoin.miningAddress;
+        if (typeof value !== 'string' || !value) throw new AppError(400, '必须提供 minerAddress 参数', 'MISSING_MINER');
+        return value;
+    }
+    function available() {
+        if (active || singleMining) throw new AppError(409, '已有挖矿任务运行中', 'MINING_BUSY');
+    }
+    function publish(job, data) {
+        job.latest = data;
+        for (const res of job.subscribers) {
+            if (!res.writableNeedDrain) res.write(`data: ${JSON.stringify(data)}\n\n`);
         }
-        const startTime = Date.now();
-        let newBlock;
+    }
+    function broadcast(block) {
+        p2p.broadcastLatest(); p2p.broadcastPendingTxs(); p2p.updateNodeInfo();
+        broadcastToFrontend('newBlock', { blockIndex: block.index, blockHash: block.hash,
+            transactionCount: block.transactions.length, difficulty: starCoin.difficulty });
+    }
+    async function run(job, minerAddress, data) {
         try {
-            newBlock = await starCoin.mineBlock(minerAddress || starCoin.miningAddress, data);
-        } catch (err) {
-            throw new AppError(400, err.message || '挖矿失败', 'MINE_FAILED');
+            let result;
+            do {
+                result = await starCoin.mineBlockAsync(minerAddress, data, progress => publish(job, progress), () => job.stopped);
+                if (result?.canceled && !job.stopped) await new Promise(resolve => setTimeout(resolve, 200));
+            } while (result?.canceled && !job.stopped);
+            if (job.stopped || result?.canceled) publish(job, { stopped: true, message: '挖矿已停止' });
+            else {
+                if (!result?.hash) throw new Error('挖矿未返回有效区块');
+                broadcast(result);
+                publish(job, { found: true, nonce: result.nonce, hash: result.hash, difficulty: starCoin.difficulty,
+                    block: { index: result.index, hash: result.hash, previousHash: result.previousHash,
+                        nonce: result.nonce, timestamp: result.timestamp, transactionCount: result.transactions.length },
+                    reward: starCoin.miningReward });
+            }
+        } catch { publish(job, { error: '挖矿失败，请检查节点日志' }); }
+        finally {
+            job.done = true;
+            if (active === job) active = null;
+            for (const res of job.subscribers) res.end();
+            const timer = setTimeout(() => jobs.delete(job.id), 120000); timer.unref();
         }
-        if (!newBlock || !newBlock.hash) {
-            throw new AppError(500, '挖矿失败，未返回有效区块', 'MINE_FAILED');
-        }
-        const miningTime = Date.now() - startTime;
+    }
 
-        // 广播新区块到其他节点
-        p2p.broadcastLatest();
-        p2p.broadcastPendingTxs();
-        p2p.updateNodeInfo();
-
-        // WebSocket 推送：新区块诞生
-        broadcastToFrontend('newBlock', {
-            blockIndex: newBlock.index,
-            blockHash: newBlock.hash,
-            transactionCount: newBlock.transactions.length,
-            difficulty: starCoin.difficulty
-        });
-
-        res.json({
-            success: true,
-            block: newBlock,
-            transactionCount: newBlock.transactions.length,
-            reward: starCoin.miningReward,
-            miningTime: miningTime + 'ms'
-        });
+    router.post('/mine', wrapAsync(async (req, res) => {
+        const minerAddress = address(req.body); available(); singleMining = true;
+        const startTime = Date.now();
+        try {
+            const block = await starCoin.mineBlock(minerAddress, req.body.data);
+            if (!block?.hash) throw new AppError(500, '挖矿未返回有效区块', 'MINE_FAILED');
+            broadcast(block);
+            res.json({ success: true, block, transactionCount: block.transactions.length,
+                reward: starCoin.miningReward, miningTime: `${Date.now() - startTime}ms` });
+        } catch (error) {
+            if (error instanceof AppError) throw error;
+            throw new AppError(400, '挖矿失败', 'MINE_FAILED');
+        } finally { singleMining = false; }
     }));
 
-    // ============================================================
-    // 8b. SSE 挖矿进度流（带可视化动画）
-    // ============================================================
-    router.get('/mine/stream', async (req, res) => {
-        const minerAddress = req.query.minerAddress || starCoin.miningAddress;
-
-        // 设置 SSE 响应头
-        res.writeHead(200, {
-            'Content-Type': 'text/event-stream',
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'Access-Control-Allow-Origin': '*'
-        });
-
-        // 持续挖矿标志：当中止时自动重启
-        let keepMining = true;
-        let consecutiveCancels = 0;
-
-        let clientDisconnected = false;
-        req.on('close', () => {
-            clientDisconnected = true;
-            keepMining = false;
-        });
-
-        while (keepMining && !clientDisconnected) {
-            const diffInfo = Block._parseDifficulty(starCoin.difficulty);
-            const chainLength = starCoin.chain.length;
-            res.write(`data: ${JSON.stringify({
-                nonce: 0, hash: '', target: diffInfo.targetText,
-                difficulty: starCoin.difficulty,
-                found: false, started: true,
-                chainLength: chainLength,
-                message: '⛏️ 开始挖矿... (难度=' + starCoin.difficulty + ', 目标=' + diffInfo.targetText + ', 高度=' + chainLength + ')'
-            })}\n\n`);
-
-            try {
-                const result = await starCoin.mineBlockAsync(minerAddress, null, (progress) => {
-                    if (progress.aborted) {
-                        res.write(`data: ${JSON.stringify({
-                            ...progress,
-                            message: '🔄 检测到区块链更新，正在切换到新链...'
-                        })}\n\n`);
-                    } else {
-                        res.write(`data: ${JSON.stringify(progress)}\n\n`);
-                    }
-                }, () => clientDisconnected);
-
-                if (result && result.canceled) {
-                    if (clientDisconnected) {
-                        keepMining = false;
-                        break;
-                    }
-                    consecutiveCancels++;
-                    // 指数退避：连续取消越频繁，等待越久，让多个节点自然错峰
-                    const backoffDelay = Math.min(200 * Math.pow(1.5, consecutiveCancels - 1), 3000);
-                    if (consecutiveCancels > 15) {
-                        // 连续取消超过 15 次，暂停 10 秒让链稳定下来
-                        logger.module('Mining').warn('链频繁更新，暂停 10s 让链稳定', { consecutiveCancels });
-                        res.write(`data: ${JSON.stringify({
-                            found: false,
-                            error: '链频繁更新，暂停 10s',
-                            message: '⏸️ 链频繁更新，暂停 10 秒让链稳定...'
-                        })}\n\n`);
-                        await new Promise(r => setTimeout(r, 10000));
-                        consecutiveCancels = Math.max(0, consecutiveCancels - 5); // 恢复部分计数
-                        // 继续循环尝试，不退出
-                        continue;
-                    }
-                    logger.module('Mining').info('链已更新，自动在新链上重新开始挖矿', { consecutiveCancels, newChainLength: starCoin.chain.length, backoffDelay });
-                    res.write(`data: ${JSON.stringify({
-                        chainUpdated: true,
-                        newChainLength: starCoin.chain.length,
-                        difficulty: starCoin.difficulty,
-                        backoffDelay,
-                        message: '🔄 区块链已更新（高度=' + starCoin.chain.length + '），' + (backoffDelay > 0 ? Math.round(backoffDelay) + 'ms 后重新开始...' : '立即重新开始...')
-                    })}\n\n`);
-                    // 退避等待，让其他节点先稳定
-                    if (backoffDelay > 0) {
-                        await new Promise(r => setTimeout(r, backoffDelay));
-                    }
-                    continue;
-                }
-
-                consecutiveCancels = 0;
-
-                p2p.broadcastLatest();
-                p2p.broadcastPendingTxs();
-                p2p.updateNodeInfo();
-
-                broadcastToFrontend('newBlock', {
-                    blockIndex: result.index,
-                    blockHash: result.hash,
-                    transactionCount: result.transactions.length,
-                    difficulty: starCoin.difficulty,
-                    source: 'sse-mining'
-                });
-
-                res.write(`data: ${JSON.stringify({
-                    found: true,
-                    nonce: result.nonce,
-                    hash: result.hash,
-                    difficulty: starCoin.difficulty,
-                    block: {
-                        index: result.index,
-                        hash: result.hash,
-                        previousHash: result.previousHash,
-                        nonce: result.nonce,
-                        timestamp: result.timestamp,
-                        transactionCount: result.transactions.length
-                    },
-                    reward: starCoin.miningReward,
-                    message: '🎉 挖矿成功！区块 #' + result.index + ' 已生成'
-                })}\n\n`);
-
-                keepMining = false;
-            } catch (err) {
-                if (!clientDisconnected) {
-                    res.write(`data: ${JSON.stringify({
-                        found: false,
-                        error: err.message,
-                        message: '❌ ' + err.message
-                    })}\n\n`);
-                }
-                keepMining = false;
-            }
+    router.post('/mine/start', wrapAsync(async (req, res) => {
+        const minerAddress = address(req.body); available();
+        if (jobs.size >= 32) {
+            const completed = [...jobs.values()].find(job => job.done);
+            if (completed) jobs.delete(completed.id);
         }
-
-        if (!clientDisconnected) {
-            res.end();
-        }
-    });
-
+        const job = { id: randomUUID(), stopped: false, done: false, latest: { started: true }, subscribers: new Set() };
+        jobs.set(job.id, job); active = job;
+        res.status(202).json({ success: true, jobId: job.id });
+        job.promise = run(job, minerAddress, req.body.data);
+    }));
+    router.post('/mine/stop', wrapAsync(async (req, res) => {
+        const job = jobs.get(req.body.jobId);
+        if (!job) throw new AppError(404, '挖矿任务不存在', 'JOB_NOT_FOUND');
+        job.stopped = true;
+        await job.promise;
+        res.json({ success: true, stopped: true });
+    }));
+    router.get('/mine/stream', wrapAsync(async (req, res) => {
+        const job = jobs.get(req.query.jobId);
+        if (!job) throw new AppError(404, '挖矿任务不存在，请先启动任务', 'JOB_NOT_FOUND');
+        if (streams >= config.MINING_MAX_STREAMS) throw new AppError(429, '进度连接过多', 'TOO_MANY_STREAMS');
+        streams++;
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
+        res.write(`data: ${JSON.stringify(job.latest)}\n\n`);
+        const heartbeat = setInterval(() => { if (!res.writableNeedDrain) res.write(': keepalive\n\n'); }, 15000);
+        heartbeat.unref();
+        const timeout = setTimeout(() => res.end(), 10 * 60 * 1000); timeout.unref();
+        res.on('close', () => { streams--; job.subscribers.delete(res); clearInterval(heartbeat); clearTimeout(timeout); });
+        if (job.done) res.end();
+        else job.subscribers.add(res);
+    }));
     return router;
 }
-
 module.exports = createMiningRoutes;

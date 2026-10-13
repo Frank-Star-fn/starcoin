@@ -3,6 +3,7 @@
 // ============================================================
 const express = require('express');
 const { AppError, wrapAsync } = require('./error-handler');
+const { requireAdmin } = require('../middleware/access-control');
 
 /**
  * 创建网络层相关的路由
@@ -13,6 +14,11 @@ const { AppError, wrapAsync } = require('./error-handler');
  */
 function createNetRoutes(starCoin, p2p, PORT) {
     const router = express.Router();
+    router.use((req, res, next) => {
+        const managed = /^\/(?:sync|mempool\/(?:sync|broadcast)|storage|connect|disconnect|discovery)(?:\/|$)/.test(req.path);
+        if (managed && (req.method !== 'GET' || req.path.startsWith('/storage'))) return requireAdmin(req, res, next);
+        next();
+    });
 
     // ============================================================
     // 节点同步

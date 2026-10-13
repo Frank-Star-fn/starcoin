@@ -4,16 +4,21 @@
 const express = require('express');
 const request = require('supertest');
 const createNetRoutes = require('../../src/routes/api-net');
+const config = require('../../src/config');
 const { createMockStarCoin, createMockP2P } = require('../helpers');
 
 describe('api-net 路由 — 网络、同步、存储、节点', () => {
   let starCoin, p2p, app;
+  const previousToken = config.ADMIN_TOKEN;
+  beforeAll(() => { config.ADMIN_TOKEN = 'test-admin'; });
+  afterAll(() => { config.ADMIN_TOKEN = previousToken; });
 
   beforeEach(() => {
     starCoin = createMockStarCoin();
     p2p = createMockP2P();
     app = express();
     app.use(express.json());
+    app.use((req, _res, next) => { req.headers.authorization = 'Bearer test-admin'; next(); });
     app.use(createNetRoutes(starCoin, p2p, 3000));
   });
 

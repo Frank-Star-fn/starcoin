@@ -42,6 +42,9 @@ const config = {
     // ======== 节点配置 ========
     /** HTTP/WS 服务端口 */
     PORT: int(process.env.PORT, 3000),
+    HOST: process.env.HOST || '127.0.0.1',
+    ADMIN_TOKEN: process.env.ADMIN_TOKEN || '',
+    HTTP_ALLOWED_HOSTS: (process.env.HTTP_ALLOWED_HOSTS || 'localhost,127.0.0.1,[::1]').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
     /** 种子节点列表（逗号分隔的 WebSocket URL） */
     SEED_PEERS: (process.env.SEED_PEERS || '').split(',').map(s => s.trim()).filter(Boolean),
     /** 自定义节点名称（可选） */
@@ -143,6 +146,7 @@ const config = {
     RATE_LIMIT_SEARCH_WINDOW_MS: int(process.env.RATE_LIMIT_SEARCH_WINDOW_MS, 60 * 1000),
     /** 搜索 / 重查询路由：允许请求数 / 窗口 */
     RATE_LIMIT_SEARCH_MAX: int(process.env.RATE_LIMIT_SEARCH_MAX, 200),
+    MINING_MAX_STREAMS: int(process.env.MINING_MAX_STREAMS, 8),
 };
 
 export = config;

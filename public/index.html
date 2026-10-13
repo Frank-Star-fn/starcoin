@@ -586,6 +586,12 @@
                             刷新数据
                         </button>
                     </div>
+                    <div class="panel">
+                        <label for="adminToken">节点管理凭证</label>
+                        <input id="adminToken" type="password" autocomplete="off" placeholder="填写节点 ADMIN_TOKEN">
+                        <button class="secondary" onclick="setAdminToken()">设置凭证</button>
+                        <span id="adminTokenStatus" class="hint">仅当前页面有效</span>
+                    </div>
                     <div class="panel node-stats">
                         <div class="stats" id="headerStats">
                             <div class="stat-box">

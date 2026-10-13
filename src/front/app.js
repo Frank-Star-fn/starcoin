@@ -184,7 +184,7 @@ function handleWsMessage(data) {
    工具函数
    ============================================================ */
 async function api(path, method = 'GET', body = null) {
-    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    const opts = { method, headers: { 'Content-Type': 'application/json', ...adminHeaders() } };
     if (body) opts.body = JSON.stringify(body);
     const res = await fetch(path, opts);
 
@@ -208,6 +208,14 @@ async function api(path, method = 'GET', body = null) {
         throw err;
     }
     return await res.json();
+}
+
+let adminToken = '';
+function adminHeaders() { return adminToken ? { Authorization: 'Bearer ' + adminToken } : {}; }
+function setAdminToken() {
+    const input = document.getElementById('adminToken');
+    adminToken = input.value.trim(); input.value = '';
+    document.getElementById('adminTokenStatus').textContent = adminToken ? '管理凭证已设置（仅当前页面有效）' : '管理凭证已清除';
 }
 
 function shortAddr(addr, len = 12) {

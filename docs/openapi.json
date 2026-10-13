@@ -160,11 +160,14 @@
         "responses": { "200": { "description": "已生成区块", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "block": { "$ref": "#/components/schemas/Block" }, "transactionCount": { "type": "integer" }, "reward": { "type": "number" }, "miningTime": { "type": "string", "example": "123ms" } } } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
       }
     },
+    "/mine/start": {"post":{"tags":["挖矿"],"summary":"启动单次挖矿任务（需要管理凭证）","operationId":"startMining","security":[{"adminBearer":[]}],"requestBody":{"content":{"application/json":{"schema":{"type":"object","properties":{"minerAddress":{"type":"string"},"data":{"type":"string"}}}}}},"responses":{"202":{"description":"任务已启动，返回 jobId"},"401":{"description":"管理凭证无效"},"409":{"description":"已有任务运行"},"503":{"description":"管理功能未启用"}}}},
+    "/mine/stop": {"post":{"tags":["挖矿"],"summary":"停止挖矿任务（需要管理凭证）","operationId":"stopMining","security":[{"adminBearer":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","required":["jobId"],"properties":{"jobId":{"type":"string"}}}}}},"responses":{"200":{"description":"任务已停止"},"401":{"description":"管理凭证无效"},"404":{"description":"任务不存在"}}}},
     "/mine/stream": {
       "get": {
         "tags": ["挖矿"], "summary": "以 SSE 返回单次挖矿进度", "operationId": "streamMining",
-        "description": "此 GET 会启动挖矿。每条事件格式为 data: <JSON> 后跟两个换行；started 表示开始，found=true 表示成功，error 表示错误或暂停提示，可能继续重试。成功后关闭连接；客户端断开会取消挖矿。",
-        "parameters": [{ "name": "minerAddress", "in": "query", "schema": { "type": "string" }, "description": "省略时使用节点 miningAddress" }],
+        "security": [{"adminBearer":[]}],
+        "description": "只订阅既有任务，不启动挖矿。使用 Authorization: Bearer 管理凭证，不能将凭证放在 URL 中。先 POST /mine/start 获取 jobId；停止任务调用 POST /mine/stop。每条事件格式为 data: <JSON> 后跟两个换行。",
+        "parameters": [{ "name": "jobId", "in": "query", "required": true, "schema": { "type": "string" }, "description": "POST /mine/start 返回的任务 ID" }],
         "responses": { "200": { "description": "SSE 文本流，事件中包含 nonce、hash、difficulty、found、message，以及可选的 block、reward 或 error。流内错误不改变 HTTP 200。", "content": { "text/event-stream": { "schema": { "type": "string" }, "example": "data: {\"found\":false,\"started\":true,\"nonce\":0}\n\ndata: {\"found\":true,\"nonce\":123,\"message\":\"挖矿成功\"}\n\n" } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
       }
     },
@@ -290,6 +293,7 @@
     }
   },
   "components": {
+    "securitySchemes": {"adminBearer":{"type":"http","scheme":"bearer","description":"ADMIN_TOKEN；未配置时管理操作禁用。仅允许可信 Host 和同源浏览器请求。"}},
     "parameters": {
       "Address": { "name": "address", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/Address" } }
     },
