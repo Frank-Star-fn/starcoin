@@ -2,6 +2,7 @@ const http = require('http');
 const WebSocket = require('ws');
 const { createP2P } = require('../../src/p2p/p2p');
 const { newFreshChain } = require('../helpers');
+const { createChainSync } = require('../../src/p2p/chain-sync');
 
 async function until(predicate) {
     const deadline = Date.now() + 2000;
@@ -36,10 +37,11 @@ it('真实 WebSocket 同步汇聚采用高工作量短链，忽略对方声称�
     try {
         for (const [i, branch] of [strong, weak].entries()) {
             const peer = new WebSocket('ws://127.0.0.1:' + port); peers.push(peer);
+            const sync = createChainSync({ sendMessage: (ws, message) => ws.send(JSON.stringify({ ...message,
+                chainWork: i === 1 ? '9999999999999999999' : '0' })) }, branch);
             peer.on('message', data => {
                 const message = JSON.parse(data.toString());
-                if (message.type === 'SYNC_REQUEST') peer.send(JSON.stringify({ type: 'CHAIN',
-                    fromNode: 'peer-' + i, chain: branch.chain, chainWork: i === 1 ? '9999999999999999999' : '0' }));
+                if (['SYNC_REQUEST', 'QUERY_BLOCKS'].includes(message.type)) sync.handle(peer, message);
             });
             await new Promise((resolve, reject) => { peer.once('open', resolve); peer.once('error', reject); });
         }

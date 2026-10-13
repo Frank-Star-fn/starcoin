@@ -67,12 +67,12 @@ describe('p2p-message-handlers', () => {
       });
     });
 
-    it('QUERY_ALL → 发送完整链', () => {
+    it('QUERY_ALL → 发送摘要而非完整链', () => {
       const ws = {};
       handlers.handleMessage(ws, { type: 'QUERY_ALL' });
       expect(mockNetwork.sendMessage).toHaveBeenCalledWith(ws, {
-        type: 'CHAIN',
-        chain: mockStarCoin.chain
+        type: 'CHAIN_SUMMARY', requestId: undefined, ancestor: null,
+        length: 1, latestHash: mockStarCoin.getLatestBlock().hash
       });
     });
 
@@ -113,13 +113,12 @@ describe('p2p-message-handlers', () => {
       expect(mockNetwork.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('SYNC_REQUEST → 发送完整链', () => {
+    it('SYNC_REQUEST → 发送摘要而非完整链', () => {
       const ws = {};
       handlers.handleMessage(ws, { type: 'SYNC_REQUEST', fromNode: 'node1' });
       expect(mockNetwork.sendMessage).toHaveBeenCalledWith(ws, {
-        type: 'CHAIN',
-        chain: mockStarCoin.chain,
-        fromNode: 'ws://localhost:3000'
+        type: 'CHAIN_SUMMARY', requestId: undefined, ancestor: null,
+        length: 1, latestHash: mockStarCoin.getLatestBlock().hash
       });
     });
 

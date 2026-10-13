@@ -311,7 +311,7 @@ describe('p2p-core — 核心网络层', () => {
       await closeServer(localServer);
     });
 
-    it('新节点连接后收到 CHAIN + NODE_INFO', async () => {
+    it('新节点连接后请求链头，不主动发送完整链', async () => {
       const handler = vi.fn();
       localCore.setHandler(handler);
 
@@ -326,7 +326,8 @@ describe('p2p-core — 核心网络层', () => {
 
       expect(received.length).toBeGreaterThanOrEqual(2);
       const types = received.map(r => r.type);
-      expect(types).toContain('CHAIN');
+      expect(types).toContain('QUERY_LATEST');
+      expect(types).not.toContain('CHAIN');
       expect(types).toContain('NODE_INFO');
 
       client.close();

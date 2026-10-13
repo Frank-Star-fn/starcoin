@@ -15,6 +15,10 @@ const MESSAGE_TYPES = {
     NODE_LIST_REQUEST: 'NODE_LIST_REQUEST',
     CHAIN_LENGTH: 'CHAIN_LENGTH',
     SYNC_REQUEST: 'SYNC_REQUEST',
+    CHAIN_SUMMARY: 'CHAIN_SUMMARY',
+    QUERY_BLOCKS: 'QUERY_BLOCKS',
+    BLOCKS: 'BLOCKS',
+    SYNC_RESTART: 'SYNC_RESTART',
     PING: 'PING',
     PONG: 'PONG',
     // 交易池广播相关
@@ -495,10 +499,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
             }
         });
 
-        sendMessage(ws, {
-            type: MESSAGE_TYPES.CHAIN,
-            chain: starCoin.chain
-        });
+        sendMessage(ws, { type: MESSAGE_TYPES.QUERY_LATEST });
 
         sendMessage(ws, {
             type: MESSAGE_TYPES.NODE_INFO,

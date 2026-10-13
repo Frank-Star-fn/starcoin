@@ -1,14 +1,28 @@
 const { MESSAGE_TYPES } = require('./p2p-core');
 const logger = require('../logger');
+const config = require('../config');
 const { settle } = require('./settle');
+const { createChainSync } = require('./chain-sync');
 
 /** 区块链业务消息处理：链同步、区块追加、交易池等，与 p2p-core 网络层解耦 */
 function createMessageHandlers(network, starCoin, options = {}) {
     const log = logger.module('P2P-Handlers');
+    let handlers;
+    const sync = createChainSync(network, starCoin, {
+        onChain: (chain, ws, requestId) => handlers.handleChainResponse(chain, network.peerUrl?.(ws), ws, requestId),
+        onProgress: options.onSyncProgress,
+        onFailure: options.onSyncFailure
+    });
 
     // 业务广播（封装网络层的 broadcast）
 
     function broadcastLatest() {
+        if (Buffer.byteLength(JSON.stringify({ type: MESSAGE_TYPES.BLOCK, block: starCoin.getLatestBlock() }), 'utf8') > config.P2P_MAX_PAYLOAD) {
+            // Large blocks use the same bounded download path as historical blocks.
+            network.broadcast({ type: MESSAGE_TYPES.CHAIN_SUMMARY, length: starCoin.chain.length,
+                latestHash: starCoin.getLatestBlock().hash, ancestor: null });
+            return;
+        }
         network.broadcast({
             type: MESSAGE_TYPES.BLOCK,
             block: starCoin.getLatestBlock()
@@ -76,7 +90,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
         return settle(starCoin.replaceChain(chain), accepted => { if (accepted) notifyChainChange(); });
     }
 
-    function handleBlockResponse(block) {
+    function handleBlockResponse(block, ws) {
         if (!block || typeof block.hash !== 'string') return;
         const latest = starCoin.getLatestBlock();
         if (block.hash === latest.hash) return;
@@ -84,7 +98,8 @@ function createMessageHandlers(network, starCoin, options = {}) {
             return settle(starCoin.addBlock(block), accepted => { if (accepted) notifyChainChange(); });
         } else {
             // A shorter/equal-height branch may have more work. Ask for its proof.
-            broadcastQueryAll();
+            if (ws) { if (!sync.active(ws)) sync.request(ws); }
+            else broadcastQueryAll();
         }
     }
 
@@ -114,21 +129,26 @@ function createMessageHandlers(network, starCoin, options = {}) {
     function handleMessage(ws, message, connectionId) {
         switch (message.type) {
             case MESSAGE_TYPES.QUERY_LATEST:
+                if (Buffer.byteLength(JSON.stringify({ type: MESSAGE_TYPES.BLOCK, block: starCoin.getLatestBlock() }), 'utf8') > config.P2P_MAX_PAYLOAD) {
+                    sync.summary(ws);
+                    break;
+                }
                 network.sendMessage(ws, {
                     type: MESSAGE_TYPES.BLOCK,
                     block: starCoin.getLatestBlock()
                 });
                 break;
             case MESSAGE_TYPES.QUERY_ALL:
-                network.sendMessage(ws, {
-                    type: MESSAGE_TYPES.CHAIN,
-                    chain: starCoin.chain
-                });
-                break;
+            case MESSAGE_TYPES.SYNC_REQUEST:
+            case MESSAGE_TYPES.CHAIN_SUMMARY:
+            case MESSAGE_TYPES.QUERY_BLOCKS:
+            case MESSAGE_TYPES.BLOCKS:
+            case MESSAGE_TYPES.SYNC_RESTART:
+                return sync.handle(ws, message);
             case MESSAGE_TYPES.CHAIN:
                 return handleChainResponse(message.chain, message.fromNode);
             case MESSAGE_TYPES.BLOCK:
-                return handleBlockResponse(message.block);
+                return handleBlockResponse(message.block, ws);
             case MESSAGE_TYPES.NODE_INFO:
                 handleNodeInfo(message.node);
                 break;
@@ -139,14 +159,6 @@ function createMessageHandlers(network, starCoin, options = {}) {
                     length: starCoin.chain.length,
                     chainWork: starCoin.getChainWork().toString(),
                     latestHash: starCoin.getLatestBlock().hash,
-                    fromNode: network.nodeInfo.url
-                });
-                break;
-            case MESSAGE_TYPES.SYNC_REQUEST:
-                log.info('收到同步请求，发送完整链', { fromNode: message.fromNode });
-                network.sendMessage(ws, {
-                    type: MESSAGE_TYPES.CHAIN,
-                    chain: starCoin.chain,
                     fromNode: network.nodeInfo.url
                 });
                 break;
@@ -173,7 +185,9 @@ function createMessageHandlers(network, starCoin, options = {}) {
         }
     }
 
-    return {
+    handlers = {
+        requestSync: sync.request,
+        cancelSync: sync.cancel,
         handleMessage,
         handleChainResponse,
         handleBlockResponse,
@@ -188,6 +202,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
         broadcastPendingTxs,
         updateNodeInfo,
     };
+    return handlers;
 }
 
 module.exports = { createMessageHandlers };

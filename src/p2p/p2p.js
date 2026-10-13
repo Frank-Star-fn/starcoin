@@ -31,8 +31,20 @@ function createP2P(server, starCoin, PORT, options = {}) {
         broadcast: core.broadcast,
         nodeInfo: core.nodeInfo,
         nodes: core.nodes,
-        pendingPongs: core.pendingPongs
-    }, starCoin, options);
+        pendingPongs: core.pendingPongs,
+        peerUrl: ws => Array.from(core.nodeConnections.values()).find(conn => conn.ws === ws)?.url
+    }, starCoin, { ...options,
+        onSyncProgress: (ws, id) => {
+            if (syncState.isSyncing && id === syncState.round && syncState.peers.has(ws)) resetSyncTimeout();
+        },
+        onSyncFailure: (ws, id) => {
+            if (syncState.isSyncing && id === syncState.round && syncState.peers.has(ws) && !syncState.completed.has(ws)) {
+                syncState.completed.add(ws); syncState.syncCount++;
+                if (syncState.syncCount >= syncState.expectedCount)
+                    Promise.resolve(resolveSyncCandidates()).catch(error => log.error('同步验证失败', error));
+            }
+        }
+    });
 
     // 3. 创建节点发现模块（独立于区块链业务逻辑）
     //    - 管理待连接节点队列，周期性扫描网络
@@ -51,7 +63,10 @@ function createP2P(server, starCoin, PORT, options = {}) {
         candidates: [],
         syncCount: 0,
         expectedCount: 0,
-        resolved: false
+        resolved: false,
+        peers: new Set(),
+        completed: new Set(),
+        round: null
     };
     let syncTimeout = null;
 
@@ -63,6 +78,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         if (syncTimeout) clearTimeout(syncTimeout);
         syncTimeout = null;
         syncState.isSyncing = false;
+        for (const ws of syncState.peers) handlers.cancelSync(ws, syncState.round);
 
         const currentLength = starCoin.chain.length;
         const candidates = syncState.candidates;
@@ -103,15 +119,16 @@ function createP2P(server, starCoin, PORT, options = {}) {
         if (options.onChainChange) {
             options.onChainChange();
         }
+        for (const ws of syncState.peers) core.sendMessage(ws, { type: MESSAGE_TYPES.QUERY_LATEST });
         });
         });
     }
 
     function syncWithPeers() {
-        const connectedCount = core.nodeConnections.size +
-            (Array.from(core.wss.clients).filter(c => !c.isFrontend && c.readyState === 1).length);
+        const peers = new Set([...Array.from(core.nodeConnections.values(), conn => conn.ws), ...core.wss.clients]
+            .filter(ws => ws && !ws.isFrontend && ws.readyState === WebSocket.OPEN));
 
-        if (connectedCount === 0) {
+        if (peers.size === 0) {
             log.warn('当前没有连接的对等节点，无法同步');
             return {
                 success: false,
@@ -121,54 +138,25 @@ function createP2P(server, starCoin, PORT, options = {}) {
         }
 
         syncState.isSyncing = true;
+        for (const ws of syncState.peers) handlers.cancelSync(ws, syncState.round);
         if (syncTimeout) clearTimeout(syncTimeout);
         syncTimeout = null;
         syncState.resolved = false;
         syncState.candidates = [];
         syncState.syncCount = 0;
-        syncState.expectedCount = core.nodeConnections.size;
+        syncState.peers = peers;
+        syncState.completed = new Set();
+        syncState.round = core.generateConnectionId('sync');
+        syncState.expectedCount = peers.size;
 
         log.info('开始与节点同步', { expectedCount: syncState.expectedCount });
 
-        let sent = 0;
-        core.nodeConnections.forEach((conn) => {
-            if (conn.ws && conn.ws.readyState === 1) {
-                core.sendMessage(conn.ws, {
-                    type: MESSAGE_TYPES.SYNC_REQUEST,
-                    fromNode: core.nodeInfo.url
-                });
-                sent++;
-            }
-        });
+        const sent = peers.size;
+        for (const ws of peers) handlers.requestSync(ws, syncState.round);
 
-        core.wss.clients.forEach((client) => {
-            if (!client.isFrontend && client.readyState === 1) {
-                core.sendMessage(client, {
-                    type: MESSAGE_TYPES.SYNC_REQUEST,
-                    fromNode: core.nodeInfo.url
-                });
-                sent++;
-            }
-        });
-
-        syncState.expectedCount = sent;
         log.info('已向节点发送同步请求', { sent });
 
-        if (sent === 0) {
-            syncState.isSyncing = false;
-            return {
-                success: false,
-                message: '无法向节点发送同步请求',
-                currentLength: starCoin.chain.length
-            };
-        }
-
-        syncTimeout = setTimeout(() => {
-            if (!syncState.resolved) {
-                log.warn('同步超时，用已收到的候选进行解析');
-                Promise.resolve(resolveSyncCandidates()).catch(error => log.error('同步验证失败', error));
-            }
-        }, config.SYNC_TIMEOUT);
+        resetSyncTimeout();
 
         return {
             success: true,
@@ -176,6 +164,19 @@ function createP2P(server, starCoin, PORT, options = {}) {
             requestedNodes: sent,
             currentLength: starCoin.chain.length
         };
+    }
+
+    function resetSyncTimeout() {
+        if (syncTimeout) clearTimeout(syncTimeout);
+        syncTimeout = setTimeout(() => {
+            if (!syncState.resolved) {
+                // Complete downloads may still be awaiting asynchronous EVM validation.
+                if (syncState.completed.size > syncState.syncCount) { resetSyncTimeout(); return; }
+                log.warn('同步超时，用已收到的候选进行解析');
+                Promise.resolve(resolveSyncCandidates()).catch(error => log.error('同步验证失败', error));
+            }
+        }, config.SYNC_TIMEOUT);
+        syncTimeout.unref?.();
     }
 
     // ========== 扩展消息处理 ==========
@@ -186,7 +187,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
     handlers.handleMessage = function enhancedHandleMessage(ws, message, connectionId) {
         switch (message.type) {
             case MESSAGE_TYPES.CHAIN:
-                return handlers.handleChainResponse(message.chain, message.fromNode);
+                return handlers.handleChainResponse(message.chain, message.fromNode, ws);
             case MESSAGE_TYPES.NODE_LIST:
                 if (message.nodes && Array.isArray(message.nodes)) {
                     // 收到节点列表响应，处理发现的节点
@@ -362,10 +363,12 @@ function createP2P(server, starCoin, PORT, options = {}) {
 
     // ========== 扩展 handleChainResponse：注入同步汇聚模式 ==========
     const origHandleChainResponse = handlers.handleChainResponse;
-    handlers.handleChainResponse = function enhancedHandleChainResponse(chain, fromNode) {
+    handlers.handleChainResponse = function enhancedHandleChainResponse(chain, fromNode, ws, requestId) {
         // ------ 同步汇聚模式 ------
         if (!Array.isArray(chain) || !chain.length) return;
-        if (syncState.isSyncing && fromNode) {
+        if (syncState.isSyncing && syncState.peers.has(ws) && (!requestId || requestId === syncState.round)) {
+            if (syncState.completed.has(ws)) return;
+            syncState.completed.add(ws);
             log.info('收到节点的链', { fromNode, length: chain.length });
             const batch = syncState.candidates;
             return settle(starCoin.isChainValid(chain), valid => {

@@ -310,7 +310,7 @@ describe('connectToPeer / disconnectFromPeer', () => {
   // P2P 消息处理 — 通过真实 WebSocket 连接验证
   // ============================================================
   describe('P2P 消息处理（通过真实 WS 连接验证）', () => {
-    it('客户端连接时自动收到 CHAIN + NODE_INFO', async () => {
+    it('客户端连接时收到链头请求和 NODE_INFO', async () => {
       const client = new WebSocket(`ws://localhost:${port}`);
       const received = [];
 
@@ -321,7 +321,8 @@ describe('connectToPeer / disconnectFromPeer', () => {
       await sleep(200);
 
       const types = received.map(r => r.type);
-      expect(types).toContain('CHAIN');
+      expect(types).toContain('QUERY_LATEST');
+      expect(types).not.toContain('CHAIN');
       expect(types).toContain('NODE_INFO');
 
       client.close();

@@ -78,6 +78,8 @@ const config = {
     // ======== 链同步配置 ========
     /** 同步响应超时（毫秒） */
     SYNC_TIMEOUT: int(process.env.SYNC_TIMEOUT, 10000),
+    /** 每个连接一次候选链下载的最大字节数（不改变共识规则） */
+    P2P_SYNC_MAX_BYTES: int(process.env.P2P_SYNC_MAX_BYTES, 256 * 1024 * 1024),
     /** 定期自动同步间隔（毫秒） */
     SYNC_INTERVAL: int(process.env.SYNC_INTERVAL, 60000),
     /** 链健康检查间隔（毫秒） */
