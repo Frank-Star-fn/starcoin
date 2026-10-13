@@ -35,16 +35,7 @@ async function hdCredentials(root) {
 }
 
 function commitHdState(wallets, hdRoots, selectedWallet) {
-    // Write before changing memory: quota/storage failures leave the old wallet intact.
-    if (walletStorageSnapshot !== undefined && localStorage.getItem('starcoin_wallets') !== walletStorageSnapshot) {
-        throw new Error('钱包数据已在其他标签页更新，请刷新后重试');
-    }
-    const serialized = JSON.stringify({ version: 3, storageType: 'browser-key', wallets, hdRoots, selectedWallet });
-    localStorage.setItem('starcoin_wallets', serialized);
-    walletStorageSnapshot = serialized;
-    state.wallets = wallets;
-    state.hdRoots = hdRoots;
-    state.selectedWallet = selectedWallet;
+    saveWallets(wallets, hdRoots, selectedWallet);
 }
 
 async function storeHdResult(result, credentials, backup = null) {

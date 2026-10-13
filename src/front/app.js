@@ -255,30 +255,20 @@ function clearMessage(id) {
 
 /**
  * 保存钱包数据到 localStorage（加密格式 version 3）
- * state.wallets 中的 encryptedPrivateKey 已由调用方写入，
- * 此处仅做序列化持久化
+ * 候选钱包已由调用方加密；写入成功后才更新内存，保存异常由调用方处理。
  */
 let walletStorageSnapshot;
 
-function saveWallets() {
-    try {
-        if (walletStorageSnapshot !== undefined && localStorage.getItem('starcoin_wallets') !== walletStorageSnapshot) {
-            throw new Error('钱包数据已在其他标签页更新，请刷新后重试');
-        }
-        const data = {
-            version: 3,
-            storageType: 'browser-key',
-            wallets: state.wallets,
-            hdRoots: state.hdRoots,
-            selectedWallet: state.selectedWallet
-        };
-        const serialized = JSON.stringify(data);
-        localStorage.setItem('starcoin_wallets', serialized);
-        walletStorageSnapshot = serialized;
-    } catch (e) {
-        console.error('saveWallets error:', e);
-        showMessage('txMessage', '❌ 钱包保存失败：' + e.message, 'error');
+function saveWallets(wallets = state.wallets, hdRoots = state.hdRoots, selectedWallet = state.selectedWallet) {
+    if (walletStorageSnapshot !== undefined && localStorage.getItem('starcoin_wallets') !== walletStorageSnapshot) {
+        throw new Error('钱包数据已在其他标签页更新，请刷新后重试');
     }
+    const serialized = JSON.stringify({ version: 3, storageType: 'browser-key', wallets, hdRoots, selectedWallet });
+    localStorage.setItem('starcoin_wallets', serialized);
+    walletStorageSnapshot = serialized;
+    state.wallets = wallets;
+    state.hdRoots = hdRoots;
+    state.selectedWallet = selectedWallet;
 }
 
 /** 从 localStorage 加载钱包，自动检测 v1/v2/v3 格式并迁移 */
@@ -312,7 +302,6 @@ async function loadWallets() {
         if (Array.isArray(parsed)) {
             console.log('🔒 检测到旧格式钱包数据，正在加密迁移...');
             await migrateV1ToV2(parsed);
-            saveWallets();
             console.log(`✅ 迁移完成：${state.wallets.length} 个私钥已加密存储`);
             return;
         }
@@ -321,6 +310,7 @@ async function loadWallets() {
         console.warn('loadWallets: 未知的钱包数据格式', typeof parsed);
     } catch (e) {
         console.error('loadWallets error:', e);
+        showMessage('txMessage', '❌ 钱包加载失败：' + e.message, 'error');
     }
 }
 
@@ -369,7 +359,7 @@ async function migrateV1ToV2(oldWallets) {
         });
     }
 
-    state.wallets = newWallets;
+    saveWallets(newWallets);
     // 清空旧格式存储（已无明文 privateKey）
     localStorage.removeItem('starcoin_wallets_old');
 }

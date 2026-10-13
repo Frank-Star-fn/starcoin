@@ -29,11 +29,10 @@ async function generateWallet() {
             publicKey: data.wallet.publicKey,
             address: data.wallet.address
         };
-        state.wallets.push(w);
-        state.selectedWallet = state.wallets.length - 1; // 自动选中新钱包
+        const wallets = state.wallets.concat(w);
+        saveWallets(wallets, state.hdRoots, wallets.length - 1); // 保存成功后自动选中新钱包
         renderWallets();
         renderTransfer();
-        saveWallets();
         if (typeof debouncedRefreshAll === 'function') {
             debouncedRefreshAll('high');
         } else {
@@ -61,11 +60,11 @@ async function generateWallet() {
  * @param {number} index - 钱包索引
  */
 function selectWallet(index) {
-    state.selectedWallet = index;
+    try { saveWallets(state.wallets, state.hdRoots, index); }
+    catch (err) { showMessage('txMessage', '❌ 切换钱包失败：' + err.message, 'error'); return; }
     renderWallets();
     renderTransfer();
     refreshSelectedWalletDetails();
-    saveWallets();
 }
 
 /* ============================================================
@@ -110,11 +109,11 @@ function removeWallet(index) {
             refreshSelectedWalletDetails();
         });
     }
-    state.wallets.splice(index, 1);
-    if (state.selectedWallet >= state.wallets.length) state.selectedWallet = state.wallets.length - 1;
+    const wallets = state.wallets.filter((_wallet, i) => i !== index);
+    try { saveWallets(wallets, state.hdRoots, Math.min(state.selectedWallet, wallets.length - 1)); }
+    catch (err) { showMessage('txMessage', '❌ 删除钱包失败：' + err.message, 'error'); return; }
     renderWallets();
     renderTransfer();
-    saveWallets();
 }
 
 /* ============================================================
@@ -159,8 +158,13 @@ function renameWallet(index) {
     function confirmRename() {
         const newName = input.value.trim();
         if (newName && newName !== originalName) {
-            state.wallets[index].label = newName;
-            saveWallets();
+            const wallets = state.wallets.map((wallet, i) => i === index ? { ...wallet, label: newName } : wallet);
+            try { saveWallets(wallets); }
+            catch (err) {
+                labelEl.textContent = originalName;
+                showMessage('txMessage', '❌ 重命名钱包失败：' + err.message, 'error');
+                return;
+            }
             renderWallets();
             renderTransfer();
         } else if (!newName) {
@@ -304,15 +308,15 @@ async function doImportPrivateKey() {
         // 加密私钥
         const encrypted = await encryptPrivateKey(w.privateKey);
 
-        state.wallets.push({
+        const walletEntry = {
             type: 'private-key',
             label: '钱包 #' + (state.wallets.length + 1) + ' (导入)',
             encryptedPrivateKey: encrypted,
             publicKey: w.publicKey,
             address: w.address
-        });
-        state.selectedWallet = state.wallets.length - 1;
-        saveWallets();
+        };
+        const wallets = state.wallets.concat(walletEntry);
+        saveWallets(wallets, state.hdRoots, wallets.length - 1);
         renderWallets();
         renderTransfer();
 
@@ -419,11 +423,10 @@ async function importPrivateKey() {
                 publicKey: w.publicKey,
                 address: w.address
             };
-            state.wallets.push(walletEntry);
-            state.selectedWallet = state.wallets.length - 1; // 自动选中
+            const wallets = state.wallets.concat(walletEntry);
+            saveWallets(wallets, state.hdRoots, wallets.length - 1); // 保存成功后自动选中
             renderWallets();
             renderTransfer();
-            saveWallets();
             hideImportKeyDialog();
             showMessage('txMessage', `✅ 私钥导入成功！地址: ${shortAddr(w.address, 20)}`, 'success', 5000);
             if (typeof debouncedRefreshAll === 'function') {
@@ -580,11 +583,10 @@ async function importWalletFromMnemonic() {
                 publicKey: w.publicKey,
                 address: w.address
             };
-            state.wallets.push(walletEntry);
-            state.selectedWallet = state.wallets.length - 1;
+            const wallets = state.wallets.concat(walletEntry);
+            saveWallets(wallets, state.hdRoots, wallets.length - 1);
             renderWallets();
             renderTransfer();
-            saveWallets();
             hideImportMnemonicDialog();
             showMessage('txMessage', `✅ 助记词导入成功！地址: ${shortAddr(w.address, 20)}`, 'success', 5000);
             if (typeof debouncedRefreshAll === 'function') {
