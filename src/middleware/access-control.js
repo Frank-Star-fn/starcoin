@@ -18,7 +18,7 @@ function sameOrigin(req) {
     if (!allowedHost(req)) return false;
     const origin = req.headers.origin;
     if (!origin) return req.headers['sec-fetch-site'] !== 'cross-site';
-    try { return new URL(origin).origin === `${req.protocol}://${req.headers.host}`; }
+    try { return new URL(origin).origin === `${req.protocol || (req.socket?.encrypted ? 'https' : 'http')}://${req.headers.host}`; }
     catch { return false; }
 }
 

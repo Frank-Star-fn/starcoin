@@ -66,6 +66,12 @@ const config = {
     P2P_DISCOVERY_MAX_PEERS: int(process.env.P2P_DISCOVERY_MAX_PEERS, 20),
     /** 每轮最大尝试连接数 */
     P2P_DISCOVERY_MAX_PER_ROUND: int(process.env.P2P_DISCOVERY_MAX_PER_ROUND, 3),
+    P2P_ALLOWED_HOSTS: (process.env.P2P_ALLOWED_HOSTS || 'localhost,127.0.0.1,[::1]').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
+    P2P_MAX_PAYLOAD: int(process.env.P2P_MAX_PAYLOAD, 4 * 1024 * 1024),
+    P2P_MAX_CHAIN_BLOCKS: int(process.env.P2P_MAX_CHAIN_BLOCKS, 10000),
+    P2P_MAX_TRANSACTIONS: int(process.env.P2P_MAX_TRANSACTIONS, 1000),
+    P2P_MAX_MESSAGES: int(process.env.P2P_MAX_MESSAGES, 120),
+    P2P_MAX_CONNECTIONS: int(process.env.P2P_MAX_CONNECTIONS, 32),
 
     // ======== 链同步配置 ========
     /** 同步响应超时（毫秒） */

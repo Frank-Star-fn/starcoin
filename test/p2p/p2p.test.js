@@ -102,7 +102,7 @@ describe('p2p — 完整 P2P 网络层', () => {
    */
   function createMinimalStarCoin() {
     return {
-      chain: [{ index: 0, hash: '0'.repeat(64), previousHash: '0'.repeat(64) }],
+      chain: [{ index: 0, hash: '0'.repeat(64), previousHash: '0'.repeat(64), transactions: [] }],
       pendingTransactions: [],
       getChainWork(chain) { return BigInt((chain || this.chain).length); },
       consensus: { fingerprint: 'test-consensus' },

@@ -109,7 +109,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
 
     function syncWithPeers() {
         const connectedCount = core.nodeConnections.size +
-            (Array.from(core.wss.clients).filter(c => c.readyState === 1).length);
+            (Array.from(core.wss.clients).filter(c => !c.isFrontend && c.readyState === 1).length);
 
         if (connectedCount === 0) {
             log.warn('当前没有连接的对等节点，无法同步');
@@ -142,7 +142,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         });
 
         core.wss.clients.forEach((client) => {
-            if (client.readyState === 1) {
+            if (!client.isFrontend && client.readyState === 1) {
                 core.sendMessage(client, {
                     type: MESSAGE_TYPES.SYNC_REQUEST,
                     fromNode: core.nodeInfo.url
@@ -347,7 +347,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         };
 
         core.wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN) {
+            if (!client.isFrontend && client.readyState === WebSocket.OPEN) {
                 core.sendMessage(client, requestMsg);
             }
         });

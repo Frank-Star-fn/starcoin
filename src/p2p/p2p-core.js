@@ -1,6 +1,8 @@
 const WebSocket = require('ws');
 const config = require('../config');
 const logger = require('../logger');
+const { validPeerUrl, receiveMessages } = require('./message-security');
+const { sameOrigin } = require('../middleware/access-control');
 
 // 消息类型
 const MESSAGE_TYPES = {
@@ -49,7 +51,20 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
     const log = logger.module('P2P-Core');
 
     // WebSocket 服务器
-    const wss = new WebSocket.Server({ server });
+    const sockets = new Set(), attempts = new Map();
+    const wss = new WebSocket.Server({ server, maxPayload: config.P2P_MAX_PAYLOAD, perMessageDeflate: false,
+        verifyClient: ({ req }) => {
+            if (sockets.size >= config.P2P_MAX_CONNECTIONS) return false;
+            const key = req.socket.remoteAddress, now = Date.now();
+            const bucket = attempts.get(key) || { time: now, count: 0 };
+            if (now - bucket.time >= 60000) { bucket.time = now; bucket.count = 0; }
+            for (const [ip, entry] of attempts) if (now - entry.time >= 60000) attempts.delete(ip);
+            if (attempts.size >= 1024 && !attempts.has(key)) return false;
+            attempts.set(key, bucket);
+            if (++bucket.count > 30) return false;
+            return req.url === '/ws' ? sameOrigin(req) : req.url === '/' && !req.headers.origin;
+        }
+    });
     wss.on('error', error => log.error('WebSocket 服务错误', error));
 
     // 节点状态
@@ -183,7 +198,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
     function broadcast(message) {
         const jsonMessage = JSON.stringify(message);
         wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN) {
+            if (!client.isFrontend && client.readyState === WebSocket.OPEN) {
                 client.send(jsonMessage);
             }
         });
@@ -202,6 +217,8 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
      * @param {boolean} [enableReconnect=true] - 是否启用自动重连
      */
     function connectToPeer(peerUrl, options = {}) {
+        if (!validPeerUrl(peerUrl)) throw new Error('节点 URL 或主机不受信任，请配置 P2P_ALLOWED_HOSTS');
+        if (sockets.size >= config.P2P_MAX_CONNECTIONS) return;
         // 向后兼容：如果第二个参数是 boolean，转为 { enableReconnect }
         if (typeof options === 'boolean') {
             options = { enableReconnect: options };
@@ -229,7 +246,11 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
             _initReconnect(peerUrl);
         }
 
-        const ws = createSocket ? createSocket(peerUrl) : new WebSocket(peerUrl);
+        const ws = createSocket ? createSocket(peerUrl) : new WebSocket(peerUrl, {
+            maxPayload: config.P2P_MAX_PAYLOAD, perMessageDeflate: false, handshakeTimeout: 5000, followRedirects: false
+        });
+        sockets.add(ws);
+        ws.once('close', () => sockets.delete(ws));
         const connectionId = customId || `conn_${Math.random().toString(36).substr(2, 9)}`;
 
         ws.on('open', () => {
@@ -269,11 +290,8 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
             if (onConnected) onConnected(peerUrl);
         });
 
-        ws.on('message', (message) => {
-            if (_messageHandler) {
-                Promise.resolve(_messageHandler(ws, JSON.parse(message), connectionId)).catch(error => log.error('消息处理失败', error));
-            }
-        });
+        receiveMessages(ws, MESSAGE_TYPES, parsed => _messageHandler?.(ws, parsed, connectionId),
+            reason => { _clearReconnect(peerUrl); log.warn('拒绝对等节点消息', { reason }); });
 
         ws.on('close', () => {
             log.info('与对等节点的连接已关闭', { peerUrl });
@@ -401,9 +419,13 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
     // ========== WebSocket 连接监听 ==========
 
     wss.on('connection', (ws, req) => {
+        sockets.add(ws);
+        ws.once('close', () => sockets.delete(ws));
         // 检查连接路径: 前端 WebSocket 客户端连接 /ws，P2P 节点连接 /
         const urlPath = req ? req.url : '/';
         if (urlPath === '/ws') {
+            ws.isFrontend = true;
+            ws.on('message', () => ws.close(1008, 'Read-only subscription'));
             // 前端客户端连接——交给上层处理
             if (options.onFrontendConnection) {
                 options.onFrontendConnection(ws, req);
@@ -424,18 +446,18 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         // 为入站 P2P 连接启动心跳保活
         _startHeartbeat(ws, remoteAddr, connectionId);
 
-        ws.on('message', (message) => {
-            // 先解析 JSON，避免重复解析
-            const parsed = JSON.parse(message);
+        receiveMessages(ws, MESSAGE_TYPES, parsed => {
             // 捕获 NODE_INFO 中的节点 URL，关联到当前连接，用于 close/error 时清理 nodes
             if (parsed.type === MESSAGE_TYPES.NODE_INFO && parsed.node && parsed.node.url) {
+                const previous = inboundNodeUrls.get(connectionId);
+                if (previous) nodes.delete(previous);
                 inboundNodeUrls.set(connectionId, parsed.node.url);
                 // nodes.add 由 handleMessage → handleNodeInfo 完成，此处不重复添加
             }
             if (_messageHandler) {
-                Promise.resolve(_messageHandler(ws, parsed, connectionId)).catch(error => log.error('消息处理失败', error));
+                return _messageHandler(ws, parsed, connectionId);
             }
-        });
+        }, reason => log.warn('拒绝对等节点消息', { reason }));
 
         ws.on('close', () => {
             log.info('节点已断开连接', { remoteAddr });

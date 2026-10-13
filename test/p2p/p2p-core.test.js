@@ -12,7 +12,7 @@ const { createP2PCore, MESSAGE_TYPES } = require('../../src/p2p/p2p-core');
  */
 function createMinimalStarCoin() {
   return {
-    chain: [{ index: 0, hash: '0'.repeat(64), previousHash: '0'.repeat(64) }],
+    chain: [{ index: 0, hash: '0'.repeat(64), previousHash: '0'.repeat(64), transactions: [] }],
     pendingTransactions: [],
     getLatestBlock() { return this.chain[this.chain.length - 1]; },
     addBlock(block) { this.chain.push(block); return true; },

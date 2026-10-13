@@ -4,6 +4,7 @@
 const express = require('express');
 const { AppError, wrapAsync } = require('./error-handler');
 const { requireAdmin } = require('../middleware/access-control');
+const { validPeerUrl } = require('../p2p/message-security');
 
 /**
  * 创建网络层相关的路由
@@ -209,6 +210,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         if (!peerUrl) {
             throw new AppError(400, '节点URL不能为空', 'MISSING_PARAM');
         }
+        if (!validPeerUrl(peerUrl)) throw new AppError(400, '节点 URL 或主机不受信任', 'INVALID_URL');
         // 校验 URL 格式
         try {
             new URL(peerUrl);

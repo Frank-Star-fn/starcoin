@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const config = require('../config');
 const logger = require('../logger');
+const { validPeerUrl } = require('./message-security');
 
 /**
  * 创建 P2P 自动节点发现模块
@@ -41,6 +42,8 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
 
         let newCount = 0;
         for (const nodeUrl of discoveredNodes) {
+            if (pendingNodes.size >= config.P2P_MAX_CONNECTIONS) break;
+            if (!validPeerUrl(nodeUrl)) continue;
             // 跳过自身、已连接、正在连接、已在队列中的节点
             if (nodeUrl === core.nodeInfo.url) continue;
             if (core.nodes.has(nodeUrl)) continue;
@@ -64,7 +67,7 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
         if (!discoveryConfig.enabled) return;
 
         const connectedCount = core.nodeConnections.size +
-            Array.from(core.wss.clients).filter(c => c.readyState === WebSocket.OPEN).length;
+            Array.from(core.wss.clients).filter(c => !c.isFrontend && c.readyState === WebSocket.OPEN).length;
 
         if (connectedCount === 0) {
             return;
@@ -79,7 +82,7 @@ function createDiscoveryModule(core, MESSAGE_TYPES) {
         };
 
         core.wss.clients.forEach((client) => {
-            if (client.readyState === WebSocket.OPEN) {
+            if (!client.isFrontend && client.readyState === WebSocket.OPEN) {
                 core.sendMessage(client, requestMsg);
             }
         });
