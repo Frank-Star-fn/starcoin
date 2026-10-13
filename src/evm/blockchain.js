@@ -11,6 +11,7 @@ const { networkSettings } = require('./network');
 const projectRoot = require('../project-root');
 const { ExternalTransaction } = require('./external-transaction');
 const { rpcNetworkSettings } = require('./rpc-network');
+const { MempoolBudget } = require('../mempool-policy');
 
 class EvmBlockchain extends Blockchain {
     constructor(port, testMode = false, options = {}) {
@@ -122,18 +123,19 @@ class EvmBlockchain extends Blockchain {
 
     async addInside(data) {
         const tx = Transaction.fromJSON(data);
+        if (this.hasPendingTransaction(tx.id)) throw new Error('交易已存在或无效');
+        const previous = tx.version === 4 && tx.kind === 'evmRaw'
+            ? this.pendingTransactions.find(item => item.version === 4 && item.kind === 'evmRaw' && item.from === tx.from && item.nonce === tx.nonce)
+            : null;
+        const candidates = previous ? this.pendingTransactions.filter(item => item !== previous) : this.pendingTransactions;
+        new MempoolBudget(candidates).check(tx);
         const evaluation = await this.evaluateChain();
         if (!evaluation.valid) throw new Error(evaluation.error);
-        let candidates = this.pendingTransactions;
-        if (tx.version === 4 && tx.kind === 'evmRaw') {
-            const previous = candidates.find(item => item.version === 4 && item.kind === 'evmRaw' && item.from === tx.from && item.nonce === tx.nonce);
-            if (previous && previous.id !== tx.id) {
-                const caps = raw => { const parsed = evaluation.engine.decode(raw, true); return parsed.type === 2
-                    ? [parsed.maxFeePerGas, parsed.maxPriorityFeePerGas] : [parsed.gasPrice, parsed.gasPrice]; };
-                const oldCaps = caps(previous.rawTransaction), newCaps = caps(tx.rawTransaction);
-                if (newCaps.some((value, index) => value < (oldCaps[index] * 110n + 99n) / 100n || value <= oldCaps[index])) throw new Error('替换交易费用至少提高 10%');
-                candidates = candidates.filter(item => item !== previous);
-            }
+        if (previous) {
+            const caps = raw => { const parsed = evaluation.engine.decode(raw, true); return parsed.type === 2
+                ? [parsed.maxFeePerGas, parsed.maxPriorityFeePerGas] : [parsed.gasPrice, parsed.gasPrice]; };
+            const oldCaps = caps(previous.rawTransaction), newCaps = caps(tx.rawTransaction);
+            if (newCaps.some((value, index) => value < (oldCaps[index] * 110n + 99n) / 100n || value <= oldCaps[index])) throw new Error('替换交易费用至少提高 10%');
         }
         const pool = await this.consensus.rebuildPoolAsync(evaluation, [...candidates, tx]);
         if (!pool.pending.some(item => item.id === tx.id) || this.hasPendingTransaction(tx.id)) {

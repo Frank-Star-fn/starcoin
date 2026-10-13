@@ -9,6 +9,7 @@ const { targetForDifficulty, targetHex } = require('../protocol');
 const { ChainSync } = require('../chain-sync');
 const { QueryEngine } = require('./blockchain-query');
 const { StorageManager } = require('./blockchain-storage');
+const { MempoolBudget } = require('../mempool-policy');
 
 class Blockchain {
     constructor(portOverride, testMode = false, options = {}) {
@@ -73,6 +74,7 @@ class Blockchain {
     addTransaction(data) {
         if (!data?.from || !data.to || !(Number(data.amount) > 0)) throw new Error('交易必须包含 from, to, 和正数 amount');
         const tx = Transaction.fromJSON(data);
+        new MempoolBudget(this.pendingTransactions).check(tx);
         const evaluation = this.evaluateChain();
         if (!evaluation.valid) throw new Error('本地链无效：' + evaluation.error);
         const pool = this.consensus.rebuildPool(evaluation, this.pendingTransactions);

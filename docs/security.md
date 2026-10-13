@@ -1,5 +1,9 @@
 # 节点安全配置
 
+交易池默认最多 1000 笔、JSON 数组最多 8 MiB、每个发送地址最多 100 笔，可通过 `MEMPOOL_MAX_TXS`、`MEMPOOL_MAX_BYTES`、`MEMPOOL_MAX_PER_ADDRESS` 配置。原生、EVM 和 P2P 入池共用这些本地限制；重启及回滚时也会限制重建后的交易池，并记录容量拒绝原因。限制不影响有效区块的共识验证。满池提交返回 HTTP 429 和具体容量错误码；单笔交易超过 P2P 分页容量返回 HTTP 413；RPC 对应返回 -32005，`data.code` 给出具体原因。
+
+交易池同步按笔数和实际 UTF-8 字节数分页，单页最多 1 MiB 且低于 `P2P_MAX_PAYLOAD`，接收端合并后才请求下一页。分页期间交易池变化会重新开始有限次数；链下载期间暂停交易池分页。可以完整接收旧格式的小交易池消息；旧节点只会收到超限交易池的第一页，需要升级才能继续分页。
+
 HTTP/WS 默认监听 `127.0.0.1`。跨机器演示需显式设置 `HOST`，并将实际域名或 IP 添加到 `HTTP_ALLOWED_HOSTS`；远程浏览器部署通过 HTTPS 反向代理。
 
 限流统一使用 Express 根据可信代理配置计算的客户端 IP，不直接读取 `X-Forwarded-For` 或 `X-Real-IP`。`TRUSTED_PROXIES` 默认留空；仅填写实际代理的 IP/CIDR。代理必须覆盖外部请求的 `X-Forwarded-For`、`X-Forwarded-Host` 和 `X-Forwarded-Proto`。IPv6 及 IPv4 映射地址归一化后计数，REST/RPC 客户端计数器均有容量上限。

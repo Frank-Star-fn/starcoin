@@ -8,6 +8,7 @@ const { AppError, wrapAsync } = require('./error-handler');
 const { requireNativeAddress } = require('./input-policy');
 const { requireLegacyWallet } = require('../middleware/access-control');
 const signedTransaction = require('./signed-input');
+const { MempoolError } = require('../mempool-policy');
 
 /**
  * 创建钱包与交易相关的路由
@@ -31,7 +32,10 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
         requireNativeAddress(tx.from); requireNativeAddress(tx.to);
         let saved;
         try { saved = await starCoin.addTransaction(tx); }
-        catch { throw new AppError(400, '交易无效、nonce 不匹配或余额不足', 'TX_REJECTED'); }
+        catch (error) {
+            if (error instanceof MempoolError) throw new AppError(error.statusCode, error.message, error.code);
+            throw new AppError(400, '交易无效、nonce 不匹配或余额不足', 'TX_REJECTED');
+        }
         p2p.broadcastTransaction(saved);
         broadcastToFrontend('newTransaction', { poolCount: starCoin.pendingTransactions.length, txId: saved.id });
         res.json({ success: true, transaction: saved, poolCount: starCoin.pendingTransactions.length });
@@ -220,6 +224,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
             tx.signTransaction(privateKey, publicKey);
             savedTx = await starCoin.addTransaction(tx);
         } catch (err) {
+            if (err instanceof MempoolError) throw new AppError(err.statusCode, err.message, err.code);
             throw new AppError(400, err.message, 'TX_REJECTED');
         }
 

@@ -69,9 +69,16 @@ function validateMessage(message, types) {
         case types.TRANSACTION:
             if (!object(message.transaction)) throw new Error('invalid transaction');
             break;
+        case types.QUERY_PENDING_TXS:
+            if (message.poolId !== undefined && (typeof message.poolId !== 'string' || !/^[0-9a-f]{64}$/.test(message.poolId)
+                || !height(message.cursor))) throw new Error('invalid mempool cursor');
+            break;
         case types.PENDING_TXS:
             if (!Array.isArray(message.transactions) || message.transactions.length > config.P2P_MAX_TRANSACTIONS
                 || message.transactions.some(tx => !object(tx))) throw new Error('invalid transactions');
+            if (message.poolId !== undefined && (typeof message.poolId !== 'string' || !/^[0-9a-f]{64}$/.test(message.poolId) || !height(message.cursor)
+                || (message.next !== null && (!height(message.next) || !message.transactions.length
+                    || message.next !== message.cursor + message.transactions.length)))) throw new Error('invalid mempool page');
             break;
         case types.NODE_INFO:
             if (!object(message.node) || !validPeerUrl(message.node.url)) throw new Error('invalid peer');

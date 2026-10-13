@@ -75,6 +75,11 @@ const config = {
     P2P_MAX_MESSAGES: int(process.env.P2P_MAX_MESSAGES, 120),
     P2P_MAX_CONNECTIONS: int(process.env.P2P_MAX_CONNECTIONS, 32),
 
+    // ======== 交易池本地资源限制（不改变共识规则） ========
+    MEMPOOL_MAX_TXS: int(process.env.MEMPOOL_MAX_TXS, 1000),
+    MEMPOOL_MAX_BYTES: int(process.env.MEMPOOL_MAX_BYTES, 8 * 1024 * 1024),
+    MEMPOOL_MAX_PER_ADDRESS: int(process.env.MEMPOOL_MAX_PER_ADDRESS, 100),
+
     // ======== 链同步配置 ========
     /** 同步响应超时（毫秒） */
     SYNC_TIMEOUT: int(process.env.SYNC_TIMEOUT, 10000),

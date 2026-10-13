@@ -5,6 +5,7 @@ const { EvmEngine, address, evmAddressFromPublicKey, WEI_PER_UNIT } = require('.
 const { evmSettings } = require('./settings');
 const { rpcSettings, nextBaseFee } = require('./rpc-settings');
 const { ExternalTransaction, withdrawalData } = require('./external-transaction');
+const { MempoolBudget, MempoolError, reportPoolRejections } = require('../mempool-policy');
 
 function cloneNative(state) {
     return { ...cloneState(state), bridgeLockedWei: state.bridgeLockedWei || 0n, evmBurnedWei: state.evmBurnedWei || 0n,
@@ -178,6 +179,7 @@ class EvmConsensus extends Consensus {
     async rebuildPoolAsync(evaluation, candidates) {
         let state = cloneNative(evaluation.state), engine = await evaluation.engine.fork(evaluation.blocks);
         const pending = [], rejected = [];
+        const budget = new MempoolBudget();
         const context = this.context(evaluation.blocks);
         const remaining = [...candidates], errors = new Map();
         let progress = true;
@@ -186,16 +188,25 @@ class EvmConsensus extends Consensus {
         for (let i = 0; i < remaining.length;) {
             const candidate = remaining[i];
             try {
-                const tx = Transaction.fromJSON(candidate), trial = cloneNative(state);
+                const tx = Transaction.fromJSON(candidate);
+                const size = budget.check(tx);
+                const trial = cloneNative(state);
                 if (tx.version === 3 && context.index < this.evm.activationHeight) throw new Error('EVM 尚未激活');
                 const fork = tx.version >= 3 ? await engine.fork(evaluation.blocks) : engine;
                 await this.applyTransaction(trial, fork, tx, context, 0n, true);
                 state = trial; engine = fork; pending.push(tx);
+                budget.add(tx, size);
                 remaining.splice(i, 1); progress = true;
-            } catch (error) { errors.set(candidate, error.message); i++; }
+            } catch (error) {
+                if (error instanceof MempoolError) {
+                    rejected.push({ id: candidate?.id, error: error.message, code: error.code });
+                    remaining.splice(i, 1);
+                } else { errors.set(candidate, error.message); i++; }
+            }
         }
         }
         for (const candidate of remaining) rejected.push({ id: candidate?.id, error: errors.get(candidate) || '无效交易' });
+        reportPoolRejections(rejected);
         return { pending, rejected, state, engine };
     }
 

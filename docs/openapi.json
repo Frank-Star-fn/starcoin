@@ -366,6 +366,16 @@
           "410": {
             "description": "旧钱包接口已禁用"
           },
+          "413": {
+            "description": "TRANSACTION_TOO_LARGE：已签名交易超过 P2P 分页消息容量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "$ref": "#/components/responses/RateLimited"
           },
@@ -430,6 +440,16 @@
           "410": {
             "description": "旧钱包接口已禁用"
           },
+          "413": {
+            "description": "TRANSACTION_TOO_LARGE：已签名交易超过 P2P 分页消息容量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "$ref": "#/components/responses/RateLimited"
           },
@@ -493,6 +513,16 @@
           },
           "410": {
             "description": "旧钱包接口已禁用"
+          },
+          "413": {
+            "description": "TRANSACTION_TOO_LARGE：已签名交易超过 P2P 分页消息容量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -1423,6 +1453,16 @@
           },
           "410": {
             "description": "旧钱包接口已禁用"
+          },
+          "413": {
+            "description": "TRANSACTION_TOO_LARGE：已签名交易超过 P2P 分页消息容量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -3125,6 +3165,16 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "413": {
+            "description": "TRANSACTION_TOO_LARGE：已签名交易超过 P2P 分页消息容量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "$ref": "#/components/responses/RateLimited"
           }
@@ -3163,6 +3213,16 @@
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          },
+          "413": {
+            "description": "TRANSACTION_TOO_LARGE：已签名交易超过 P2P 分页消息容量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -3203,6 +3263,16 @@
           },
           "400": {
             "$ref": "#/components/responses/BadRequest"
+          },
+          "413": {
+            "description": "TRANSACTION_TOO_LARGE：已签名交易超过 P2P 分页消息容量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "429": {
             "$ref": "#/components/responses/RateLimited"
@@ -3354,7 +3424,7 @@
         }
       },
       "RateLimited": {
-        "description": "TOO_MANY_REQUESTS：全局、写操作或搜索限流",
+        "description": "TOO_MANY_REQUESTS：全局、写操作或搜索限流；MEMPOOL_FULL、MEMPOOL_BYTES_FULL、MEMPOOL_SENDER_LIMIT：交易池本地容量限制",
         "headers": {
           "Retry-After": {
             "schema": {

@@ -3,6 +3,7 @@ const logger = require('../logger');
 const config = require('../config');
 const { settle } = require('./settle');
 const { createChainSync } = require('./chain-sync');
+const { createPendingSync } = require('./pending-sync');
 
 /** 区块链业务消息处理：链同步、区块追加、交易池等，与 p2p-core 网络层解耦 */
 function createMessageHandlers(network, starCoin, options = {}) {
@@ -13,6 +14,9 @@ function createMessageHandlers(network, starCoin, options = {}) {
         onProgress: options.onSyncProgress,
         onFailure: options.onSyncFailure
     });
+
+    const pendingSync = createPendingSync(network, starCoin,
+        (transactions, fromNode) => (options.onPendingTransactions || handlePendingTxs)(transactions, fromNode), sync.active);
 
     // 业务广播（封装网络层的 broadcast）
 
@@ -47,22 +51,20 @@ function createMessageHandlers(network, starCoin, options = {}) {
      * @param {object} tx - 交易对象
      */
     function broadcastTransaction(tx) {
-        network.broadcast({
+        const message = {
             type: MESSAGE_TYPES.TRANSACTION,
             transaction: tx,
             fromNode: network.nodeInfo.url
-        });
+        };
+        if (Buffer.byteLength(JSON.stringify(message), 'utf8') > config.P2P_MAX_PAYLOAD) return;
+        network.broadcast(message);
     }
 
     /**
      * 向所有已连接节点广播本节点的待打包交易列表
      */
     function broadcastPendingTxs() {
-        network.broadcast({
-            type: MESSAGE_TYPES.PENDING_TXS,
-            transactions: starCoin.pendingTransactions,
-            fromNode: network.nodeInfo.url
-        });
+        pendingSync.broadcast();
     }
 
     /** 更新节点信息中的链状态 */
@@ -177,15 +179,15 @@ function createMessageHandlers(network, starCoin, options = {}) {
                 handleTransaction(message.transaction, message.fromNode);
                 break;
             case MESSAGE_TYPES.QUERY_PENDING_TXS:
-                handleQueryPendingTxs(ws, message.fromNode);
-                break;
+                return pendingSync.reply(ws, message);
             case MESSAGE_TYPES.PENDING_TXS:
-                handlePendingTxs(message.transactions, message.fromNode);
-                break;
+                return pendingSync.receive(ws, message);
         }
     }
 
     handlers = {
+        sendPendingTxs: pendingSync.reply,
+        receivePendingTxs: pendingSync.receive,
         requestSync: sync.request,
         cancelSync: sync.cancel,
         handleMessage,

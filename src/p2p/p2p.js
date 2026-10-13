@@ -34,6 +34,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         pendingPongs: core.pendingPongs,
         peerUrl: ws => Array.from(core.nodeConnections.values()).find(conn => conn.ws === ws)?.url
     }, starCoin, { ...options,
+        onPendingTransactions: handleIncomingPendingTxs,
         onSyncProgress: (ws, id) => {
             if (syncState.isSyncing && id === syncState.round && syncState.peers.has(ws)) resetSyncTimeout();
         },
@@ -218,16 +219,10 @@ function createP2P(server, starCoin, PORT, options = {}) {
                 return handleIncomingTransaction(message.transaction, message.fromNode);
 
             case MESSAGE_TYPES.QUERY_PENDING_TXS:
-                // 收到交易池请求 → 发送本节点的待打包交易列表
-                core.sendMessage(ws, {
-                    type: MESSAGE_TYPES.PENDING_TXS,
-                    transactions: starCoin.pendingTransactions,
-                    fromNode: core.nodeInfo.url
-                });
-                return;
+                return handlers.sendPendingTxs(ws, message);
 
             case MESSAGE_TYPES.PENDING_TXS:
-                return handleIncomingPendingTxs(message.transactions, message.fromNode);
+                return handlers.receivePendingTxs(ws, message);
         }
 
         // 其余消息类型交给原始 handler

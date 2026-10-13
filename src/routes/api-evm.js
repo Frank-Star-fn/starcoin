@@ -5,6 +5,7 @@ const { AppError, wrapAsync } = require('./error-handler');
 const { requireLegacyWallet } = require('../middleware/access-control');
 const { requireNativeAddress } = require('./input-policy');
 const signedTransaction = require('./signed-input');
+const { MempoolError } = require('../mempool-policy');
 
 function createEvmRoutes(chain, p2p, broadcast) {
     const router = express.Router();
@@ -18,7 +19,11 @@ function createEvmRoutes(chain, p2p, broadcast) {
         if (!chain.evmEnabled) throw new AppError(503, '当前节点未启用 EVM', 'EVM_DISABLED');
         await chain.ready;
         try { await handler(req, res); }
-        catch (error) { if (error instanceof AppError) throw error; throw new AppError(400, error.message, 'EVM_REJECTED'); }
+        catch (error) {
+            if (error instanceof AppError) throw error;
+            if (error instanceof MempoolError) throw new AppError(error.statusCode, error.message, error.code);
+            throw new AppError(400, error.message, 'EVM_REJECTED');
+        }
     });
     const context = () => chain.consensus.context(chain.chain);
     const announce = tx => {

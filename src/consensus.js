@@ -2,6 +2,7 @@ const config = require('./config');
 const { Block, Transaction, calculateMerkleRoot, SUPPORTED_CURRENCIES } = require('./core');
 const { DifficultyManager } = require('./difficulty-manager');
 const { toUnits, MAX_UNITS, hash, targetForDifficulty, targetHex, meetsTarget, workForTarget } = require('./protocol');
+const { MempoolBudget, reportPoolRejections } = require('./mempool-policy');
 
 function cloneState(state) {
     return { balances: new Map(state.balances), nonces: new Map(state.nonces),
@@ -191,17 +192,21 @@ class Consensus {
         if (!evaluation.valid) throw new Error(evaluation.error);
         const state = cloneState(evaluation.state);
         const pending = [], rejected = [];
+        const budget = new MempoolBudget();
         const ordered = [...candidates].sort((a, b) => (a?.nonce ?? 0) - (b?.nonce ?? 0));
         for (const candidate of ordered) {
             try {
                 const tx = Transaction.fromJSON(candidate);
+                const size = budget.check(tx);
                 // Invalid transactions cannot leave partial reservations behind.
                 const trial = cloneState(state);
                 this.applyTransfer(trial, tx, evaluation.blocks.length, true);
                 Object.assign(state, trial);
                 pending.push(tx);
-            } catch (error) { rejected.push({ id: candidate?.id, error: error.message }); }
+                budget.add(tx, size);
+            } catch (error) { rejected.push({ id: candidate?.id, error: error.message, code: error.code }); }
         }
+        reportPoolRejections(rejected);
         return { pending, rejected, state };
     }
 

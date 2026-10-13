@@ -7,6 +7,7 @@ const { withdrawalData } = require('../evm/external-transaction');
 const { nextBaseFee } = require('../evm/rpc-settings');
 const { RpcView } = require('./view');
 const { RpcError, q, quantity, integer, hash32, options, address, hex } = require('./codec');
+const { MempoolError } = require('../mempool-policy');
 
 function createRpc(chain, p2p, broadcast) {
     const router = express.Router(), view = new RpcView(chain), limits = new Map();
@@ -38,6 +39,7 @@ function createRpc(chain, p2p, broadcast) {
     function byHash(value) { const hash = hash32(value); return chain.chain.find(block => '0x' + block.hash === hash); }
     function rpcFailure(error) {
         if (error instanceof RpcError) return { code: error.code, message: error.message, ...(error.data === undefined ? {} : { data: error.data }) };
+        if (error instanceof MempoolError) return { code: -32005, message: error.message, data: { code: error.code } };
         return { code: -32000, message: error.message || '请求失败' };
     }
     async function estimate(value, tag) {
