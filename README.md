@@ -23,6 +23,12 @@ http://localhost:3000/
 
 - **`.env.example`**：配置模板，包含所有可配置项及其说明
 
+## API 文档
+
+简洁的 OpenAPI 3.0 文档位于 [docs/openapi.json](docs/openapi.json)。启动服务后访问 [http://localhost:3000/api/openapi.json](http://localhost:3000/api/openapi.json)，可下载或导入支持 OpenAPI 的 API 工具查看。文档使用相对基址 `/api`，在其他节点端口也可访问。
+
+文档覆盖当前 HTTP API 的主要参数、响应和错误，包括 HD 钱包、交易确认状态以及 SSE 挖矿流。`GET /api/mine/stream` 会启动挖矿；重置链、清空交易池等操作会修改节点数据。更新路由时同步更新文档，运行 `npm test` 校验规范格式和路由覆盖。
+
 ## 代码结构
 
 - 前端：front目录, 负责可视化和交互。

@@ -11,6 +11,7 @@ const createTxRoutes = require('./api-tx');
 const createMiningRoutes = require('./api-mining');
 const createNetRoutes = require('./api-net');
 const createSearchRoutes = require('./api-search');
+const openapi = require('../../docs/openapi.json');
 const {
     createNotFoundMiddleware,
     createErrorMiddleware
@@ -52,6 +53,7 @@ function createRoutes(starCoin, p2p, broadcastToFrontend, PORT) {
 
     // 1. 全局限流（第一道关卡：对所有 /api/* 接口生效）
     router.use(globalLimiter);
+    router.get('/openapi.json', (_req, res) => res.json(openapi));
 
     // 2. 写操作限流（对以下子路由额外使用更严格的限制）
     //    注意：仅对"写入型"HTTP 方法（POST/PUT/PATCH/DELETE）应用写操作限流

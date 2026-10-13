@@ -1,0 +1,319 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "StarCoin API",
+    "version": "1.0.0",
+    "description": "StarCoin demo 的 HTTP API。基址为当前节点的 /api；JSON 请求使用 Content-Type: application/json。币种为 STC、cBTC、cETH，金额最多八位小数。当前服务未配置认证，钱包生成、助记词派生和交易签名由节点处理。本文档列出主要字段，对象允许包含扩展字段。"
+  },
+  "servers": [{ "url": "/api", "description": "当前节点（如 localhost:3000）" }],
+  "tags": [
+    { "name": "文档" }, { "name": "钱包" }, { "name": "HD 钱包" }, { "name": "交易" },
+    { "name": "区块链" }, { "name": "挖矿" }, { "name": "节点" }, { "name": "存储" }, { "name": "搜索" }
+  ],
+  "security": [],
+  "paths": {
+    "/openapi.json": {
+      "get": {
+        "tags": ["文档"], "summary": "获取 OpenAPI 文档", "operationId": "getOpenApi",
+        "responses": {
+          "200": { "description": "OpenAPI 3.0 文档", "content": { "application/json": { "schema": { "type": "object", "required": ["openapi", "info", "paths"], "properties": { "openapi": { "type": "string" }, "info": { "type": "object" }, "paths": { "type": "object" } } } } } },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/wallet/new": {
+      "post": {
+        "tags": ["钱包"], "summary": "生成单地址钱包", "operationId": "createWallet",
+        "responses": { "200": { "$ref": "#/components/responses/Wallet" }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/wallet/import": {
+      "post": {
+        "tags": ["钱包"], "summary": "从 PEM 私钥导入钱包", "operationId": "importWallet",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PemImport" } } } },
+        "responses": { "200": { "$ref": "#/components/responses/Wallet" }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/wallet/verify-pem": {
+      "post": {
+        "tags": ["钱包"], "summary": "验证 PEM 并返回公钥和地址", "operationId": "verifyPem",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PemImport" } } } },
+        "responses": { "200": { "description": "私钥有效", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "publicKey": { "type": "string" }, "address": { "$ref": "#/components/schemas/Address" } } } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/wallet/new-with-mnemonic": {
+      "post": {
+        "tags": ["钱包"], "summary": "生成旧版助记词单地址钱包", "operationId": "createMnemonicWallet",
+        "description": "沿用旧版 seed 前 32 字节生成私钥的算法，与 HD 派生结果不同。",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "strength": { "type": "integer", "enum": [128, 160, 192, 224, 256], "default": 128 } } } } } },
+        "responses": { "200": { "description": "助记词和钱包", "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/WalletResult" }, { "type": "object", "properties": { "mnemonic": { "type": "string" } } }] } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/wallet/import-mnemonic": {
+      "post": {
+        "tags": ["钱包"], "summary": "从旧版助记词恢复单地址钱包", "operationId": "importMnemonicWallet",
+        "description": "passphrase 必须与创建时一致；返回原有单地址，HD 钱包请使用 /wallet/hd/import。",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["mnemonic"], "properties": { "mnemonic": { "type": "string", "description": "有效英文 BIP39 助记词" }, "passphrase": { "type": "string", "default": "" } } } } } },
+        "responses": { "200": { "$ref": "#/components/responses/Wallet" }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/wallet/hd/new": {
+      "post": {
+        "tags": ["HD 钱包"], "summary": "创建 HD 钱包及首个地址", "operationId": "createHdWallet",
+        "description": "使用 BIP39、BIP32 和 m/44'/1'/0'/0/i 派生路径，返回的地址使用 StarCoin 格式。响应 Cache-Control: no-store。",
+        "requestBody": { "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/HdOptions" }, { "type": "object", "properties": { "strength": { "type": "integer", "enum": [128, 256], "default": 128 } } }] } } } },
+        "responses": { "200": { "description": "根钱包信息、助记词和首个子地址", "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/HdResult" }, { "type": "object", "required": ["mnemonic"], "properties": { "mnemonic": { "type": "string" } } }] } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/wallet/hd/derive": {
+      "post": {
+        "tags": ["HD 钱包"], "summary": "派生一批子地址", "operationId": "deriveHdAddresses",
+        "description": "indices 存在时按指定索引派生并去重；否则使用 startIndex 和 count。响应 Cache-Control: no-store。",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/HdCredentials" }, { "type": "object", "properties": { "startIndex": { "type": "integer", "minimum": 0, "maximum": 2147483647, "default": 0 }, "count": { "type": "integer", "minimum": 1, "maximum": 100, "default": 1 }, "indices": { "type": "array", "minItems": 1, "maxItems": 100, "items": { "$ref": "#/components/schemas/HdIndex" } } } }] } } } },
+        "responses": { "200": { "description": "子地址和下一索引", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HdResult" } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/wallet/hd/import": {
+      "post": {
+        "tags": ["HD 钱包"], "summary": "扫描链上历史和交易池以恢复 HD 地址", "operationId": "importHdWallet",
+        "description": "连续 20 个地址未使用时停止。使用 scanNextIndex 作为下一次 startIndex 可继续扫描；nextIndex 仅表示本次发现地址的分配进度（续扫未发现地址时可为 0），应与已保存进度取最大值。首次扫描至少返回索引 0。响应 Cache-Control: no-store。",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/HdCredentials" }, { "type": "object", "properties": { "startIndex": { "type": "integer", "minimum": 0, "maximum": 2147483647, "default": 0 }, "scanCount": { "type": "integer", "minimum": 20, "maximum": 200, "default": 200 } } }] } } } },
+        "responses": { "200": { "description": "已发现地址及扫描进度", "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/HdResult" }, { "type": "object", "properties": { "scanNextIndex": { "type": "integer", "minimum": 0, "maximum": 2147483648 }, "gapLimit": { "type": "integer", "enum": [20] }, "stoppedAtGap": { "type": "boolean" }, "exhausted": { "type": "boolean" } } }] } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/transaction": {
+      "post": {
+        "tags": ["交易"], "summary": "签名并提交转账至交易池", "operationId": "submitTransaction",
+        "description": "当前节点使用提供的私钥签名；未提供 nonce 时依据链和交易池自动填充。成功表示进入交易池。",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TransactionInput" } } } },
+        "responses": { "200": { "description": "已签名交易", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "transaction": { "$ref": "#/components/schemas/Transaction" }, "poolCount": { "type": "integer" } } } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/nonce/{address}": {
+      "get": {
+        "tags": ["交易"], "summary": "查询地址的下一个 nonce", "operationId": "getNonce", "parameters": [{ "$ref": "#/components/parameters/Address" }],
+        "responses": { "200": { "description": "确认及交易池中的序号", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "address": { "$ref": "#/components/schemas/Address" }, "nextNonce": { "type": "integer" }, "confirmedNonce": { "type": "integer" }, "pendingInPool": { "type": "integer" } } } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/transaction/{id}/status": {
+      "get": {
+        "tags": ["交易"], "summary": "查询交易确认或回滚状态", "operationId": "getTransactionStatus",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }],
+        "responses": { "200": { "description": "未知交易也返回 200，status 为 unknown", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TransactionStatus" } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/balance/{address}": {
+      "get": {
+        "tags": ["交易"], "summary": "查询多币种余额和锁定奖励", "operationId": "getBalance", "parameters": [{ "$ref": "#/components/parameters/Address" }],
+        "responses": { "200": { "description": "可用余额及含未成熟奖励的总余额", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "address": { "$ref": "#/components/schemas/Address" }, "balances": { "$ref": "#/components/schemas/Balances" }, "totalBalances": { "$ref": "#/components/schemas/Balances" }, "balance": { "type": "number", "description": "可用 STC" }, "totalBalance": { "type": "number" }, "lockedRewards": { "type": "number" }, "lockedRewardsByCurrency": { "$ref": "#/components/schemas/Balances" }, "coinbaseMaturity": { "type": "integer" }, "pendingTransactions": { "type": "integer" }, "historyCount": { "type": "integer" } } } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/transactions/{address}": {
+      "get": {
+        "tags": ["交易"], "summary": "查询地址的链上交易历史", "operationId": "getAddressTransactions", "parameters": [{ "$ref": "#/components/parameters/Address" }],
+        "responses": { "200": { "description": "交易历史，按时间倒序", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "address": { "$ref": "#/components/schemas/Address" }, "total": { "type": "integer" }, "transactions": { "type": "array", "items": { "$ref": "#/components/schemas/Transaction" } } } } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/mempool": {
+      "get": {
+        "tags": ["交易"], "summary": "查询待打包交易", "operationId": "getMempool",
+        "responses": { "200": { "description": "交易池", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "count": { "type": "integer" }, "transactions": { "type": "array", "items": { "$ref": "#/components/schemas/Transaction" } } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      },
+      "delete": {
+        "tags": ["交易"], "summary": "清空当前节点的交易池", "operationId": "clearMempool",
+        "responses": { "200": { "description": "已清空的交易数量", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "cleared": { "type": "integer" } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/addresses": {
+      "get": {
+        "tags": ["交易"], "summary": "按 STC 余额查询地址排行榜", "operationId": "getAddresses",
+        "responses": { "200": { "description": "链上地址列表", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "total": { "type": "integer" }, "addresses": { "type": "array", "items": { "type": "object", "properties": { "address": { "$ref": "#/components/schemas/Address" }, "balance": { "type": "number" }, "balances": { "$ref": "#/components/schemas/Balances" }, "lockedRewards": { "type": "number" }, "txCount": { "type": "integer" } } } } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/blockchain": {
+      "get": {
+        "tags": ["区块链"], "summary": "查询区块链及节点概览", "operationId": "getBlockchain",
+        "responses": { "200": { "description": "当前链和主要统计数据", "content": { "application/json": { "schema": { "type": "object", "properties": { "chain": { "type": "array", "items": { "$ref": "#/components/schemas/Block" } }, "isValid": { "type": "boolean" }, "stats": { "type": "object", "properties": { "totalBlocks": { "type": "integer" }, "chainWork": { "type": "string", "description": "累计工作量，十进制字符串" }, "chainId": { "type": "string" }, "protocolVersion": { "type": "integer" }, "difficulty": { "type": "number" }, "target": { "type": "string" }, "targetBlockTime": { "type": "integer", "description": "毫秒" }, "paymentConfirmations": { "type": "integer" }, "reorgEvents": { "type": "array", "items": { "type": "object" } } } }, "port": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }, "nodeInfo": { "$ref": "#/components/schemas/NodeInfo" } } } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/validate": {
+      "get": {
+        "tags": ["区块链"], "summary": "验证当前区块链", "operationId": "validateChain",
+        "responses": { "200": { "description": "校验结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "isValid": { "type": "boolean" }, "totalBlocks": { "type": "integer" } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/mine": {
+      "post": {
+        "tags": ["挖矿"], "summary": "挖出一个区块并广播", "operationId": "mineBlock",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "minerAddress": { "type": "string", "description": "省略时使用节点 miningAddress" }, "data": { "type": "string", "description": "区块备注" } } } } } },
+        "responses": { "200": { "description": "已生成区块", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "block": { "$ref": "#/components/schemas/Block" }, "transactionCount": { "type": "integer" }, "reward": { "type": "number" }, "miningTime": { "type": "string", "example": "123ms" } } } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/mine/stream": {
+      "get": {
+        "tags": ["挖矿"], "summary": "以 SSE 返回单次挖矿进度", "operationId": "streamMining",
+        "description": "此 GET 会启动挖矿。每条事件格式为 data: <JSON> 后跟两个换行；started 表示开始，found=true 表示成功，error 表示错误或暂停提示，可能继续重试。成功后关闭连接；客户端断开会取消挖矿。",
+        "parameters": [{ "name": "minerAddress", "in": "query", "schema": { "type": "string" }, "description": "省略时使用节点 miningAddress" }],
+        "responses": { "200": { "description": "SSE 文本流，事件中包含 nonce、hash、difficulty、found、message，以及可选的 block、reward 或 error。流内错误不改变 HTTP 200。", "content": { "text/event-stream": { "schema": { "type": "string" }, "example": "data: {\"found\":false,\"started\":true,\"nonce\":0}\n\ndata: {\"found\":true,\"nonce\":123,\"message\":\"挖矿成功\"}\n\n" } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/sync": {
+      "post": {
+        "tags": ["节点"], "summary": "发起区块链同步", "operationId": "syncChain",
+        "responses": { "200": { "description": "同步发起结果（完成情况查询 /sync/status）", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "valid": { "type": "boolean" }, "syncState": { "type": "object" } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/sync/status": {
+      "get": {
+        "tags": ["节点"], "summary": "查询当前同步状态", "operationId": "getSyncStatus",
+        "responses": { "200": { "description": "本节点与候选链状态", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "isSyncing": { "type": "boolean" }, "lastSyncAt": { "type": "string", "format": "date-time", "nullable": true }, "selfChain": { "type": "object", "properties": { "length": { "type": "integer" }, "chainWork": { "type": "string" }, "latestHash": { "type": "string" }, "valid": { "type": "boolean" } } }, "connectedNodes": { "type": "integer" }, "peerChains": { "type": "array", "items": { "type": "object" } }, "candidates": { "type": "integer" } } } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/mempool/sync": {
+      "post": {
+        "tags": ["节点"], "summary": "从对等节点同步交易池", "operationId": "syncMempool",
+        "responses": { "200": { "$ref": "#/components/responses/PoolOperation" }, "502": { "description": "SYNC_FAILED：对等节点同步失败", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/mempool/broadcast": {
+      "post": {
+        "tags": ["节点"], "summary": "广播当前交易池", "operationId": "broadcastMempool",
+        "responses": { "200": { "$ref": "#/components/responses/PoolOperation" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/connect": {
+      "post": {
+        "tags": ["节点"], "summary": "连接对等节点", "operationId": "connectPeer",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PeerInput" } } } },
+        "responses": { "200": { "$ref": "#/components/responses/Message" }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/disconnect": {
+      "post": {
+        "tags": ["节点"], "summary": "断开对等节点连接", "operationId": "disconnectPeer",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PeerInput" } } } },
+        "responses": { "200": { "$ref": "#/components/responses/Message" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "description": "PEER_NOT_FOUND：未找到节点连接", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/nodes": {
+      "get": {
+        "tags": ["节点"], "summary": "查询已连接节点 URL", "operationId": "getNodes",
+        "responses": { "200": { "description": "连接列表和当前节点信息", "content": { "application/json": { "schema": { "type": "object", "properties": { "nodes": { "type": "array", "items": { "type": "string" } }, "count": { "type": "integer" }, "currentNode": { "$ref": "#/components/schemas/NodeInfo" } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/all-nodes": {
+      "get": {
+        "tags": ["节点"], "summary": "查询所有节点的详细信息", "operationId": "getAllNodes",
+        "responses": { "200": { "description": "本节点与远端节点信息", "content": { "application/json": { "schema": { "type": "object", "properties": { "nodes": { "type": "array", "items": { "$ref": "#/components/schemas/NodeInfo" } }, "total": { "type": "integer" } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/discovery/status": {
+      "get": {
+        "tags": ["节点"], "summary": "查询节点发现状态", "operationId": "getDiscoveryStatus",
+        "responses": { "200": { "description": "发现状态", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "discovery": { "$ref": "#/components/schemas/Discovery" } } } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/discovery/start": {
+      "post": {
+        "tags": ["节点"], "summary": "开启自动节点发现", "operationId": "startDiscovery",
+        "responses": { "200": { "$ref": "#/components/responses/DiscoveryOperation" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/discovery/stop": {
+      "post": {
+        "tags": ["节点"], "summary": "停止自动节点发现", "operationId": "stopDiscovery",
+        "responses": { "200": { "$ref": "#/components/responses/DiscoveryOperation" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/discovery/scan": {
+      "post": {
+        "tags": ["节点"], "summary": "请求一轮节点发现扫描", "operationId": "scanDiscovery",
+        "responses": { "200": { "$ref": "#/components/responses/DiscoveryOperation" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/storage/status": {
+      "get": {
+        "tags": ["存储"], "summary": "查询链文件状态", "operationId": "getStorageStatus",
+        "responses": { "200": { "description": "本地文件信息", "content": { "application/json": { "schema": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "file": { "type": "string" }, "exists": { "type": "boolean" }, "size": { "type": "integer", "description": "字节" }, "sizeKB": { "type": "string" }, "lastModified": { "type": "string", "format": "date-time", "nullable": true }, "totalBlocks": { "type": "integer" } } } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/storage/save": {
+      "post": {
+        "tags": ["存储"], "summary": "保存当前链到本地文件", "operationId": "saveChain",
+        "responses": { "200": { "description": "保存结果", "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/ChainOperation" }, { "type": "object", "properties": { "file": { "type": "string" } } }] } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/storage/reload": {
+      "post": {
+        "tags": ["存储"], "summary": "从本地文件重新加载链", "operationId": "reloadChain",
+        "description": "文件不存在时 HTTP 200 的 success=false，内存链保留；文件损坏或共识不匹配时返回 500，原文件保留。",
+        "responses": { "200": { "description": "加载结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChainOperation" } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/storage/reset": {
+      "post": {
+        "tags": ["存储"], "summary": "重置为创世区块并保存", "operationId": "resetChain",
+        "description": "会清空当前节点链数据并广播重置后的链。",
+        "responses": { "200": { "description": "重置结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChainOperation" } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/storage/export": {
+      "get": {
+        "tags": ["存储"], "summary": "下载当前链 JSON 备份", "operationId": "exportChain",
+        "responses": { "200": { "description": "JSON 附件", "headers": { "Content-Disposition": { "schema": { "type": "string" }, "description": "attachment; filename=starcoin_chain_<port>_<timestamp>.json" } }, "content": { "application/json": { "schema": { "type": "object", "properties": { "chain": { "type": "array", "items": { "$ref": "#/components/schemas/Block" } }, "exportedAt": { "type": "string", "format": "date-time" }, "port": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }, "version": { "type": "string", "example": "4.0" }, "consensusHash": { "type": "string" }, "consensus": { "type": "object" } } } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/storage/import": {
+      "post": {
+        "tags": ["存储"], "summary": "验证并导入累计工作量更高的链", "operationId": "importChain",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["chain"], "properties": { "chain": { "type": "array", "minItems": 1, "items": { "$ref": "#/components/schemas/Block" } } } } } } },
+        "responses": { "200": { "description": "导入结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChainOperation" } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": ["搜索"], "summary": "搜索区块、交易、地址或备注", "operationId": "searchChain",
+        "parameters": [{ "name": "q", "in": "query", "schema": { "type": "string" }, "description": "区块高度、交易 ID、区块哈希、地址或备注；省略或空白时 type=empty" }],
+        "responses": { "200": { "description": "result 随 type 变化；未找到时 type=not_found", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "type": { "type": "string", "enum": ["empty", "block", "transaction", "address", "address_list", "note", "mempool", "not_found"] }, "query": { "type": "string" }, "result": { "type": "object", "nullable": true } } } } } }, "500": { "description": "搜索错误（使用独立响应格式）", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean", "enum": [false] }, "type": { "type": "string", "enum": ["error"] }, "query": { "type": "string" }, "error": { "type": "string" } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "Address": { "name": "address", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/Address" } }
+    },
+    "responses": {
+      "Wallet": { "description": "钱包信息（含 PEM 私钥）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WalletResult" } } } },
+      "Message": { "description": "操作结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" } } } } } },
+      "PoolOperation": { "description": "交易池操作结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "poolCount": { "type": "integer" }, "connectedNodes": { "type": "integer" } } } } } },
+      "DiscoveryOperation": { "description": "操作结果和发现状态", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "status": { "$ref": "#/components/schemas/Discovery" } } } } } },
+      "BadRequest": { "description": "参数、密钥、交易或链校验失败；code 给出具体原因", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "ServerError": { "description": "节点内部错误；非生产环境可能附带 stack", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "RateLimited": { "description": "TOO_MANY_REQUESTS：全局、写操作或搜索限流", "headers": { "Retry-After": { "schema": { "type": "integer" }, "description": "重试前等待的秒数" }, "X-RateLimit-Limit": { "schema": { "type": "integer" } }, "X-RateLimit-Remaining": { "schema": { "type": "integer" } }, "X-RateLimit-Reset": { "schema": { "type": "integer" }, "description": "Unix 时间戳，秒" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "schemas": {
+      "Address": { "type": "string", "minLength": 2, "description": "钱包地址为 32 位十六进制字符串；历史数据和矿工地址可能采用其他字符串。" },
+      "Amount": { "description": "非负金额，最多八位小数；支持 JSON 数字或十进制字符串。转账 amount 必须大于 0。", "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "string", "pattern": "^[0-9]{1,20}(\\.[0-9]{1,8})?$" }] },
+      "Currency": { "type": "string", "enum": ["STC", "cBTC", "cETH"], "default": "STC" },
+      "Balances": { "type": "object", "properties": { "STC": { "type": "number" }, "cBTC": { "type": "number" }, "cETH": { "type": "number" } } },
+      "Wallet": { "type": "object", "required": ["privateKey", "publicKey", "address"], "properties": { "privateKey": { "type": "string", "description": "PKCS#8 PEM 私钥" }, "publicKey": { "type": "string", "description": "SPKI DER 的十六进制编码" }, "address": { "$ref": "#/components/schemas/Address" } } },
+      "WalletResult": { "type": "object", "required": ["success", "wallet"], "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "wallet": { "$ref": "#/components/schemas/Wallet" } } },
+      "PemImport": { "type": "object", "required": ["privateKeyPem"], "properties": { "privateKeyPem": { "type": "string", "writeOnly": true, "description": "完整 PEM 私钥文本" } } },
+      "PeerInput": { "type": "object", "required": ["peerUrl"], "properties": { "peerUrl": { "type": "string", "format": "uri", "description": "P2P WebSocket URL", "example": "ws://localhost:3001" } } },
+      "HdIndex": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
+      "HdOptions": { "type": "object", "properties": { "passphrase": { "type": "string", "maxLength": 1024, "default": "", "writeOnly": true, "description": "BIP39 密码，恢复时必须一致" }, "scheme": { "type": "string", "enum": ["bip44-v1"], "default": "bip44-v1" }, "basePath": { "type": "string", "enum": ["m/44'/1'/0'/0"], "default": "m/44'/1'/0'/0" } } },
+      "HdCredentials": { "allOf": [{ "$ref": "#/components/schemas/HdOptions" }, { "type": "object", "required": ["mnemonic"], "properties": { "mnemonic": { "type": "string", "maxLength": 1024, "writeOnly": true, "description": "有效英文 BIP39 助记词，支持空格和大小写规范化" } } }] },
+      "HdRoot": { "type": "object", "properties": { "id": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "type": { "type": "string", "enum": ["hd"] }, "scheme": { "type": "string", "enum": ["bip44-v1"] }, "basePath": { "type": "string", "enum": ["m/44'/1'/0'/0"] } } },
+      "HdWallet": { "allOf": [{ "$ref": "#/components/schemas/Wallet" }, { "type": "object", "properties": { "type": { "type": "string", "enum": ["hd"] }, "rootId": { "type": "string" }, "index": { "$ref": "#/components/schemas/HdIndex" }, "path": { "type": "string", "example": "m/44'/1'/0'/0/0" } } }] },
+      "HdResult": { "type": "object", "required": ["success", "root", "wallets", "nextIndex"], "properties": { "success": { "type": "boolean" }, "root": { "$ref": "#/components/schemas/HdRoot" }, "wallets": { "type": "array", "items": { "$ref": "#/components/schemas/HdWallet" } }, "nextIndex": { "type": "integer", "minimum": 0, "maximum": 2147483648 } } },
+      "TransactionInput": { "type": "object", "required": ["from", "to", "amount", "privateKey", "publicKey"], "properties": { "from": { "$ref": "#/components/schemas/Address" }, "to": { "$ref": "#/components/schemas/Address" }, "amount": { "$ref": "#/components/schemas/Amount" }, "fee": { "allOf": [{ "$ref": "#/components/schemas/Amount" }], "default": 0 }, "note": { "type": "string", "default": "" }, "currency": { "$ref": "#/components/schemas/Currency" }, "nonce": { "type": "integer", "minimum": 0, "description": "省略时自动填充" }, "privateKey": { "type": "string", "writeOnly": true, "description": "发送方 PEM 私钥" }, "publicKey": { "type": "string", "description": "发送方 SPKI DER 十六进制公钥" } } },
+      "Transaction": { "type": "object", "properties": { "id": { "type": "string" }, "version": { "type": "integer", "enum": [1, 2] }, "chainId": { "type": "string" }, "from": { "type": "string" }, "to": { "type": "string" }, "amount": { "$ref": "#/components/schemas/Amount" }, "fee": { "$ref": "#/components/schemas/Amount" }, "currency": { "$ref": "#/components/schemas/Currency" }, "nonce": { "type": "integer", "minimum": 0 }, "note": { "type": "string" }, "timestamp": { "type": "string", "format": "date-time" }, "publicKey": { "type": "string" }, "signature": { "type": "string" }, "blockIndex": { "type": "integer" } } },
+      "TransactionStatus": { "type": "object", "properties": { "success": { "type": "boolean" }, "id": { "type": "string" }, "status": { "type": "string", "enum": ["pending", "included", "confirmed", "reverted", "unknown"] }, "confirmations": { "type": "integer" }, "requiredConfirmations": { "type": "integer" }, "blockIndex": { "type": "integer", "nullable": true }, "blockHash": { "type": "string", "nullable": true }, "wasReverted": { "type": "boolean" }, "transaction": { "anyOf": [{ "$ref": "#/components/schemas/Transaction" }, { "type": "object", "nullable": true, "enum": [null] }] }, "block": { "$ref": "#/components/schemas/Block" } } },
+      "Block": { "type": "object", "properties": { "version": { "type": "integer", "enum": [1, 2] }, "chainId": { "type": "string" }, "consensusHash": { "type": "string" }, "index": { "type": "integer" }, "timestamp": { "type": "string", "format": "date-time" }, "previousHash": { "type": "string" }, "nonce": { "type": "integer" }, "hash": { "type": "string" }, "merkleRoot": { "type": "string", "nullable": true }, "target": { "type": "string" }, "transactions": { "type": "array", "items": { "$ref": "#/components/schemas/Transaction" } }, "data": {} } },
+      "NodeInfo": { "type": "object", "properties": { "id": { "type": "string" }, "url": { "type": "string" }, "port": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }, "chainLength": { "type": "integer" } } },
+      "Discovery": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "isDiscovering": { "type": "boolean" }, "interval": { "type": "integer", "description": "毫秒" }, "pendingNodes": { "type": "array", "items": { "type": "string" } } } },
+      "ChainOperation": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "totalBlocks": { "type": "integer" } } },
+      "Error": { "type": "object", "required": ["success", "error", "code", "statusCode"], "properties": { "success": { "type": "boolean", "enum": [false] }, "error": { "type": "string" }, "code": { "type": "string", "description": "如 INVALID_HD_WALLET、TX_REJECTED、INVALID_ADDRESS、TOO_MANY_REQUESTS" }, "statusCode": { "type": "integer" }, "details": { "type": "object" }, "stack": { "type": "string" } } }
+    }
+  }
+}
