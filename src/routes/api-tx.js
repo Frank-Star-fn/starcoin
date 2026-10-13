@@ -197,7 +197,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
             const tx = new Transaction(from, to, amount, fee ?? 0, note || '', currency,
                 txNonce, { version: 2, chainId: starCoin.consensus?.params.chainId });
             tx.signTransaction(privateKey, publicKey);
-            savedTx = starCoin.addTransaction(tx);
+            savedTx = await starCoin.addTransaction(tx);
         } catch (err) {
             throw new AppError(400, err.message, 'TX_REJECTED');
         }

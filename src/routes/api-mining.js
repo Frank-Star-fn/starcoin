@@ -27,7 +27,7 @@ function createMiningRoutes(starCoin, p2p, broadcastToFrontend) {
         const startTime = Date.now();
         let newBlock;
         try {
-            newBlock = starCoin.mineBlock(minerAddress || starCoin.miningAddress, data);
+            newBlock = await starCoin.mineBlock(minerAddress || starCoin.miningAddress, data);
         } catch (err) {
             throw new AppError(400, err.message || '挖矿失败', 'MINE_FAILED');
         }

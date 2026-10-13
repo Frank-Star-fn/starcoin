@@ -3,6 +3,7 @@
 // ============================================================
 const express = require('express');
 const { targetForDifficulty, targetHex } = require('../protocol');
+const { wrapAsync } = require('./error-handler');
 
 /**
  * 创建区块链信息相关的路由
@@ -17,15 +18,15 @@ function createChainRoutes(starCoin, p2p, PORT) {
     // ============================================================
     // 区块链概览信息
     // ============================================================
-    router.get('/blockchain', (req, res) => {
+    router.get('/blockchain', wrapAsync(async (req, res) => {
         res.json({
             chain: starCoin.chain,
-            isValid: starCoin.isChainValid(),
+            isValid: await starCoin.isChainValid(),
             stats: {
                 totalBlocks: starCoin.chain.length,
-                chainWork: starCoin.getChainWork().toString(),
+                chainWork: (await starCoin.getChainWork()).toString(),
                 chainId: starCoin.consensus.params.chainId,
-                protocolVersion: 2,
+                protocolVersion: starCoin.evmEnabled ? 3 : 2,
                 activationHeight: starCoin.consensus.params.activationHeight,
                 paymentConfirmations: starCoin.paymentConfirmations,
                 reorgEvents: starCoin.reorgEvents,
@@ -41,18 +42,18 @@ function createChainRoutes(starCoin, p2p, PORT) {
             port: PORT,
             nodeInfo: p2p.nodeInfo
         });
-    });
+    }));
 
     // ============================================================
     // 验证区块链完整性
     // ============================================================
-    router.get('/validate', (req, res) => {
+    router.get('/validate', wrapAsync(async (req, res) => {
         res.json({
             success: true,
-            isValid: starCoin.isChainValid(),
+            isValid: await starCoin.isChainValid(),
             totalBlocks: starCoin.chain.length
         });
-    });
+    }));
 
     return router;
 }

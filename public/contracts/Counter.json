@@ -1,0 +1,68 @@
+{
+  "contractName": "Counter",
+  "compiler": "0.8.30+commit.73712a01.Emscripten.clang",
+  "evmVersion": "shanghai",
+  "abi": [
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "value",
+          "type": "uint256"
+        }
+      ],
+      "name": "ValueChanged",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "count",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "fail",
+      "outputs": [],
+      "stateMutability": "pure",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "increment",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "value",
+          "type": "uint256"
+        }
+      ],
+      "name": "set",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ],
+  "bytecode": "0x6080604052348015600e575f5ffd5b506101d68061001c5f395ff3fe608060405234801561000f575f5ffd5b506004361061004a575f3560e01c806306661abd1461004e57806360fe47b114610068578063a9cc47181461007d578063d09de08a14610085575b5f5ffd5b6100565f5481565b60405190815260200160405180910390f35b61007b610076366004610164565b61008d565b005b61007b6100c9565b61007b610115565b5f81905560405181815233907fe2b64d6eb95e02b6354c9dad0f0b75f05c8659bc5f2a0f91bc457fc27c55c6889060200160405180910390a250565b60405162461bcd60e51b815260206004820152601b60248201527f436f756e7465723a20696e74656e74696f6e616c207265766572740000000000604482015260640160405180910390fd5b60015f5f828254610126919061017b565b90915550505f5460405190815233907fe2b64d6eb95e02b6354c9dad0f0b75f05c8659bc5f2a0f91bc457fc27c55c6889060200160405180910390a2565b5f60208284031215610174575f5ffd5b5035919050565b8082018082111561019a57634e487b7160e01b5f52601160045260245ffd5b9291505056fea2646970667358221220ec3aad3d96018ef5f7df87f775c54465a9699832aee4aef806154907b662e8dd64736f6c634300081e0033",
+  "constructorArgs": []
+}

@@ -7,6 +7,7 @@ const logger = require('./logger');
 const { Blockchain, Block, Transaction, generateWallet, importWalletFromPem } = require('./blockchain/blockchain');
 const { createP2P } = require('./p2p/p2p');
 const createRoutes = require('./routes');
+const { EvmBlockchain } = require('./evm/blockchain');
 const {
     createNotFoundMiddleware,
     createErrorMiddleware
@@ -29,7 +30,7 @@ const app = express();
 const PORT = config.PORT;
 
 // 初始化区块链
-const starCoin = new Blockchain();
+const starCoin = new EvmBlockchain();
 
 // 创建 HTTP 服务器
 const server = http.createServer(app);
@@ -67,6 +68,8 @@ function broadcastToFrontend(type, data = {}) {
 }
 
 // 初始化 P2P 网络层（传入 frontendConnection 回调，由 P2P 层代为处理前端 WS 连接）
+async function start() {
+await starCoin.ready;
 const p2p = createP2P(server, starCoin, PORT, {
     onFrontendConnection: (ws) => {
         frontendClients.add(ws);
@@ -91,7 +94,8 @@ const p2p = createP2P(server, starCoin, PORT, {
 app.use(express.static(path.join(__dirname, '..', 'public')));
 // 同时提供 src/ 目录下的 JS 文件的访问
 app.use('/src', express.static(path.join(__dirname, '..', 'src')));
-app.use(express.json());
+app.get('/vendor/ethers.js', (_req, res) => res.sendFile(require.resolve('ethers').replace(/lib.commonjs[\\/]index.js$/, 'dist/ethers.umd.min.js')));
+app.use(express.json({ limit: '1mb' }));
 
 app.use('/api', createRoutes(starCoin, p2p, broadcastToFrontend, PORT));
 
@@ -186,6 +190,10 @@ server.listen(PORT, () => {
         }
     }, config.SYNC_INTERVAL);
 });
+}
+
+start().catch(error => { log.error('节点启动失败（原链文件保留）', error); process.exitCode = 1; });
+server.on('error', error => { log.error('服务监听失败', error); process.exitCode = 1; });
 
 // 导出用于测试
 module.exports = { starCoin, Blockchain, Block, Transaction, generateWallet, importWalletFromPem };

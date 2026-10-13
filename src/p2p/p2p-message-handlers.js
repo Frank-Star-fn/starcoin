@@ -1,5 +1,6 @@
 const { MESSAGE_TYPES } = require('./p2p-core');
 const logger = require('../logger');
+const { settle } = require('./settle');
 
 /** 区块链业务消息处理：链同步、区块追加、交易池等，与 p2p-core 网络层解耦 */
 function createMessageHandlers(network, starCoin, options = {}) {
@@ -69,11 +70,10 @@ function createMessageHandlers(network, starCoin, options = {}) {
     function handleChainResponse(chain, fromNode) {
         if (!Array.isArray(chain) || !chain.length) return;
         if (chain.length === 1 && chain[0].index !== 0) {
-            handleBlockResponse(chain[0]);
-            return;
+            return handleBlockResponse(chain[0]);
         }
         // replaceChain validates all blocks and compares locally computed work.
-        if (starCoin.replaceChain(chain)) notifyChainChange();
+        return settle(starCoin.replaceChain(chain), accepted => { if (accepted) notifyChainChange(); });
     }
 
     function handleBlockResponse(block) {
@@ -81,7 +81,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
         const latest = starCoin.getLatestBlock();
         if (block.hash === latest.hash) return;
         if (block.previousHash === latest.hash) {
-            if (starCoin.addBlock(block)) notifyChainChange();
+            return settle(starCoin.addBlock(block), accepted => { if (accepted) notifyChainChange(); });
         } else {
             // A shorter/equal-height branch may have more work. Ask for its proof.
             broadcastQueryAll();
@@ -126,11 +126,9 @@ function createMessageHandlers(network, starCoin, options = {}) {
                 });
                 break;
             case MESSAGE_TYPES.CHAIN:
-                handleChainResponse(message.chain, message.fromNode);
-                break;
+                return handleChainResponse(message.chain, message.fromNode);
             case MESSAGE_TYPES.BLOCK:
-                handleBlockResponse(message.block);
-                break;
+                return handleBlockResponse(message.block);
             case MESSAGE_TYPES.NODE_INFO:
                 handleNodeInfo(message.node);
                 break;

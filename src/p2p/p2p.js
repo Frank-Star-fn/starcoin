@@ -4,6 +4,7 @@ const logger = require('../logger');
 const { createP2PCore, MESSAGE_TYPES } = require('./p2p-core');
 const { createMessageHandlers } = require('./p2p-message-handlers');
 const { createDiscoveryModule } = require('./p2p-discovery');
+const { settle, settleAll } = require('./settle');
 
 /**
  * 创建完整的 P2P 网络层（核心层 + 发现 + 同步）
@@ -84,12 +85,11 @@ function createP2P(server, starCoin, PORT, options = {}) {
             return;
         }
 
-        const scored = validCandidates.map(candidate => ({
-            ...candidate, work: starCoin.getChainWork(candidate.chain)
-        }));
+        return settleAll(validCandidates.map(candidate => settle(starCoin.getChainWork(candidate.chain), work => ({ ...candidate, work }))), scored => {
         scored.sort((a, b) => a.work > b.work ? -1 : a.work < b.work ? 1 : 0);
         const best = scored[0];
-        if (!starCoin.replaceChain(best.chain)) {
+        return settle(starCoin.replaceChain(best.chain), accepted => {
+        if (!accepted) {
             syncState.lastSyncAt = new Date().toISOString();
             return;
         }
@@ -103,6 +103,8 @@ function createP2P(server, starCoin, PORT, options = {}) {
         if (options.onChainChange) {
             options.onChainChange();
         }
+        });
+        });
     }
 
     function syncWithPeers() {
@@ -164,7 +166,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         syncTimeout = setTimeout(() => {
             if (!syncState.resolved) {
                 log.warn('同步超时，用已收到的候选进行解析');
-                resolveSyncCandidates();
+                Promise.resolve(resolveSyncCandidates()).catch(error => log.error('同步验证失败', error));
             }
         }, config.SYNC_TIMEOUT);
 
@@ -212,8 +214,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
             // ====== 交易池广播消息处理 ======
 
             case MESSAGE_TYPES.TRANSACTION:
-                handleIncomingTransaction(message.transaction, message.fromNode);
-                return;
+                return handleIncomingTransaction(message.transaction, message.fromNode);
 
             case MESSAGE_TYPES.QUERY_PENDING_TXS:
                 // 收到交易池请求 → 发送本节点的待打包交易列表
@@ -225,8 +226,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
                 return;
 
             case MESSAGE_TYPES.PENDING_TXS:
-                handleIncomingPendingTxs(message.transactions, message.fromNode);
-                return;
+                return handleIncomingPendingTxs(message.transactions, message.fromNode);
         }
 
         // 其余消息类型交给原始 handler
@@ -259,12 +259,13 @@ function createP2P(server, starCoin, PORT, options = {}) {
         log.info('收到来自节点的交易', { fromNode, txId: transaction.id.substring(0, 16) });
 
         // 所有网络交易都必须验证余额、nonce 和签名
-        const result = starCoin.addPendingTransaction(transaction);
+        return settle(starCoin.addPendingTransaction(transaction), result => {
         if (result.success) {
             log.info('交易已加入本地交易池', { poolSize: starCoin.pendingTransactions.length });
         } else {
             log.warn('交易拒绝加入', { error: result.error });
         }
+        });
     }
 
     /**
@@ -276,22 +277,27 @@ function createP2P(server, starCoin, PORT, options = {}) {
 
         let added = 0;
         let skipped = 0;
-        for (const tx of transactions) {
+        let work;
+        const merge = tx => {
             if (!tx || typeof tx.id !== 'string' || starCoin.hasPendingTransaction(tx.id)) {
                 skipped++;
-                continue;
+                return;
             }
-            const result = starCoin.addPendingTransaction(tx);
+            return settle(starCoin.addPendingTransaction(tx), result => {
             if (result.success) {
                 added++;
             } else {
                 skipped++;
             }
-        }
+            });
+        };
+        for (const tx of transactions) work = settle(work, () => merge(tx));
 
+        return settle(work, () => {
         if (added > 0) {
             log.info('从节点合并了新交易', { fromNode, added, skipped, poolSize: starCoin.pendingTransactions.length });
         }
+        });
     }
 
     // ========== 交易池广播同步方法 ==========
@@ -361,18 +367,21 @@ function createP2P(server, starCoin, PORT, options = {}) {
         if (!Array.isArray(chain) || !chain.length) return;
         if (syncState.isSyncing && fromNode) {
             log.info('收到节点的链', { fromNode, length: chain.length });
+            const batch = syncState.candidates;
+            return settle(starCoin.isChainValid(chain), valid => {
+            if (syncState.resolved || batch !== syncState.candidates) return;
             syncState.candidates.push({
                 fromNode: fromNode,
                 chain: chain,
                 length: chain.length,
-                valid: starCoin.isChainValid(chain)
+                valid
             });
             syncState.syncCount++;
 
             if (syncState.syncCount >= syncState.expectedCount) {
-                resolveSyncCandidates();
+                return resolveSyncCandidates();
             }
-            return;
+            });
         }
 
         // 其余情况交给原始 handler
@@ -385,9 +394,10 @@ function createP2P(server, starCoin, PORT, options = {}) {
 
     // 检查当前链是否有效，无效则自动修复并从其他节点同步
     function checkChainHealth() {
-        if (!starCoin.isChainValid()) {
+        return settle(starCoin.isChainValid(), valid => {
+        if (!valid) {
             log.warn('发现链状态无效，开始自动修复');
-            const removed = starCoin.repairChain();
+            return settle(starCoin.repairChain(), removed => {
             if (removed.length > 0) {
                 log.info('已截断区块', { count: removed.length });
             }
@@ -400,8 +410,10 @@ function createP2P(server, starCoin, PORT, options = {}) {
                 syncTriggered: true,
                 chainLength: starCoin.chain.length
             };
+            });
         }
         return { status: 'healthy', chainLength: starCoin.chain.length };
+        });
     }
 
     // 启动定期健康检查
@@ -409,7 +421,7 @@ function createP2P(server, starCoin, PORT, options = {}) {
         if (healthCheckTimer) return;
         log.info('健康检查已启动', { interval: intervalMs / 1000 });
         healthCheckTimer = setInterval(() => {
-            checkChainHealth();
+            Promise.resolve(checkChainHealth()).catch(error => log.error('健康检查失败', error));
         }, intervalMs);
     }
 

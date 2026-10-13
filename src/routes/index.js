@@ -11,6 +11,7 @@ const createTxRoutes = require('./api-tx');
 const createMiningRoutes = require('./api-mining');
 const createNetRoutes = require('./api-net');
 const createSearchRoutes = require('./api-search');
+const createEvmRoutes = require('./api-evm');
 const openapi = require('../../docs/openapi.json');
 const {
     createNotFoundMiddleware,
@@ -73,6 +74,7 @@ function createRoutes(starCoin, p2p, broadcastToFrontend, PORT) {
     router.use('/connect', writeMethodLimiter);
     router.use('/disconnect', writeMethodLimiter);
     router.use('/discovery', writeMethodLimiter);
+    router.use('/evm', writeMethodLimiter);
 
     // 3. 搜索限流（中等限制）
     router.use('/search', searchLimiter);
@@ -83,6 +85,7 @@ function createRoutes(starCoin, p2p, broadcastToFrontend, PORT) {
     router.use(createMiningRoutes(starCoin, p2p, broadcastToFrontend));
     router.use(createNetRoutes(starCoin, p2p, PORT));
     router.use(createSearchRoutes(starCoin));
+    router.use(createEvmRoutes(starCoin, p2p, broadcastToFrontend));
 
     // ========== 全局错误处理（仅针对 /api 路径下的路由） ==========
     // 404 兜底：API 路径不存在时返回统一 JSON 格式

@@ -270,7 +270,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
 
         ws.on('message', (message) => {
             if (_messageHandler) {
-                _messageHandler(ws, JSON.parse(message), connectionId);
+                Promise.resolve(_messageHandler(ws, JSON.parse(message), connectionId)).catch(error => log.error('消息处理失败', error));
             }
         });
 
@@ -432,7 +432,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
                 // nodes.add 由 handleMessage → handleNodeInfo 完成，此处不重复添加
             }
             if (_messageHandler) {
-                _messageHandler(ws, parsed, connectionId);
+                Promise.resolve(_messageHandler(ws, parsed, connectionId)).catch(error => log.error('消息处理失败', error));
             }
         });
 

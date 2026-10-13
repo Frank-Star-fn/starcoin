@@ -22,7 +22,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
         const result = p2p.syncWithPeers();
         res.json({
             ...result,
-            valid: starCoin.isChainValid(),
+            valid: await starCoin.isChainValid(),
             syncState: p2p.getSyncState()
         });
     }));
@@ -34,12 +34,12 @@ function createNetRoutes(starCoin, p2p, PORT) {
         if (!latestBlock || !latestBlock.hash) {
             throw new AppError(500, '区块链状态异常：无法获取最新区块', 'CHAIN_CORRUPTED');
         }
-        const peerSummary = syncData.candidates.map(c => ({
+        const peerSummary = await Promise.all(syncData.candidates.map(async c => ({
             node: c.fromNode,
             length: c.length,
             valid: c.valid,
-            chainWork: c.valid ? starCoin.getChainWork(c.chain).toString() : null
-        }));
+            chainWork: c.valid ? (await starCoin.getChainWork(c.chain)).toString() : null
+        })));
 
         res.json({
             success: true,
@@ -47,9 +47,9 @@ function createNetRoutes(starCoin, p2p, PORT) {
             lastSyncAt: syncData.lastSyncAt,
             selfChain: {
                 length: starCoin.chain.length,
-                chainWork: starCoin.getChainWork().toString(),
+                chainWork: (await starCoin.getChainWork()).toString(),
                 latestHash: latestBlock.hash,
-                valid: starCoin.isChainValid()
+                valid: await starCoin.isChainValid()
             },
             connectedNodes: p2p.getConnectedCount(),
             peerChains: peerSummary,
@@ -120,7 +120,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
     }));
 
     router.post('/storage/save', wrapAsync(async (req, res) => {
-        const success = starCoin.saveToFile();
+        const success = await starCoin.saveToFile();
         if (!success) {
             throw new AppError(500, '区块链保存到本地文件失败', 'SAVE_FAILED');
         }
@@ -133,7 +133,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
     }));
 
     router.post('/storage/reload', wrapAsync(async (req, res) => {
-        const success = starCoin.loadFromFile();
+        const success = await (starCoin.reload ? starCoin.reload() : starCoin.loadFromFile());
         // loadFromFile 返回 false 时表示文件不存在或不完整，已重建创世区块，不算严重错误
         res.json({
             success: success,
@@ -143,7 +143,7 @@ function createNetRoutes(starCoin, p2p, PORT) {
     }));
 
     router.post('/storage/reset', wrapAsync(async (req, res) => {
-        const success = starCoin.clearDataFile();
+        const success = await starCoin.clearDataFile();
         if (!success) {
             throw new AppError(500, '重置区块链失败', 'RESET_FAILED');
         }
@@ -177,10 +177,10 @@ function createNetRoutes(starCoin, p2p, PORT) {
         if (!chain || !Array.isArray(chain) || chain.length === 0) {
             throw new AppError(400, '无效的区块链数据：必须提供非空的 chain 数组', 'INVALID_CHAIN_DATA');
         }
-        if (!starCoin.isChainValid(chain)) {
+        if (!await starCoin.isChainValid(chain)) {
             throw new AppError(400, '导入的区块链验证失败：数据不完整或哈希不匹配', 'CHAIN_VALIDATION_FAILED');
         }
-        if (!starCoin.replaceChain(chain)) {
+        if (!await starCoin.replaceChain(chain)) {
             throw new AppError(400, '导入链必须具有更高的累计工作量', 'INSUFFICIENT_CHAIN_WORK');
         }
         p2p.broadcastLatest();

@@ -53,6 +53,14 @@ class EvmBlockchain extends Blockchain {
         this.query.getAllBalances = (value, immature = false) => Object.fromEntries(['STC', 'cBTC', 'cETH'].map(c => [c, this.query.getBalance(value, immature, c)]));
         const nativeFees = this.query.getTotalBurnedFees.bind(this.query);
         this.query.getTotalBurnedFees = () => nativeFees() + Number(this._evaluation.state.evmBurnedWei) / 1e18;
+        const recentFees = this.query.getRecentBurnedFees.bind(this.query);
+        this.query.getRecentBurnedFees = count => recentFees(count).map(item => {
+            const receipts = [...this._evaluation.receipts.values()].filter(receipt => receipt.blockIndex === item.blockIndex && receipt.kind === 'evm');
+            return { ...item, totalFees: item.totalFees + Number(receipts.reduce((total, receipt) => total + BigInt(receipt.feeWei), 0n)) / 1e18,
+                txWithFeeCount: item.txWithFeeCount + receipts.length };
+        });
+        const addresses = this.query.getAllAddresses.bind(this.query);
+        this.query.getAllAddresses = () => addresses().filter(item => /^[0-9a-f]{32}$/.test(item.address));
     }
 
     install(result, pool, reverted, events) {
@@ -114,6 +122,7 @@ class EvmBlockchain extends Blockchain {
         return tx;
     }
     addTransaction(data) { return this.enqueue(() => this.addInside(data)); }
+    saveToFile() { return this.enqueue(() => this.storage.saveToFile()); }
     async addPendingTransaction(data) {
         try { return { success: true, transaction: await this.addTransaction(data) }; }
         catch (error) { return { success: false, error: error.message }; }
@@ -192,6 +201,7 @@ class EvmBlockchain extends Blockchain {
     }
 
     async addBlockInside(block) {
+        if (block.hash === this.getLatestBlock().hash) return null;
         const evaluation = await this.consensus.evaluateAsync([...this.chain, block]);
         if (!evaluation.valid) { this.log.warn('拒绝无效区块', { error: evaluation.error }); return null; }
         await this.commitAsync(evaluation);
