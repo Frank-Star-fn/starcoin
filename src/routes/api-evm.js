@@ -31,6 +31,8 @@ function createEvmRoutes(chain, p2p, broadcast) {
     router.get('/evm/status', route(async (_req, res) => {
         const { fingerprint, ...settings } = chain.consensus.evm;
         res.json({ success: true, ...settings, active: chain.chain.length >= settings.activationHeight,
+            metamask: chain.consensus.rpc ? { ...chain.consensus.rpc, rpcUrl: '/rpc', rpcConsensusHash: chain.consensus.rpcFingerprint,
+                baseFeePerGas: context().baseFeePerGas, priorityFeeWei: chain.consensus.rpc.priorityFeeWei } : null,
             evmConsensusHash: chain.consensus.evmFingerprint, stateRoot: chain._evaluation.evmStateRoot,
             bridgeLockedWei: chain._evaluation.state.bridgeLockedWei.toString(), burnedWei: chain._evaluation.state.evmBurnedWei.toString() });
     }));

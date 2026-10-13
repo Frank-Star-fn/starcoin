@@ -26,7 +26,7 @@ function createChainRoutes(starCoin, p2p, PORT) {
                 totalBlocks: starCoin.chain.length,
                 chainWork: (await starCoin.getChainWork()).toString(),
                 chainId: starCoin.consensus.params.chainId,
-                protocolVersion: starCoin.evmEnabled ? 3 : 2,
+                protocolVersion: starCoin.rpcEnabled ? 4 : starCoin.evmEnabled ? 3 : 2,
                 activationHeight: starCoin.consensus.params.activationHeight,
                 paymentConfirmations: starCoin.paymentConfirmations,
                 reorgEvents: starCoin.reorgEvents,

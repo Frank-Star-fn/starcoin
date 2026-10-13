@@ -9,6 +9,7 @@ const { createP2P } = require('./p2p/p2p');
 const createRoutes = require('./routes');
 const { EvmBlockchain } = require('./evm/blockchain');
 const projectRoot = require('./project-root');
+const createRpc = require('./rpc');
 const {
     createNotFoundMiddleware,
     createErrorMiddleware
@@ -96,6 +97,7 @@ async function start() {
     // 同时提供 src/ 目录下的 JS 文件的访问
     app.use('/src', express.static(path.join(projectRoot, 'src')));
     app.get('/vendor/ethers.js', (_req, res) => res.sendFile(require.resolve('ethers').replace(/lib.commonjs[\\/]index.js$/, 'dist/ethers.umd.min.js')));
+    app.use('/rpc', createRpc(starCoin, p2p, broadcastToFrontend));
     app.use(express.json({ limit: '1mb' }));
 
     app.use('/api', createRoutes(starCoin, p2p, broadcastToFrontend, PORT));
