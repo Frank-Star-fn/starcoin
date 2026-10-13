@@ -6,7 +6,7 @@ function renderTransfer() {
     const fromSel = document.getElementById('fromWallet');
     const currentVal = fromSel.value;
     fromSel.innerHTML = '<option value="">-- 请选择钱包 --</option>' +
-        state.wallets.map((w, i) => `<option value="${i}">${w.label} (${shortAddr(w.address, 16)})</option>`).join('');
+        state.wallets.map((w, i) => `<option value="${i}">${escapeHtml(w.label)} (${escapeHtml(shortAddr(w.address, 16))})</option>`).join('');
     // 保持选中
     if (currentVal !== '' && state.wallets[parseInt(currentVal)]) fromSel.value = currentVal;
     else if (state.selectedWallet >= 0) fromSel.value = String(state.selectedWallet);
@@ -161,12 +161,12 @@ async function refreshMempool() {
                 return `
                 <div class="mempool-item">
                     <div style="font-weight:bold; color:#60a5fa;">
-                        ${shortAddr(tx.from, 10)} → ${shortAddr(tx.to, 10)}: <b>${display.amount} ${cur}</b>
+                        ${escapeHtml(shortAddr(tx.from, 10))} → ${escapeHtml(shortAddr(tx.to, 10))}: <b>${escapeHtml(display.amount)} ${escapeHtml(cur)}</b>
                         ${Number(tx.fee) > 0 ? ' <span style="color:#f87171;">🔥 手续费 ' + formatBalance(tx.fee) + ' STC（即将燃烧）</span>' : ''}
                     </div>
                     ${tx.note ? '<div style="color:#888; font-size:11px; margin-top:3px;">备注: ' + escapeHtml(tx.note) + '</div>' : ''}
-                    <div style="color:#666; font-size:10px; margin-top:3px; font-family:monospace;">txid: ${shortAddr(tx.id, 20)}</div>
-                    ${display.signed ? '<div style="color:#4ade80; font-size:10px; margin-top:2px;">✅ 已 ECDSA 签名' + (tx.nonce !== undefined && tx.nonce !== null ? ' · nonce=' + tx.nonce : '') + '</div>' : ''}
+                    <div style="color:#666; font-size:10px; margin-top:3px; font-family:monospace;">txid: ${escapeHtml(shortAddr(tx.id, 20))}</div>
+                    ${display.signed ? '<div style="color:#4ade80; font-size:10px; margin-top:2px;">✅ 已 ECDSA 签名' + (tx.nonce !== undefined && tx.nonce !== null ? ' · nonce=' + escapeHtml(tx.nonce) : '') + '</div>' : ''}
                 </div>
             `;}).join('');
         }
@@ -199,7 +199,7 @@ async function refreshAddressRank() {
                 }
                 return `
                 <div class="address-row">
-                    <span class="addr">${shortAddr(a.address, 18)} <span style="color:#666;">(${a.txCount}笔)</span></span>
+                    <span class="addr">${escapeHtml(shortAddr(a.address, 18))} <span style="color:#666;">(${Number(a.txCount) || 0}笔)</span></span>
                     <span class="bal" style="font-size:11px; white-space:nowrap;">${balHtml}</span>
                 </div>
             `;}).join('');
@@ -243,7 +243,7 @@ async function refreshChain() {
                 targetText = zeros + '…';
             }
             const targetTime = data.stats.targetBlockTime || 12;
-            difficultyEl.innerHTML = `${diff} <span style="font-size:9px;color:#888;">(目标: 0x${targetText} · ${targetTime}s/块)</span>`;
+            difficultyEl.innerHTML = `${Number(diff)} <span style="font-size:9px;color:#888;">(目标: 0x${targetText} · ${Number(targetTime)}s/块)</span>`;
             difficultyEl.title = `完整目标: ${data.stats.target}\n目标出块时间: ${targetTime}秒\n区块哈希必须不大于目标`;
         } else {
             difficultyEl.textContent = '--';
@@ -259,10 +259,10 @@ async function refreshChain() {
                 html += '<div style="color:#fbbf24;font-size:11px;font-weight:bold;margin-bottom:6px;">⚙️ 难度调整历史</div>';
                 html += history.slice().reverse().map(h => `
                     <div style="font-size:10px;color:#aaa;padding:2px 0;display:flex;justify-content:space-between;">
-                        <span>区块 #${h.blockIndex}</span>
-                        <span>${h.oldDifficulty} → ${h.newDifficulty}</span>
-                        <span style="color:#888;">平均 ${h.avgTime}s</span>
-                        <span style="color:${h.reason.includes('↓') ? '#f87171' : '#4ade80'}">${h.reason}</span>
+                        <span>区块 #${Number(h.blockIndex)}</span>
+                        <span>${Number(h.oldDifficulty)} → ${Number(h.newDifficulty)}</span>
+                        <span style="color:#888;">平均 ${Number(h.avgTime)}s</span>
+                        <span style="color:${h.reason.includes('↓') ? '#f87171' : '#4ade80'}">${escapeHtml(h.reason)}</span>
                     </div>
                 `).join('');
                 html += '</div>';

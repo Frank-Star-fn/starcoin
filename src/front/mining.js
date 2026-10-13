@@ -618,7 +618,7 @@ function stopAutoMineOnError(errMsg) {
     const statusEl = document.getElementById('autoMineStatus');
     if (statusEl) {
         statusEl.style.display = 'block';
-        statusEl.innerHTML = '<span style="color:#f87171;">❌ 自动挖矿出错: ' + errMsg + '</span>';
+        statusEl.textContent = '❌ 自动挖矿出错: ' + errMsg;
     }
 
     enableMineButton();

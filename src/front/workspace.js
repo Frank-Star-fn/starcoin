@@ -60,7 +60,15 @@ function renderBlockList(blocks) {
     const reversed = [...workspaceState.blocks].reverse(), pages = Math.max(1, Math.ceil(reversed.length / 10));
     workspaceState.blockPage = Math.max(0, Math.min(workspaceState.blockPage, pages - 1));
     const visible = reversed.slice(workspaceState.blockPage * 10, workspaceState.blockPage * 10 + 10);
-    document.getElementById('chainVisual').innerHTML = visible.map(block => `<button class="block-row" onclick="searchBlock('${block.index}')" aria-label="查看区块 ${block.index}"><strong>#${block.index}</strong><code>${escapeHtml(shortAddr(block.hash, 28))}</code><time>${new Date(block.timestamp).toLocaleString()}</time><span>${block.transactions?.length || 0} 笔交易</span></button>`).join('') || '<div class="empty-state">暂无区块</div>';
+    const list = document.getElementById('chainVisual'); list.replaceChildren();
+    for (const block of visible) {
+        const row = textElement('button', '', 'block-row'); row.type = 'button';
+        row.setAttribute('aria-label', '查看区块 ' + block.index);
+        row.append(textElement('strong', '#' + block.index), textElement('code', shortAddr(block.hash, 28)),
+            textElement('time', new Date(block.timestamp).toLocaleString()), textElement('span', (block.transactions?.length || 0) + ' 笔交易'));
+        row.addEventListener('click', () => searchBlock(block.index)); list.append(row);
+    }
+    if (!visible.length) list.textContent = '暂无区块';
     document.getElementById('blockPageInfo').textContent = `共 ${reversed.length} 个区块 · 第 ${workspaceState.blockPage + 1} / ${pages} 页`;
     document.getElementById('blocksPrevious').disabled = workspaceState.blockPage === 0;
     document.getElementById('blocksNext').disabled = workspaceState.blockPage >= pages - 1;

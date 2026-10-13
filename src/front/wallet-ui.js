@@ -10,10 +10,17 @@ const walletHistoryView = { address: null, limit: 10, transactions: [] };
 function showMoreWalletHistory() { walletHistoryView.limit += 10; renderWalletHistory(); }
 function renderWalletHistory() {
     const address = walletHistoryView.address, transactions = walletHistoryView.transactions, hist = document.getElementById('selectedWalletHistory');
-    hist.innerHTML = transactions.slice(0, walletHistoryView.limit).map(tx => {
+    hist.replaceChildren();
+    for (const tx of transactions.slice(0, walletHistoryView.limit)) {
         const display = typeof transactionDisplay === 'function' ? transactionDisplay(tx) : { amount: tx.amount, label: (tx.currency || 'STC').toUpperCase() };
-        return `<div class="history-row"><div style="color:${tx.from === address ? '#f87171' : '#4ade80'}; font-weight:bold;">${tx.from === address ? '→ 转出' : '← 收到'}: ${display.amount} ${display.label}</div><div>区块 <a onclick="searchBlock('${tx.blockIndex}')">#${tx.blockIndex}</a> · <a onclick="searchTxId('${tx.id}')">${shortAddr(tx.id, 16)}</a> · ${new Date(tx.timestamp).toLocaleString()}</div></div>`;
-    }).join('') || '<div class="empty-state">暂无交易记录</div>';
+        const row = textElement('div', '', 'history-row');
+        row.append(textElement('div', `${tx.from === address ? '→ 转出' : '← 收到'}: ${display.amount} ${display.label}`));
+        const links = textElement('div', '区块 ');
+        links.append(searchLink('#' + tx.blockIndex, searchBlock, tx.blockIndex), document.createTextNode(' · '),
+            searchLink(shortAddr(tx.id, 16), searchTxId, tx.id), document.createTextNode(' · ' + new Date(tx.timestamp).toLocaleString()));
+        row.append(links); hist.append(row);
+    }
+    if (!hist.childNodes.length) hist.textContent = '暂无交易记录';
     const more = document.getElementById('walletHistoryMore');
     if (more) { more.hidden = transactions.length <= walletHistoryView.limit; more.textContent = `加载更多交易（剩余 ${Math.max(0, transactions.length - walletHistoryView.limit)} 条）`; }
 }
@@ -36,7 +43,7 @@ async function renderWallets() {
                 <div class="wallet-balance" id="wallet-balance-${i}">余额: --</div>
                 <div class="wallet-actions">
                     <button class="secondary small" onclick="event.stopPropagation(); copyWalletAddress(${i})">复制地址</button>
-                    <details class="menu-details" data-wallet-menu="${w.address}" onclick="event.stopPropagation()"><summary>更多操作</summary><div class="menu-content">
+                    <details class="menu-details" data-wallet-menu="${escapeHtml(w.address)}" onclick="event.stopPropagation()"><summary>更多操作</summary><div class="menu-content">
                     ${w.type === 'hd' ? `<span class="hint">${escapeHtml(w.path)}</span>` : ''}
                     <button class="secondary small" onclick="event.stopPropagation(); exportPrivateKey(${i})">🔑 导出私钥</button>
                     <button class="secondary small" onclick="event.stopPropagation(); setAsReceiver(${i})">设为接收方</button>
@@ -47,18 +54,18 @@ async function renderWallets() {
             </div>
         `;
         const hdGroups = state.hdRoots.map(root => `
-            <div class="hd-wallet-group" data-hd-root="${root.id}" style="margin-bottom:16px;">
+            <div class="hd-wallet-group" data-hd-root="${escapeHtml(root.id)}" style="margin-bottom:16px;">
                 <div style="padding:10px 0; border-bottom:1px solid rgba(96,165,250,0.25);">
                     <strong style="color:#60a5fa;">${escapeHtml(root.label)}</strong>
-                    <div class="hint">${state.wallets.filter(w => w.rootId === root.id).length} 个子地址 · 已扫描 ${root.scanNextIndex || 0} 个地址</div>
+                    <div class="hint">${state.wallets.filter(w => w.rootId === root.id).length} 个子地址 · 已扫描 ${Number(root.scanNextIndex) || 0} 个地址</div>
                     <div class="wallet-actions">
-                        <button class="secondary small" onclick="addHdAddress('${root.id}')">＋ 新增地址</button>
-                        <details class="menu-details" data-wallet-menu="${root.id}"><summary>备份与管理</summary><div class="menu-content">
-                        <button class="secondary small" onclick="exportHdBackup('${root.id}')">📁 完整备份</button>
-                        <button class="secondary small" onclick="showHdMnemonic('${root.id}')">助记词</button>
-                        <button class="secondary small" onclick="continueHdScan('${root.id}')">继续扫描</button>
-                        <button class="secondary small" onclick="renameHdRoot('${root.id}')">重命名钱包</button>
-                        <button class="danger small" onclick="removeHdRoot('${root.id}')">删除钱包</button>
+                        <button class="secondary small" data-hd-action="add">＋ 新增地址</button>
+                        <details class="menu-details" data-wallet-menu="${escapeHtml(root.id)}"><summary>备份与管理</summary><div class="menu-content">
+                        <button class="secondary small" data-hd-action="export">📁 完整备份</button>
+                        <button class="secondary small" data-hd-action="mnemonic">助记词</button>
+                        <button class="secondary small" data-hd-action="scan">继续扫描</button>
+                        <button class="secondary small" data-hd-action="rename">重命名钱包</button>
+                        <button class="danger small" data-hd-action="remove">删除钱包</button>
                         </div></details>
                     </div>
                 </div>
@@ -67,6 +74,11 @@ async function renderWallets() {
         `).join('');
         const independent = state.wallets.map((w, i) => w.type !== 'hd' ? renderChild(w, i) : '').join('');
         list.innerHTML = hdGroups + (independent ? '<div class="hint">独立地址钱包</div>' + independent : '');
+        for (const button of list.querySelectorAll?.('[data-hd-action]') || []) {
+            const actions = { add: addHdAddress, export: exportHdBackup, mnemonic: showHdMnemonic,
+                scan: continueHdScan, rename: renameHdRoot, remove: removeHdRoot };
+            button.addEventListener('click', () => actions[button.dataset.hdAction](button.closest('[data-hd-root]').dataset.hdRoot));
+        }
         for (const menu of list.querySelectorAll?.('details[data-wallet-menu]') || []) if (openMenus.has(menu.dataset.walletMenu)) menu.open = true;
 
         // 异步查询每个钱包余额（多币种）

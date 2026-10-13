@@ -232,6 +232,11 @@ describe('api-tx 路由 — 钱包、交易、余额、交易池', () => {
     beforeEach(() => {
       wallet = generateWallet();
     });
+    it('拒绝携带 HTML 的新交易地址', async () => {
+      const res = await request(app).post('/transaction').send({ from: wallet.address,
+        to: '<img src=x onerror=alert(1)>', amount: 10, privateKey: wallet.privateKey, publicKey: wallet.publicKey });
+      expect(res.status).toBe(400); expect(res.body.code).toBe('INVALID_ADDRESS');
+    });
 
     it('提交带有效签名的交易返回 200', async () => {
       starCoin.addTransaction = (tx) => tx;
@@ -239,7 +244,7 @@ describe('api-tx 路由 — 钱包、交易、余额、交易池', () => {
         .post('/transaction')
         .send({
           from: wallet.address,
-          to: 'recipient_addr',
+          to: 'b'.repeat(32),
           amount: 10,
           fee: 1,
           note: '测试转账',
@@ -264,7 +269,7 @@ describe('api-tx 路由 — 钱包、交易、余额、交易池', () => {
     it('缺少 privateKey/publicKey 返回 400', async () => {
       const res = await request(app)
         .post('/transaction')
-        .send({ from: 'a', to: 'b', amount: 10 });
+        .send({ from: 'a', to: 'b'.repeat(32), amount: 10 });
       expect(res.status).toBe(400);
       expect(res.body.success).toBe(false);
       expect(res.body.error).toContain('必须提供 privateKey 和 publicKey');
@@ -275,7 +280,7 @@ describe('api-tx 路由 — 钱包、交易、余额、交易池', () => {
       const res = await request(app)
         .post('/transaction')
         .send({
-          from: wallet.address, to: 'b', amount: 99999,
+          from: wallet.address, to: 'b'.repeat(32), amount: 99999,
           privateKey: wallet.privateKey, publicKey: wallet.publicKey,
         });
       expect(res.status).toBe(400);
@@ -291,7 +296,7 @@ describe('api-tx 路由 — 钱包、交易、余额、交易池', () => {
       await request(app)
         .post('/transaction')
         .send({
-          from: wallet.address, to: 'b', amount: 10,
+          from: wallet.address, to: 'b'.repeat(32), amount: 10,
           privateKey: wallet.privateKey, publicKey: wallet.publicKey,
         });
 

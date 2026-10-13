@@ -5,6 +5,7 @@ const express = require('express');
 const { Transaction, generateWallet, importWalletFromPem,
         generateMnemonic, validateMnemonic, mnemonicToWallet, normalizeCurrency } = require('../blockchain/blockchain');
 const { AppError, wrapAsync } = require('./error-handler');
+const { requireNativeAddress } = require('./input-policy');
 
 /**
  * 创建钱包与交易相关的路由
@@ -175,6 +176,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
         if (!privateKey || !publicKey) {
             throw new AppError(400, '必须提供 privateKey 和 publicKey 用于 ECDSA 签名。请先用 POST /api/wallet/new 生成钱包。', 'MISSING_CREDENTIALS');
         }
+        requireNativeAddress(from); requireNativeAddress(to);
 
         // nonce 策略：
         // - 用户显式提供 nonce → 使用用户值（由 addTransaction 做最终校验）；
