@@ -11,6 +11,7 @@
 npm install
 npm run start:node1
 npm run start:node2
+$env:PORT="3002" ; node src/server.js
 ```
 
 从浏览器进入：
