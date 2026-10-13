@@ -232,6 +232,71 @@
 
     </div>
 
+    <section class="panel wide-panel" id="evmPanel">
+        <h2>EVM 智能合约</h2>
+        <div class="hint" id="evmNetwork">正在读取网络配置…</div>
+        <div class="evm-account" id="evmWallet">请选择一个钱包</div>
+        <div class="evm-grid">
+            <div>
+                <h3>1. 准备资金</h3>
+                <p class="hint">当前钱包的原生 STC 与 EVM 余额分别记账。存入和取回都需挖矿确认。</p>
+                <label for="evmBridgeAmount">STC 金额（最多 8 位小数）</label>
+                <input id="evmBridgeAmount" value="1" inputmode="decimal">
+                <div class="evm-actions">
+                    <button onclick="evmBridge('deposit')">存入 EVM</button>
+                    <button class="secondary" onclick="evmBridge('withdraw')">取回原生账户</button>
+                </div>
+                <h3>2. 加载与部署</h3>
+                <div class="evm-actions">
+                    <button class="secondary small" onclick="evmLoadExample('Counter')">Counter 示例</button>
+                    <button class="secondary small" onclick="evmLoadExample('DemoToken')">ERC20 示例</button>
+                    <label class="evm-file" for="evmArtifact">导入合约 JSON</label>
+                    <input type="file" id="evmArtifact" accept=".json,application/json" hidden onchange="evmImportArtifact(this)">
+                </div>
+                <details class="evm-source">
+                    <summary>ABI 与部署字节码</summary>
+                    <label for="evmAbi">ABI（JSON 数组）</label>
+                    <textarea id="evmAbi" rows="5" onchange="evmLoadMethods()" placeholder="[]"></textarea>
+                    <label for="evmBytecode">Creation bytecode（0x 开头）</label>
+                    <textarea id="evmBytecode" rows="3" spellcheck="false" placeholder="0x…"></textarea>
+                    <button class="secondary small" onclick="evmLoadMethods()">更新方法列表</button>
+                </details>
+                <label for="evmConstructorArgs">构造参数（JSON 数组）</label>
+                <input id="evmConstructorArgs" value="[]" spellcheck="false">
+                <div class="evm-actions">
+                    <button class="secondary" onclick="evmEstimate(true)">估算部署 Gas</button>
+                    <button onclick="evmExecute(true)">部署合约</button>
+                </div>
+            </div>
+            <div>
+                <h3>3. 调用合约</h3>
+                <label for="evmContract">合约地址</label>
+                <input id="evmContract" spellcheck="false" placeholder="0x…（20 字节）">
+                <label for="evmMethod">ABI 方法</label>
+                <select id="evmMethod" onchange="evmMethodChanged()"><option value="">请先加载 ABI</option></select>
+                <div class="hint" id="evmMethodHint">view / pure 方法直接查询；其他方法提交交易后挖矿确认。</div>
+                <label for="evmArgs">方法参数（JSON 数组）</label>
+                <input id="evmArgs" value="[]" spellcheck="false">
+                <p class="hint">大整数用引号，例如 ["42"]；ERC20 数量使用最小单位，1 SDT = 10¹⁸。</p>
+                <div class="evm-grid evm-options">
+                    <div><label for="evmGas">交易 Gas 上限</label><input id="evmGas" value="1000000" inputmode="numeric"></div>
+                    <div><label for="evmValue">随交易发送 STC</label><input id="evmValue" value="0" inputmode="decimal"></div>
+                </div>
+                <div class="evm-actions">
+                    <button class="secondary" onclick="evmEstimate(false)">估算调用 Gas</button>
+                    <button id="evmExecuteBtn" onclick="evmExecute(false)">执行方法</button>
+                </div>
+                <h3>4. 查看回执</h3>
+                <label for="evmReceiptId">StarCoin 交易 ID</label>
+                <input id="evmReceiptId" spellcheck="false" placeholder="提交后自动填入">
+                <button class="secondary small" onclick="evmReceiptAction()">查询回执</button>
+                <div class="hint" id="evmReceiptStatus">合约写入和资金操作通过上方“挖矿”打包。</div>
+                <details><summary>回执与事件日志</summary><pre class="evm-output" id="evmReceiptOutput"></pre></details>
+            </div>
+        </div>
+        <pre class="evm-output" id="evmResult" aria-live="polite">选择 Counter 示例开始：存入 STC → 挖矿 → 部署 → 挖矿 → 调用。</pre>
+    </section>
+
     <!-- 区块链可视化（底部通栏） -->
     <div class="panel wide-panel">
         <h2>🔗 区块链 — 区块详情</h2>
@@ -296,6 +361,8 @@
 <script src="src/front/wallet-manager.js"></script>
 <script src="src/front/hd-wallet-manager.js"></script>
 <script src="src/front/search.js"></script>
+<script src="vendor/ethers.js"></script>
+<script src="src/front/evm.js"></script>
 <script src="src/front/main.js"></script>
 <script src="src/front/mining.js"></script>
 

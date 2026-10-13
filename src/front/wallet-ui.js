@@ -95,6 +95,7 @@ function copyWalletAddress(i) {
  * 刷新当前选中钱包的详情区域（地址、余额、锁定奖励、成熟度提示、交易历史）
  */
 async function refreshSelectedWalletDetails() {
+    if (typeof refreshEvmWallet === 'function') refreshEvmWallet();
     const w = state.wallets[state.selectedWallet];
     if (!w) { document.getElementById('selectedWalletInfo').style.display = 'none'; return; }
     document.getElementById('selectedWalletInfo').style.display = 'block';

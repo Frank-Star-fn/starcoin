@@ -69,6 +69,21 @@
         border-radius: 12px;
         padding: 20px;
     }
+    .evm-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+    .evm-grid > div { min-width: 0; }
+    .evm-grid h3 { font-size: 14px; margin: 20px 0 10px; color: #e5e7eb; }
+    .evm-account { margin: 12px 0; font-family: monospace; white-space: pre-line; word-break: break-all; color: #93c5fd; }
+    .evm-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; }
+    .evm-options { gap: 12px; }
+    .evm-source { margin: 12px 0; }
+    #evmPanel summary { cursor: pointer; color: #9ca3af; margin: 12px 0; font-size: 12px; }
+    #evmPanel textarea { width: 100%; font-family: monospace; resize: vertical; }
+    #evmPanel select { width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,.15); background: #25344d; color: #e5e7eb; }
+    #evmPanel label { display: block; font-size: 12px; color: #aaa; margin: 10px 0 5px; }
+    #evmPanel .evm-file { cursor: pointer; color: #93c5fd; margin: 0; padding: 8px; }
+    .evm-output { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow: auto; font-size: 12px; line-height: 1.6; background: rgba(0,0,0,.22); border-radius: 6px; padding: 12px; margin-top: 12px; }
+    @media (max-width: 800px) { .evm-grid { grid-template-columns: 1fr; gap: 0; } }
+
     .panel h2 {
         font-size: 16px;
         margin-bottom: 15px;
