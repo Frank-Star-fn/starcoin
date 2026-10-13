@@ -15,6 +15,7 @@ const { AppError, wrapAsync } = require('./error-handler');
  */
 function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     const router = express.Router();
+    router.use('/wallet/hd', require('./api-wallet-hd')(starCoin));
 
     // ============================================================
     // 1. 创建新钱包（生成地址和私钥）

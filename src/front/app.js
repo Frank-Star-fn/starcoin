@@ -3,6 +3,7 @@
    ============================================================ */
 const state = {
     wallets: [],      // [{label, encryptedPrivateKey, publicKey, address}]
+    hdRoots: [],      // encrypted root credentials, derivation scheme and index progress
     selectedWallet: -1
 };
 
@@ -234,42 +235,55 @@ function clearMessage(id) {
 }
 
 /* ============================================================
-   本地持久化（加密存储 format version 2）
+   本地持久化（加密存储 format version 3）
    ============================================================ */
 
 /**
- * 保存钱包数据到 localStorage（加密格式 version 2）
+ * 保存钱包数据到 localStorage（加密格式 version 3）
  * state.wallets 中的 encryptedPrivateKey 已由调用方写入，
  * 此处仅做序列化持久化
  */
+let walletStorageSnapshot;
+
 function saveWallets() {
     try {
+        if (walletStorageSnapshot !== undefined && localStorage.getItem('starcoin_wallets') !== walletStorageSnapshot) {
+            throw new Error('钱包数据已在其他标签页更新，请刷新后重试');
+        }
         const data = {
-            version: 2,
+            version: 3,
             storageType: 'browser-key',
             wallets: state.wallets,
+            hdRoots: state.hdRoots,
             selectedWallet: state.selectedWallet
         };
-        localStorage.setItem('starcoin_wallets', JSON.stringify(data));
+        const serialized = JSON.stringify(data);
+        localStorage.setItem('starcoin_wallets', serialized);
+        walletStorageSnapshot = serialized;
     } catch (e) {
         console.error('saveWallets error:', e);
+        showMessage('txMessage', '❌ 钱包保存失败：' + e.message, 'error');
     }
 }
 
-/** 从 localStorage 加载钱包，自动检测 v1/v2 格式并迁移 */
+/** 从 localStorage 加载钱包，自动检测 v1/v2/v3 格式并迁移 */
 async function loadWallets() {
     try {
         // 确保主密钥就绪
         await getOrCreateMasterKey();
 
         const saved = localStorage.getItem('starcoin_wallets');
+        walletStorageSnapshot = saved;
         if (!saved) return;
 
         const parsed = JSON.parse(saved);
 
-        // version 2 格式（对象结构）
-        if (parsed && typeof parsed === 'object' && parsed.version === 2) {
-            state.wallets = Array.isArray(parsed.wallets) ? parsed.wallets : [];
+        // version 2/3 格式（对象结构）
+        if (parsed && typeof parsed === 'object' && (parsed.version === 2 || parsed.version === 3)) {
+            state.wallets = Array.isArray(parsed.wallets) ? parsed.wallets.map(w => ({
+                ...w, type: w.type || (w.encryptedMnemonic ? 'legacy' : 'private-key')
+            })) : [];
+            state.hdRoots = parsed.version === 3 && Array.isArray(parsed.hdRoots) ? parsed.hdRoots : [];
             const sel = parsed.selectedWallet;
             if (sel !== undefined && sel !== null) {
                 state.selectedWallet = Math.min(parseInt(sel), state.wallets.length - 1);
@@ -299,18 +313,15 @@ async function loadWallets() {
  * 尝试验证第一个钱包的解密，若失败则弹出密钥丢失提示
  */
 async function verifyFirstWalletDecryption() {
-    if (state.wallets.length === 0) return;
-    const first = state.wallets[0];
-    if (!first.encryptedPrivateKey) return;
+    const encrypted = state.wallets[0]?.encryptedPrivateKey || state.hdRoots[0]?.encryptedMnemonic;
+    if (!encrypted) return;
 
     try {
-        await decryptPrivateKey(first.encryptedPrivateKey);
+        await decryptPrivateKey(encrypted);
     } catch (e) {
         // 解密失败 → 密钥不匹配
         console.warn('🔑 解密验证失败，主密钥已变更:', e.message);
-        state.wallets = [];
-        state.selectedWallet = -1;
-        saveWallets();
+        // Keep the ciphertext so a failed unlock never destroys a wallet backup.
         // 显示密钥丢失对话框
         showKeyMismatchDialog();
     }
@@ -331,9 +342,13 @@ async function migrateV1ToV2(oldWallets) {
             continue;
         }
         const encrypted = await encryptPrivateKey(pemText, masterKey);
+        const encryptedMnemonic = typeof w.mnemonic === 'string'
+            ? await encryptPrivateKey(w.mnemonic, masterKey) : w.encryptedMnemonic;
         newWallets.push({
+            type: encryptedMnemonic ? 'legacy' : 'private-key',
             label: w.label,
             encryptedPrivateKey: encrypted,
+            ...(encryptedMnemonic ? { encryptedMnemonic } : {}),
             publicKey: w.publicKey,
             address: w.address
         });
@@ -365,6 +380,7 @@ function showForceBackupDialog(walletIndex) {
     const downloadBtn = document.getElementById('forceBackupDownloadBtn');
     const laterBtn = document.getElementById('forceBackupLaterBtn');
     const confirmRiskBtn = document.getElementById('forceBackupConfirmRiskBtn');
+    downloadBtn.textContent = w.type === 'hd' ? '📥 下载 HD 钱包备份' : '📥 下载 .pem 备份';
 
     // 显示钱包信息
     infoEl.innerHTML = `
@@ -384,6 +400,12 @@ function showForceBackupDialog(walletIndex) {
         try {
             const w = state.wallets[_forceBackupWalletIndex];
             if (!w) throw new Error('钱包已不存在');
+            if (w.type === 'hd') {
+                await exportHdBackup(w.rootId, false);
+                downloadBtn.textContent = '✅ 已下载';
+                overlay.style.display = 'none';
+                return;
+            }
             const masterKey = await getOrCreateMasterKey();
             const pemContent = await decryptPrivateKey(w.encryptedPrivateKey, masterKey);
             const shortAddrPart = w.address.substring(0, 8);
@@ -429,6 +451,14 @@ function showForceBackupDialog(walletIndex) {
 function showKeyMismatchDialog() {
     const overlay = document.getElementById('keyMismatchOverlay');
     const importBtn = document.getElementById('keyMismatchImportBtn');
+    document.getElementById('keyMismatchImportHdBtn').onclick = () => {
+        overlay.style.display = 'none';
+        document.getElementById('hdBackupFile').click();
+    };
+    document.getElementById('keyMismatchImportMnemonicBtn').onclick = () => {
+        overlay.style.display = 'none';
+        showImportMnemonicDialog();
+    };
 
     importBtn.onclick = () => {
         overlay.style.display = 'none';

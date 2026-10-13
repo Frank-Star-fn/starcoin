@@ -534,6 +534,7 @@ module.exports = { Block, Transaction, generateWallet, calculateMerkleRoot,
                    getPublicKeyFromPrivateKeyPem, publicKeyToAddress,
                    verifyPublicKeyMatchesAddress, signWithECDSA, verifyWithECDSA,
                    importWalletFromPem,
+                   rawPrivateKeyToPEM: _rawPrivateKeyToPEM,
                    generateMnemonic, validateMnemonic, mnemonicToWallet,
                    SUPPORTED_CURRENCIES, DEFAULT_CURRENCY,
                    normalizeCurrency, effectiveCurrency };

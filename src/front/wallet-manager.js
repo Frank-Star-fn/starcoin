@@ -22,6 +22,7 @@ async function generateWallet() {
         const encryptedMnemonic = await encryptPrivateKey(data.mnemonic);
 
         const w = {
+            type: 'legacy',
             label: '钱包 #' + (state.wallets.length + 1),
             encryptedPrivateKey: encrypted,
             encryptedMnemonic: encryptedMnemonic,
@@ -91,7 +92,23 @@ function setAsReceiver(index) {
  * @param {number} index - 钱包索引
  */
 function removeWallet(index) {
-    if (!confirm('确定删除 ' + state.wallets[index].label + '？私钥将无法恢复！')) return;
+    const wallet = state.wallets[index];
+    if (!wallet) return;
+    const message = wallet.type === 'hd'
+        ? '确定移除 ' + wallet.label + '？可用 HD 钱包备份恢复，新增地址会继续使用新的索引。'
+        : '确定删除 ' + wallet.label + '？请确保已经备份私钥或助记词。';
+    if (!confirm(message)) return;
+    if (wallet.type === 'hd') {
+        return runHdOperation(wallet.rootId, async () => {
+            const selectedAddress = state.wallets[state.selectedWallet]?.address;
+            const wallets = state.wallets.filter(w => w.address !== wallet.address);
+            const selected = wallets.findIndex(w => w.address === selectedAddress);
+            commitHdState(wallets, state.hdRoots, selected >= 0 ? selected : Math.min(index, wallets.length - 1));
+            renderWallets();
+            renderTransfer();
+            refreshSelectedWalletDetails();
+        });
+    }
     state.wallets.splice(index, 1);
     if (state.selectedWallet >= state.wallets.length) state.selectedWallet = state.wallets.length - 1;
     renderWallets();
@@ -112,8 +129,7 @@ function renameWallet(index) {
     if (!w) return;
 
     // 找到对应的 wallet-item 元素中的 label 区域
-    const walletItems = document.querySelectorAll('#walletList .wallet-item');
-    const walletItem = walletItems[index];
+    const walletItem = document.querySelector(`#walletList [data-wallet-index="${index}"]`);
     if (!walletItem) return;
 
     const labelEl = walletItem.querySelector('.wallet-label');
@@ -125,6 +141,7 @@ function renameWallet(index) {
     const input = document.createElement('input');
     input.type = 'text';
     input.value = originalName;
+    input.maxLength = 200;
     input.className = 'rename-input';
     input.style.cssText = 'width:100%; padding:4px 6px; font-size:13px; border:1px solid #60a5fa; border-radius:4px; background:rgba(96,165,250,0.1); color:#fff; outline:none; box-sizing:border-box;';
 
@@ -200,7 +217,8 @@ async function exportPrivateKey(index) {
     if (!w) return;
 
     // 安全确认
-    if (!confirm(`⚠️  即将导出私钥！\n\n钱包: ${w.label}\n地址: ${shortAddr(w.address, 20)}\n\n持有私钥即可完全控制该钱包中的资产。\n请确保在安全的环境下操作。\n\n确认导出吗？`)) {
+    const scope = w.type === 'hd' ? '\n此 PEM 仅备份当前子地址；恢复整个 HD 钱包请下载 HD 备份。\n' : '';
+    if (!confirm(`⚠️  即将导出私钥！\n\n钱包: ${w.label}\n地址: ${shortAddr(w.address, 20)}\n${scope}\n持有私钥即可完全控制该钱包中的资产。\n请确保在安全的环境下操作。\n\n确认导出吗？`)) {
         throw new Error('用户取消导出');
     }
 
@@ -286,6 +304,7 @@ async function doImportPrivateKey() {
         const encrypted = await encryptPrivateKey(w.privateKey);
 
         state.wallets.push({
+            type: 'private-key',
             label: '钱包 #' + (state.wallets.length + 1) + ' (导入)',
             encryptedPrivateKey: encrypted,
             publicKey: w.publicKey,
@@ -392,6 +411,7 @@ async function importPrivateKey() {
 
             // 添加到钱包列表
             const walletEntry = {
+                type: 'private-key',
                 label: '钱包 #' + (state.wallets.length + 1) + '（导入）',
                 encryptedPrivateKey: encrypted,
                 publicKey: w.publicKey,
@@ -437,12 +457,15 @@ function showMnemonicDisplay(mnemonicText) {
 function hideMnemonicDisplayDialog() {
     const dialog = document.getElementById('mnemonicDisplayDialog');
     if (dialog) dialog.style.display = 'none';
+    document.getElementById('mnemonicWords').textContent = '';
 }
 
 /** 显示导入助记词对话框 */
 function showImportMnemonicDialog() {
     const dialog = document.getElementById('importMnemonicDialog');
     if (dialog) {
+        document.getElementById('importMnemonicType').value = 'legacy';
+        document.getElementById('importMnemonicPassphrase').value = '';
         dialog.style.display = 'block';
         // 清空上次输入和消息
         const input = document.getElementById('importMnemonicInput');
@@ -458,6 +481,8 @@ function showImportMnemonicDialog() {
 function hideImportMnemonicDialog() {
     const dialog = document.getElementById('importMnemonicDialog');
     if (dialog) dialog.style.display = 'none';
+    document.getElementById('importMnemonicInput').value = '';
+    document.getElementById('importMnemonicPassphrase').value = '';
 }
 
 /** 复制助记词到剪贴板 */
@@ -483,6 +508,7 @@ async function showMnemonic() {
         showMessage('txMessage', '❌ 请先选择一个钱包', 'error');
         return;
     }
+    if (w.type === 'hd') return showHdMnemonic(w.rootId);
     if (!w.encryptedMnemonic) {
         showMessage('txMessage', '⚠️ 该钱包不是通过助记词生成的，无法显示助记词', 'warning', 4000);
         return;
@@ -504,6 +530,7 @@ async function showMnemonic() {
  * 从助记词导入钱包，加密存储后加入列表
  */
 async function importWalletFromMnemonic() {
+    if (document.getElementById('importMnemonicType').value === 'hd') return importHdMnemonic();
     const btn = document.getElementById('importMnemonicBtn');
     const input = document.getElementById('importMnemonicInput');
     const msgEl = document.getElementById('importMnemonicMessage');
@@ -521,7 +548,8 @@ async function importWalletFromMnemonic() {
     if (msgEl) { msgEl.className = 'message info'; msgEl.textContent = '🔑 正在验证助记词...'; }
 
     try {
-        const result = await api('/api/wallet/import-mnemonic', 'POST', { mnemonic: mnemonicText });
+        const passphrase = document.getElementById('importMnemonicPassphrase').value;
+        const result = await api('/api/wallet/import-mnemonic', 'POST', { mnemonic: mnemonicText, passphrase });
 
         if (result.success) {
             const w = result.wallet;
@@ -541,6 +569,7 @@ async function importWalletFromMnemonic() {
 
             // 添加到钱包列表
             const walletEntry = {
+                type: 'legacy',
                 label: '钱包 #' + (state.wallets.length + 1) + '（助记词导入）',
                 encryptedPrivateKey: encrypted,
                 encryptedMnemonic: encryptedMnemonic,

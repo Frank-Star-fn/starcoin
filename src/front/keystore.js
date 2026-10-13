@@ -83,7 +83,9 @@ async function saveMasterKeyToDB(key) {
  * - 后续调用：从 IndexedDB 读取
  * @returns {Promise<CryptoKey>}
  */
-async function getOrCreateMasterKey() {
+let masterKeyRequest = null;
+
+async function loadOrCreateMasterKey() {
     let key = await loadMasterKeyFromDB();
     if (key) return key;
 
@@ -95,6 +97,17 @@ async function getOrCreateMasterKey() {
 
     await saveMasterKeyToDB(key);
     return key;
+}
+
+async function getOrCreateMasterKey() {
+    if (!masterKeyRequest) {
+        const request = typeof navigator !== 'undefined' && navigator.locks
+            ? navigator.locks.request('starcoin-keystore-master-key', loadOrCreateMasterKey)
+            : loadOrCreateMasterKey();
+        // Concurrent first-use encryptions must share one key, including across tabs.
+        masterKeyRequest = request.finally(() => { masterKeyRequest = null; });
+    }
+    return masterKeyRequest;
 }
 
 /**

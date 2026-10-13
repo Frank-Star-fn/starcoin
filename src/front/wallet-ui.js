@@ -12,13 +12,14 @@
 async function renderWallets() {
     const list = document.getElementById('walletList');
 
-    if (state.wallets.length === 0) {
+    if (state.wallets.length === 0 && state.hdRoots.length === 0) {
         list.innerHTML = '<div style="color:#888; font-size:13px; padding:20px 0; text-align:center;">还没有钱包<br>点击上方 "＋ 生成新钱包" 开始</div>';
         document.getElementById('selectedWalletInfo').style.display = 'none';
     } else {
-        list.innerHTML = state.wallets.map((w, i) => `
-            <div class="wallet-item ${i === state.selectedWallet ? 'selected' : ''}" onclick="selectWallet(${i})">
-                <div class="wallet-label">${w.label}</div>
+        const renderChild = (w, i) => `
+            <div data-wallet-index="${i}" class="wallet-item ${i === state.selectedWallet ? 'selected' : ''}" onclick="selectWallet(${i})">
+                <div class="wallet-label">${escapeHtml(w.label)}</div>
+                ${w.type === 'hd' ? `<div class="hint">${escapeHtml(w.path)}</div>` : ''}
                 <div class="wallet-address">${escapeHtml(shortAddr(w.address, 40))}</div>
                 <div class="wallet-balance" id="wallet-balance-${i}">余额: --</div>
                 <div class="wallet-actions">
@@ -29,7 +30,26 @@ async function renderWallets() {
                     <button class="danger small" onclick="event.stopPropagation(); removeWallet(${i})">删除</button>
                 </div>
             </div>
+        `;
+        const hdGroups = state.hdRoots.map(root => `
+            <div class="hd-wallet-group" data-hd-root="${root.id}" style="margin-bottom:16px;">
+                <div style="padding:10px 0; border-bottom:1px solid rgba(96,165,250,0.25);">
+                    <strong style="color:#60a5fa;">${escapeHtml(root.label)}</strong>
+                    <div class="hint">${state.wallets.filter(w => w.rootId === root.id).length} 个子地址 · 已扫描 ${root.scanNextIndex || 0} 个地址</div>
+                    <div class="wallet-actions">
+                        <button class="secondary small" onclick="addHdAddress('${root.id}')">＋ 新增地址</button>
+                        <button class="secondary small" onclick="exportHdBackup('${root.id}')">📁 完整备份</button>
+                        <button class="secondary small" onclick="showHdMnemonic('${root.id}')">助记词</button>
+                        <button class="secondary small" onclick="continueHdScan('${root.id}')">继续扫描</button>
+                        <button class="secondary small" onclick="renameHdRoot('${root.id}')">重命名钱包</button>
+                        <button class="danger small" onclick="removeHdRoot('${root.id}')">删除钱包</button>
+                    </div>
+                </div>
+                ${state.wallets.map((w, i) => w.rootId === root.id ? renderChild(w, i) : '').join('')}
+            </div>
         `).join('');
+        const independent = state.wallets.map((w, i) => w.type !== 'hd' ? renderChild(w, i) : '').join('');
+        list.innerHTML = hdGroups + (independent ? '<div class="hint">独立地址钱包</div>' + independent : '');
 
         // 异步查询每个钱包余额（多币种）
         for (let i = 0; i < state.wallets.length; i++) {
@@ -50,7 +70,7 @@ async function renderWallets() {
 
         if (state.selectedWallet >= 0) {
             document.getElementById('selectedWalletInfo').style.display = 'block';
-        }
+        } else document.getElementById('selectedWalletInfo').style.display = 'none';
     }
     renderTransfer();
 }

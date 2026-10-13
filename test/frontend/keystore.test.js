@@ -238,6 +238,13 @@ describe('工具函数', () => {
 // 第2组: 密钥管理测试
 // ============================================================
 describe('密钥管理', () => {
+    it('并发首次获取密钥使用同一主密钥', async () => {
+        await keystore.deleteMasterKey();
+        const keys = await Promise.all(Array.from({ length: 8 }, () => keystore.getOrCreateMasterKey()));
+        for (const key of keys) expect(key).toBe(keys[0]);
+        const encrypted = await keystore.encryptPrivateKey('HD root credentials', keys[0]);
+        expect(await keystore.decryptPrivateKey(encrypted, await keystore.getOrCreateMasterKey())).toBe('HD root credentials');
+    });
     it('getOrCreateMasterKey() 首次调用生成新密钥', async () => {
         const key = await keystore.getOrCreateMasterKey();
         expect(key).toBeTruthy();

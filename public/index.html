@@ -51,6 +51,9 @@
         <div class="panel">
             <h2>💼 我的钱包</h2>
             <button onclick="generateWallet()">＋ 生成新钱包</button>
+            <button onclick="generateHdWallet()" style="margin-top:6px;">＋ 创建 HD 钱包</button>
+            <button onclick="document.getElementById('hdBackupFile').click()" class="secondary" style="margin-top:6px;">📁 恢复 HD 备份</button>
+            <input id="hdBackupFile" type="file" accept=".json" onchange="importHdBackupFile(this)" hidden>
             <button onclick="showImportKeyDialog()" class="secondary" style="margin-top:6px;">📥 导入私钥</button>
             <button onclick="showImportMnemonicDialog()" class="secondary" style="margin-top:6px;">🔤 导入助记词</button>
             <hr class="section-divider">
@@ -74,7 +77,14 @@
             <!-- 助记词导入对话框 -->
             <div id="importMnemonicDialog" style="display:none; margin-top:15px; padding:15px; background:rgba(74,222,128,0.08); border:1px solid rgba(74,222,128,0.25); border-radius:8px;">
                 <div style="font-size:13px; color:#4ade80; font-weight:bold; margin-bottom:8px;">🔤 导入 BIP39 助记词</div>
+                <label for="importMnemonicType">钱包类型</label>
+                <select id="importMnemonicType">
+                    <option value="legacy">旧版单地址钱包</option>
+                    <option value="hd">HD 钱包（多个地址）</option>
+                </select>
                 <textarea id="importMnemonicInput" rows="4" style="width:100%; font-family:monospace; font-size:13px; resize:vertical;" placeholder="在此粘贴 12 或 24 个助记词...&#10;例如:&#10;abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"></textarea>
+                <label for="importMnemonicPassphrase">BIP39 密码（可选，须与创建时一致）</label>
+                <input id="importMnemonicPassphrase" type="password" autocomplete="off" placeholder="未设置时留空">
                 <div class="message" id="importMnemonicMessage"></div>
                 <div style="display:flex; gap:8px; margin-top:8px;">
                     <button onclick="importWalletFromMnemonic()" id="importMnemonicBtn" style="flex:1;">✅ 导入助记词</button>
@@ -146,7 +156,7 @@
             <input type="text" id="note" placeholder="例如：午餐费用">
 
             <div class="message info" id="signInfo" style="display:none;">
-                🔑 将使用发送方的私钥做 ECDSA 签名（仅在本地签名，私钥不会广播）
+                🔑 当前节点将使用发送方私钥完成 ECDSA 签名，私钥不会向其他节点广播
             </div>
 
             <div class="message" id="txMessage"></div>
@@ -242,11 +252,11 @@
 <div id="forceBackupOverlay" class="modal-overlay" style="display:none;">
     <div class="modal-dialog">
         <div class="modal-icon">📁</div>
-        <div class="modal-title">请立即导出私钥备份</div>
+        <div class="modal-title">请立即备份钱包</div>
         <div class="modal-body">
             <p>您的钱包私钥已<strong>加密存储</strong>在浏览器中。</p>
             <p class="warning-text">⚠️ 如果清除浏览器数据或更换设备，加密密钥将丢失，钱包将无法恢复。</p>
-            <p><strong>导出 .pem 备份文件</strong>是您恢复钱包的唯一方式。</p>
+            <p>请离线保管助记词或备份文件。<strong>HD 钱包请下载完整 JSON 备份；单个 .pem 只恢复一个地址。</strong></p>
             <div id="forceBackupWalletInfo" class="modal-wallet-info"></div>
         </div>
         <div class="modal-actions">
@@ -268,10 +278,12 @@
         <div class="modal-body">
             <p>浏览器中存储的加密密钥已变更，无法解密现有的钱包私钥。</p>
             <p class="warning-text">⚠️ 这通常发生在清除浏览器数据、更换浏览器或更换设备后。</p>
-            <p>请使用之前导出的 <strong>.pem 备份文件</strong> 重新导入您的钱包：</p>
+            <p>请使用之前保存的助记词、HD JSON 备份或 .pem 私钥重新导入钱包。原有加密记录仍保留。</p>
         </div>
         <div class="modal-actions">
             <button id="keyMismatchImportBtn" class="modal-btn-primary">📥 导入私钥恢复钱包</button>
+            <button id="keyMismatchImportHdBtn" class="modal-btn-primary">📁 恢复 HD 备份</button>
+            <button id="keyMismatchImportMnemonicBtn" class="modal-btn-secondary">🔤 导入助记词</button>
         </div>
     </div>
 </div>
@@ -279,8 +291,10 @@
 <script src="src/front/keystore.js"></script>
 <script src="src/front/app.js"></script>
 <script src="src/front/wallet-utils.js"></script>
+<script src="src/front/hd-wallet-state.js"></script>
 <script src="src/front/wallet-ui.js"></script>
 <script src="src/front/wallet-manager.js"></script>
+<script src="src/front/hd-wallet-manager.js"></script>
 <script src="src/front/search.js"></script>
 <script src="src/front/main.js"></script>
 <script src="src/front/mining.js"></script>
