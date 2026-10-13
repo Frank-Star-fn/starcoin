@@ -5,7 +5,7 @@ const { Blockchain, Block, Transaction, generateWallet } = require('../../src/bl
 const { Consensus } = require('../../src/consensus');
 const { auditChain } = require('../../scripts/audit-chain');
 
-const params = { initialDifficulty: 1, difficultyMin: 0, coinbaseMaturity: 0, difficultyAdjustInterval: 1000000 };
+const params = { initialDifficulty: 1, difficultyMin: 0, coinbaseMaturity: 0, difficultyAdjustInterval: 1000000, activationHeight: 1, legacyCheckpointHash: '' };
 function legacyHistory() {
     const genesis = new Blockchain(0, true, { consensus: params }).createGenesisBlock();
     const chain = [genesis];

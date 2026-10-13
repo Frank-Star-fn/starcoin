@@ -3,7 +3,7 @@ const { restoreBlock, cloneState } = require('../../src/consensus');
 const { toUnits, targetForDifficulty, targetHex, meetsTarget } = require('../../src/protocol');
 const { createMessageHandlers } = require('../../src/p2p/p2p-message-handlers');
 
-const params = { initialDifficulty: 1, difficultyMin: 0, coinbaseMaturity: 0, difficultyAdjustInterval: 1000000 };
+const params = { initialDifficulty: 1, difficultyMin: 0, coinbaseMaturity: 0, difficultyAdjustInterval: 1000000, activationHeight: 1, legacyCheckpointHash: '' };
 function fresh(overrides = {}) { return new Blockchain(9876, true, { consensus: { ...params, ...overrides } }); }
 function signed(chain, wallet, to, amount, nonce = 0, fee = 0, currency = 'STC') {
     const tx = chain.createTransaction(wallet.address, to, amount, fee, '', currency, nonce);

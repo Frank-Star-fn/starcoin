@@ -21,6 +21,7 @@ function newFreshChain(overrides = {}) {
   const randomPort = Math.floor(Math.random() * 90000) + 10000;
   const chain = new Blockchain(randomPort, true, { consensus: {
     initialDifficulty: 1, difficultyMin: 0, coinbaseMaturity: 0,
+    activationHeight: 1, legacyCheckpointHash: '',
     difficultyAdjustInterval: 1000000, ...overrides
   } });
   chain.pendingTransactions = [];
