@@ -226,6 +226,14 @@ describe('mineBlockAsync 外部中止', () => {
     });
 
     it('externalAbortCheck 先 false 后 true → 仍能中止', async () => {
+        // Ensure PoW cannot finish before the delayed abort callback is exercised.
+        const build = chain.buildCandidate.bind(chain);
+        vi.spyOn(chain, 'buildCandidate').mockImplementation((...args) => {
+            const candidate = build(...args);
+            vi.spyOn(candidate.block, 'calculateHash').mockReturnValue('f'.repeat(64));
+            candidate.block.hash = candidate.block.calculateHash();
+            return candidate;
+        });
         let callCount = 0;
         const externalAbortCheck = () => {
             callCount++;

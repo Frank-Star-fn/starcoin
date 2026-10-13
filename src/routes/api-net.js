@@ -163,7 +163,9 @@ function createNetRoutes(starCoin, p2p, PORT) {
             chain: starCoin.chain,
             exportedAt: new Date().toISOString(),
             port: PORT,
-            version: '4.0',
+            version: starCoin.evmEnabled ? '5.0' : '4.0',
+            ...(starCoin.evmEnabled ? { evmProtocol: starCoin.consensus.evm, evmConsensusHash: starCoin.consensus.evmFingerprint,
+                evmStateRoot: starCoin._evaluation.evmStateRoot } : {}),
             consensusHash: starCoin.consensus.fingerprint,
             consensus: starCoin.consensus.params
         };

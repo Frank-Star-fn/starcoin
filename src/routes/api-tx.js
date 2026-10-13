@@ -335,15 +335,15 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     // ============================================================
     // 6. 清空交易池
     // ============================================================
-    router.delete('/mempool', (req, res) => {
-        const count = starCoin.pendingTransactions.length;
-        starCoin.pendingTransactions = [];
+    router.delete('/mempool', wrapAsync(async (req, res) => {
+        const count = starCoin.clearPendingTransactions ? await starCoin.clearPendingTransactions() : starCoin.pendingTransactions.length;
+        if (!starCoin.clearPendingTransactions) starCoin.pendingTransactions = [];
         res.json({
             success: true,
             message: `已清空 ${count} 笔待打包交易`,
             cleared: count
         });
-    });
+    }));
 
     // ============================================================
     // 7. 所有地址排行榜

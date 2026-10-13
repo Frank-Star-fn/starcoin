@@ -71,6 +71,9 @@ describe('v3 EVM consensus', () => {
         wrongReceipts.receiptsRoot = 'e'.repeat(64);
         wrongReceipts.hash = wrongReceipts.calculateHash(); wrongReceipts.mineBlock(chain.difficulty);
         expect(await chain.addBlock(wrongReceipts)).toBeNull();
+        const wrongGas = (await chain.buildCandidate(wallet.address)).block;
+        wrongGas.evmGasUsed = '1'; wrongGas.hash = wrongGas.calculateHash(); wrongGas.mineBlock(chain.difficulty);
+        expect(await chain.addBlock(wrongGas)).toBeNull();
     });
 
     it('rejects a forged bridge recipient and duplicate native nonce', async () => {
@@ -83,6 +86,25 @@ describe('v3 EVM consensus', () => {
         await expect(chain.addTransaction(deposit)).rejects.toThrow();
         expect(chain.pendingTransactions).toHaveLength(1);
         expect(await chain._evaluation.engine.balance(evmAddressFromPem(wallet.privateKey))).toBe(0n);
+    });
+    it('requires mature native rewards before depositing to EVM', async () => {
+        const chain = await chainFor({ consensus: { ...native, coinbaseMaturity: 2 } }), wallet = generateWallet();
+        await chain.mineBlock(wallet.address);
+        await expect(chain.submitEvm(wallet.privateKey, { kind: 'deposit', amount: '1' })).rejects.toThrow();
+        expect(chain.getBalance(wallet.address)).toBe(0);
+        await chain.mineBlock(wallet.address); await chain.mineBlock(wallet.address);
+        await expect(chain.submitEvm(wallet.privateKey, { kind: 'deposit', amount: '1' })).resolves.toMatchObject({ kind: 'deposit' });
+    });
+    it('enforces aggregate block Gas and preserves the remaining valid pool transactions', async () => {
+        const chain = await chainFor({ evm: { blockGasLimit: 100000, transactionGasLimit: 90000 } }), wallet = generateWallet();
+        await chain.mineBlock(wallet.address); await chain.submitEvm(wallet.privateKey, { kind: 'deposit', amount: '1' }); await chain.mineBlock(wallet.address);
+        const first = await chain.submitEvm(wallet.privateKey, { data: '0x5b600056', gasLimit: '90000' });
+        const second = await chain.submitEvm(wallet.privateKey, { data: '0x5b600056', gasLimit: '90000' });
+        const block = await chain.mineBlock(wallet.address);
+        expect(block.evmGasUsed).toBe('90000'); expect(chain.receipt(first.id).status).toBe(0);
+        expect(chain.pendingTransactions.map(tx => tx.id)).toEqual([second.id]);
+        await chain.mineBlock(wallet.address); expect(chain.receipt(second.id).status).toBe(0);
+        expect(chain.pendingTransactions).toHaveLength(0);
     });
 
     it('restores the new branch state and returns rolled-back contract transactions to the pool', async () => {

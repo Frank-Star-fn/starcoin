@@ -271,7 +271,7 @@
     "/storage/export": {
       "get": {
         "tags": ["存储"], "summary": "下载当前链 JSON 备份", "operationId": "exportChain",
-        "responses": { "200": { "description": "JSON 附件", "headers": { "Content-Disposition": { "schema": { "type": "string" }, "description": "attachment; filename=starcoin_chain_<port>_<timestamp>.json" } }, "content": { "application/json": { "schema": { "type": "object", "properties": { "chain": { "type": "array", "items": { "$ref": "#/components/schemas/Block" } }, "exportedAt": { "type": "string", "format": "date-time" }, "port": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }, "version": { "type": "string", "example": "4.0" }, "consensusHash": { "type": "string" }, "consensus": { "type": "object" } } } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "responses": { "200": { "description": "JSON 附件", "headers": { "Content-Disposition": { "schema": { "type": "string" }, "description": "attachment; filename=starcoin_chain_<port>_<timestamp>.json" } }, "content": { "application/json": { "schema": { "type": "object", "properties": { "chain": { "type": "array", "items": { "$ref": "#/components/schemas/Block" } }, "exportedAt": { "type": "string", "format": "date-time" }, "port": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }, "version": { "type": "string", "example": "5.0" }, "consensusHash": { "type": "string" }, "consensus": { "type": "object" } } } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
       }
     },
     "/storage/import": {

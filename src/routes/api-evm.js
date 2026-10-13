@@ -60,7 +60,12 @@ function createEvmRoutes(chain, p2p, broadcast) {
         const pem = credentials(req.body), engine = chain._evaluation.engine, from = evmAddressFromPem(pem);
         const stateRoot = chain._evaluation.evmStateRoot;
         const options = { ...transactionOptions(req.body), nonce: await engine.nonce(from) }, block = context();
-        const limit = uint(String(options.gasLimit ?? chain.consensus.evm.transactionGasLimit), 'gasLimit');
+        const requested = uint(String(options.gasLimit ?? chain.consensus.evm.transactionGasLimit), 'gasLimit');
+        if (requested > BigInt(chain.consensus.evm.transactionGasLimit)) throw new Error('估算 Gas 上限过大');
+        const available = await engine.balance(from) - BigInt(options.valueWei);
+        if (available < 0n) throw new Error('EVM value 余额不足');
+        const affordable = available / BigInt(chain.consensus.evm.gasPriceWei);
+        const limit = requested < affordable ? requested : affordable;
         const attempt = async gas => {
             const fork = await engine.fork();
             return fork.execute(fork.sign(pem, { ...options, gasLimit: gas.toString() }), block);

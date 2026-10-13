@@ -53,4 +53,16 @@ describe('EthereumJS execution adapter', () => {
         expect(() => engine.sign(wallet.privateKey, { nonce: 0, gasLimit: 5000001 })).toThrow();
         expect(() => engine.decode('0x1234')).toThrow();
     });
+    it('rejects legacy signatures without EIP-155 replay protection', async () => {
+        const { createCustomCommon, Mainnet, Hardfork } = require('@ethereumjs/common');
+        const { createLegacyTx } = require('@ethereumjs/tx');
+        const { bytesToHex } = require('@ethereumjs/util');
+        const engine = await EvmEngine.create(), wallet = generateWallet();
+        const jwk = require('crypto').createPrivateKey(wallet.privateKey).export({ format: 'jwk' });
+        const common = createCustomCommon({ chainId: 155001 }, Mainnet, { hardfork: Hardfork.Homestead });
+        const raw = createLegacyTx({ nonce: 0n, gasPrice: 10000000000n, gasLimit: 21000n,
+            to: '0x' + '1'.repeat(40) }, { common }).sign(new Uint8Array(Buffer.from(jwk.d, 'base64url')));
+        expect(raw.v === 27n || raw.v === 28n).toBe(true);
+        expect(() => engine.decode(bytesToHex(raw.serialize()))).toThrow();
+    });
 });

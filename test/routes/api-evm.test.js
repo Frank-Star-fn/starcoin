@@ -98,4 +98,13 @@ describe('EVM REST API', () => {
         await request(ctx.app).get('/api/evm/logs').query({ fromBlock: 0, toBlock: 3000 }).expect(400);
         await request(ctx.app).post('/api/evm/estimate').send({}).expect(400);
     });
+    it('estimates an affordable transfer even when the balance cannot cover the default Gas cap', async () => {
+        const ctx = await setup();
+        await request(ctx.app).post('/api/evm/withdraw').send({ privateKey: ctx.wallet.privateKey, amount: '9.999' }).expect(200);
+        await ctx.chain.mineBlock(ctx.wallet.address);
+        const estimate = await request(ctx.app).post('/api/evm/estimate').send({ privateKey: ctx.wallet.privateKey,
+            to: '0x' + '1'.repeat(40) }).expect(200);
+        expect(estimate.body.gasLimit).toBe('21000');
+        expect(await ctx.chain._evaluation.engine.nonce(evmAddressFromPem(ctx.wallet.privateKey))).toBe(0n);
+    });
 });

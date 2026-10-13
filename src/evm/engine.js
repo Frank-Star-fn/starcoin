@@ -120,6 +120,8 @@ class EvmEngine {
 
     async execute(raw, context, gasUsed = 0n) {
         const tx = this.decode(raw);
+        // runTx only checks the individual limit; the host must enforce remaining block Gas.
+        if (gasUsed + tx.gasLimit > BigInt(this.settings.blockGasLimit)) throw new Error('交易 Gas 上限超过区块剩余 Gas');
         const result = await runTx(this.vm, { tx, block: this.block(context), blockGasUsed: gasUsed });
         const fee = result.totalGasSpent * tx.gasPrice;
         // Native StarCoin fees are burned; apply the same policy to the VM's miner credit.

@@ -8,6 +8,7 @@ const { Blockchain, Block, Transaction, generateWallet, importWalletFromPem } = 
 const { createP2P } = require('./p2p/p2p');
 const createRoutes = require('./routes');
 const { EvmBlockchain } = require('./evm/blockchain');
+const projectRoot = require('./project-root');
 const {
     createNotFoundMiddleware,
     createErrorMiddleware
@@ -69,131 +70,131 @@ function broadcastToFrontend(type, data = {}) {
 
 // 初始化 P2P 网络层（传入 frontendConnection 回调，由 P2P 层代为处理前端 WS 连接）
 async function start() {
-await starCoin.ready;
-const p2p = createP2P(server, starCoin, PORT, {
-    onFrontendConnection: (ws) => {
-        frontendClients.add(ws);
-        log.info('前端客户端已连接', { count: frontendClients.size });
+    await starCoin.ready;
+    const p2p = createP2P(server, starCoin, PORT, {
+        onFrontendConnection: (ws) => {
+            frontendClients.add(ws);
+            log.info('前端客户端已连接', { count: frontendClients.size });
 
-        ws.on('close', () => {
-            frontendClients.delete(ws);
-            log.info('前端客户端已断开', { count: frontendClients.size });
-        });
+            ws.on('close', () => {
+                frontendClients.delete(ws);
+                log.info('前端客户端已断开', { count: frontendClients.size });
+            });
 
-        ws.on('error', (err) => {
-            frontendClients.delete(ws);
-            log.error('前端 WebSocket 错误', err);
-        });
-    },
-    onChainChange: () => {
-        broadcastToFrontend('chainUpdated');
-    }
-});
+            ws.on('error', (err) => {
+                frontendClients.delete(ws);
+                log.error('前端 WebSocket 错误', err);
+            });
+        },
+        onChainChange: () => {
+            broadcastToFrontend('chainUpdated');
+        }
+    });
 
-// 静态文件服务
-app.use(express.static(path.join(__dirname, '..', 'public')));
-// 同时提供 src/ 目录下的 JS 文件的访问
-app.use('/src', express.static(path.join(__dirname, '..', 'src')));
-app.get('/vendor/ethers.js', (_req, res) => res.sendFile(require.resolve('ethers').replace(/lib.commonjs[\\/]index.js$/, 'dist/ethers.umd.min.js')));
-app.use(express.json({ limit: '1mb' }));
+    // 静态文件服务
+    app.use(express.static(path.join(projectRoot, 'public')));
+    // 同时提供 src/ 目录下的 JS 文件的访问
+    app.use('/src', express.static(path.join(projectRoot, 'src')));
+    app.get('/vendor/ethers.js', (_req, res) => res.sendFile(require.resolve('ethers').replace(/lib.commonjs[\\/]index.js$/, 'dist/ethers.umd.min.js')));
+    app.use(express.json({ limit: '1mb' }));
 
-app.use('/api', createRoutes(starCoin, p2p, broadcastToFrontend, PORT));
+    app.use('/api', createRoutes(starCoin, p2p, broadcastToFrontend, PORT));
 
-// 主页路由
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
-});
+    // 主页路由
+    app.get('/', (req, res) => {
+        res.sendFile(path.join(projectRoot, 'public', 'index.html'));
+    });
 
-// 404 兜底 + 统一错误响应
-app.use(createNotFoundMiddleware());
-app.use(createErrorMiddleware());
+    // 404 兜底 + 统一错误响应
+    app.use(createNotFoundMiddleware());
+    app.use(createErrorMiddleware());
 
-// 启动服务器
-server.listen(PORT, () => {
-    log.info('StarCoin 服务器已启动', { port: PORT, blocks: starCoin.chain.length, nodeId: p2p.nodeInfo.id });
+    // 启动服务器
+    server.listen(PORT, () => {
+        log.info('StarCoin 服务器已启动', { port: PORT, blocks: starCoin.chain.length, nodeId: p2p.nodeInfo.id });
 
-    // ---------- 种子节点发现与启动同步 ----------
-    // 从配置 SEED_PEERS 获取种子节点列表（逗号分隔），
-    // 例如: SEED_PEERS="ws://localhost:3000,ws://localhost:3001"
-    const seedPeers = [...config.SEED_PEERS];
+        // ---------- 种子节点发现与启动同步 ----------
+        // 从配置 SEED_PEERS 获取种子节点列表（逗号分隔），
+        // 例如: SEED_PEERS="ws://localhost:3000,ws://localhost:3001"
+        const seedPeers = [...config.SEED_PEERS];
 
-    // 如果是全新启动（无本地数据），优先从其他节点获取链
-    if (starCoin.freshStart) {
-        log.info('全新节点，将优先从其他节点同步区块链');
-        if (seedPeers.length === 0) {
-            // 未配置 SEED_PEERS 时，默认尝试连接其他常见端口
-            const commonPorts = ['3000', '3001', '3002', '3003', '3004'];
-            for (const p of commonPorts) {
-                if (p !== String(PORT)) {
-                    seedPeers.push(`ws://localhost:${p}`);
+        // 如果是全新启动（无本地数据），优先从其他节点获取链
+        if (starCoin.freshStart) {
+            log.info('全新节点，将优先从其他节点同步区块链');
+            if (seedPeers.length === 0) {
+                // 未配置 SEED_PEERS 时，默认尝试连接其他常见端口
+                const commonPorts = ['3000', '3001', '3002', '3003', '3004'];
+                for (const p of commonPorts) {
+                    if (p !== String(PORT)) {
+                        seedPeers.push(`ws://localhost:${p}`);
+                    }
+                }
+            }
+        } else {
+            // 有本地数据，但仍尝试连接已配置的种子节点
+            if (seedPeers.length === 0) {
+                // 如果本地有数据且非 3000 端口，默认尝试连接 3000 同步
+                if (PORT !== 3000) {
+                    seedPeers.push('ws://localhost:3000');
                 }
             }
         }
-    } else {
-        // 有本地数据，但仍尝试连接已配置的种子节点
-        if (seedPeers.length === 0) {
-            // 如果本地有数据且非 3000 端口，默认尝试连接 3000 同步
-            if (PORT !== 3000) {
-                seedPeers.push('ws://localhost:3000');
-            }
-        }
-    }
 
-    // 连接种子节点并执行首次同步
-    if (seedPeers.length > 0) {
-        log.info('将尝试连接种子节点', { count: seedPeers.length, peers: seedPeers });
-        setTimeout(() => {
-            let connected = 0;
-            for (const peerUrl of seedPeers) {
-                try {
-                    p2p.connectToPeer(peerUrl);
-                    connected++;
-                } catch (e) {
-                    // 连接失败静默处理
-                }
-            }
-            // 等待连接建立后同步
-            const syncDelay = starCoin.freshStart ? 5000 : 3000;
+        // 连接种子节点并执行首次同步
+        if (seedPeers.length > 0) {
+            log.info('将尝试连接种子节点', { count: seedPeers.length, peers: seedPeers });
             setTimeout(() => {
-                log.info('启动后首次同步');
-                const result = p2p.syncWithPeers();
-                if (starCoin.freshStart) {
-                    // 同步完成后检查是否获取到了数据
-                    setTimeout(() => {
-                        if (starCoin.chain.length <= 1) {
-                            log.info('未从其他节点获取到区块链数据，将使用本地创世区块开始新链');
-                        } else {
-                            log.info('已从其他节点同步区块链', { chainLength: starCoin.chain.length });
-                        }
-                    }, config.SYNC_TIMEOUT + 2000); // 等待同步超时 + 缓冲
+                let connected = 0;
+                for (const peerUrl of seedPeers) {
+                    try {
+                        p2p.connectToPeer(peerUrl);
+                        connected++;
+                    } catch (e) {
+                        // 连接失败静默处理
+                    }
                 }
-            }, syncDelay);
-        }, config.SYNC_STARTUP_CONNECT_DELAY);
-    } else {
-        // 没有种子节点，仅对非 3000 节点保持向后兼容
-        if (PORT !== 3000) {
-            setTimeout(() => {
-                p2p.connectToPeer('ws://localhost:3000');
+                // 等待连接建立后同步
+                const syncDelay = starCoin.freshStart ? 5000 : 3000;
                 setTimeout(() => {
                     log.info('启动后首次同步');
-                    p2p.syncWithPeers();
-                }, 3000);
-            }, 1000);
+                    const result = p2p.syncWithPeers();
+                    if (starCoin.freshStart) {
+                        // 同步完成后检查是否获取到了数据
+                        setTimeout(() => {
+                            if (starCoin.chain.length <= 1) {
+                                log.info('未从其他节点获取到区块链数据，将使用本地创世区块开始新链');
+                            } else {
+                                log.info('已从其他节点同步区块链', { chainLength: starCoin.chain.length });
+                            }
+                        }, config.SYNC_TIMEOUT + 2000); // 等待同步超时 + 缓冲
+                    }
+                }, syncDelay);
+            }, config.SYNC_STARTUP_CONNECT_DELAY);
+        } else {
+            // 没有种子节点，仅对非 3000 节点保持向后兼容
+            if (PORT !== 3000) {
+                setTimeout(() => {
+                    p2p.connectToPeer('ws://localhost:3000');
+                    setTimeout(() => {
+                        log.info('启动后首次同步');
+                        p2p.syncWithPeers();
+                    }, 3000);
+                }, 1000);
+            }
         }
+
+        // 定期自动同步
+        setInterval(() => {
+            if (p2p.getConnectedCount() > 0) {
+                log.info('定期自动同步');
+                p2p.syncWithPeers();
+            }
+        }, config.SYNC_INTERVAL);
+    });
     }
 
-    // 定期自动同步
-    setInterval(() => {
-        if (p2p.getConnectedCount() > 0) {
-            log.info('定期自动同步');
-            p2p.syncWithPeers();
-        }
-    }, config.SYNC_INTERVAL);
-});
-}
+    start().catch(error => { log.error('节点启动失败（原链文件保留）', error); process.exitCode = 1; });
+    server.on('error', error => { log.error('服务监听失败', error); process.exitCode = 1; });
 
-start().catch(error => { log.error('节点启动失败（原链文件保留）', error); process.exitCode = 1; });
-server.on('error', error => { log.error('服务监听失败', error); process.exitCode = 1; });
-
-// 导出用于测试
-module.exports = { starCoin, Blockchain, Block, Transaction, generateWallet, importWalletFromPem };
+    // 导出用于测试
+    module.exports = { starCoin, Blockchain, Block, Transaction, generateWallet, importWalletFromPem };

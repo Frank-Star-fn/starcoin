@@ -1,8 +1,9 @@
 import path from 'path';
 import dotenv from 'dotenv';
+import projectRoot from './project-root';
 
 // dotenv 加载 .env 文件（必须在任何其他模块引用之前）
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+dotenv.config({ path: path.join(projectRoot, '.env') });
 
 // 辅助：解析整数环境变量
 function int(val: string | undefined, defaultVal: number): number {

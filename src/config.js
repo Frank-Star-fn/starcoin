@@ -1,7 +1,7 @@
 const path = require('path');
 
 // dotenv 加载 .env 文件（必须在任何其他模块引用之前）
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+require('dotenv').config({ path: path.join(require('./project-root'), '.env') });
 
 // 辅助：解析整数环境变量
 function int(val, defaultVal) {

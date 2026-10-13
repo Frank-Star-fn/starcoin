@@ -8,10 +8,11 @@ const { EvmConsensus } = require('./consensus');
 const { EvmTransaction } = require('./transaction');
 const { evmAddressFromPem, WEI_PER_UNIT } = require('./engine');
 const { networkSettings } = require('./network');
+const projectRoot = require('../project-root');
 
 class EvmBlockchain extends Blockchain {
     constructor(port, testMode = false, options = {}) {
-        super(port, true, options);
+        super(port, true, { ...options, dataFile: options.dataFile || path.join(projectRoot, 'data', `blockchain_${port || require('../config').PORT}.json`) });
         this.testMode = testMode;
         this.evmEnabled = true;
         const evm = options.evm || (testMode ? {} : networkSettings(this.consensus, path.dirname(this.dataFile)));
@@ -122,6 +123,14 @@ class EvmBlockchain extends Blockchain {
         return tx;
     }
     addTransaction(data) { return this.enqueue(() => this.addInside(data)); }
+    clearPendingTransactions() {
+        return this.enqueue(async () => {
+            const count = this.pendingTransactions.length;
+            const pool = await this.consensus.rebuildPoolAsync(this._evaluation, []);
+            this.pendingTransactions = []; this._poolState = pool.state; this._poolEngine = pool.engine;
+            return count;
+        });
+    }
     saveToFile() { return this.enqueue(() => this.storage.saveToFile()); }
     async addPendingTransaction(data) {
         try { return { success: true, transaction: await this.addTransaction(data) }; }

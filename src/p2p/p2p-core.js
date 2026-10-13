@@ -50,6 +50,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
 
     // WebSocket 服务器
     const wss = new WebSocket.Server({ server });
+    wss.on('error', error => log.error('WebSocket 服务错误', error));
 
     // 节点状态
     const nodes = new Set();
