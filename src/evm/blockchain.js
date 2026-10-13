@@ -9,6 +9,8 @@ const { EvmTransaction } = require('./transaction');
 const { evmAddressFromPem, WEI_PER_UNIT } = require('./engine');
 const { networkSettings } = require('./network');
 const projectRoot = require('../project-root');
+const { ExternalTransaction } = require('./external-transaction');
+const { rpcNetworkSettings } = require('./rpc-network');
 
 class EvmBlockchain extends Blockchain {
     constructor(port, testMode = false, options = {}) {
@@ -16,7 +18,8 @@ class EvmBlockchain extends Blockchain {
         this.testMode = testMode;
         this.evmEnabled = true;
         const evm = options.evm || (testMode ? {} : networkSettings(this.consensus, path.dirname(this.dataFile)));
-        this.consensus = new EvmConsensus(this.createGenesisBlock(), options.consensus, evm);
+        this.consensus = new EvmConsensus(this.createGenesisBlock(), options.consensus, evm, options.rpc);
+        this._rpcAutomatic = !testMode && !Object.hasOwn(options, 'rpc');
         this._writes = Promise.resolve();
         this.ready = this.initialize();
     }
@@ -24,18 +27,26 @@ class EvmBlockchain extends Blockchain {
     loadFromFile() { return false; } // Constructor initialization is awaited via ready.
 
     async initialize() {
+        if (this._rpcAutomatic) this.consensus = new EvmConsensus(this.createGenesisBlock(), this.consensus.params, this.consensus.evm,
+            await rpcNetworkSettings(this.consensus, path.dirname(this.dataFile)));
+        this.rpcEnabled = !!this.consensus.rpc;
         let saved = null;
         if (!this.testMode && fs.existsSync(this.dataFile)) saved = JSON.parse(fs.readFileSync(this.dataFile, 'utf8'));
         if (saved && saved.consensusHash !== this.consensus.fingerprint) throw new Error('原生链共识参数不匹配');
-        if (saved?.version === '5.0' && saved.evmConsensusHash !== this.consensus.evmFingerprint) throw new Error('EVM 共识参数不匹配');
+        if (['5.0', '6.0'].includes(saved?.version) && saved.evmConsensusHash !== this.consensus.evmFingerprint) throw new Error('EVM 共识参数不匹配');
+        if (saved?.version === '6.0' && saved.rpcConsensusHash !== this.consensus.rpcFingerprint) throw new Error('MetaMask 共识参数不匹配');
         const result = await this.consensus.evaluateAsync(saved?.chain || this.chain);
         if (!result.valid) throw new Error('链审计失败（原文件保留）：' + result.error);
-        if (saved?.version === '5.0' && saved.evmStateRoot !== result.evmStateRoot) throw new Error('保存的 EVM 状态根与重放结果不匹配');
+        if (['5.0', '6.0'].includes(saved?.version) && saved.evmStateRoot !== result.evmStateRoot) throw new Error('保存的 EVM 状态根与重放结果不匹配');
         const pool = await this.consensus.rebuildPoolAsync(result, saved?.pendingTransactions || []);
         this.install(result, pool, saved?.revertedTransactions || [], saved?.reorgEvents || []);
         this.freshStart = !saved;
-        if (saved && saved.version !== '5.0') {
+        if (saved && !['5.0', '6.0'].includes(saved.version)) {
             const backup = this.dataFile + '.pre-evm.json';
+            if (!fs.existsSync(backup)) fs.copyFileSync(this.dataFile, backup, fs.constants.COPYFILE_EXCL);
+        }
+        if (saved && this.rpcEnabled && saved.version !== '6.0') {
+            const backup = this.dataFile + '.pre-metamask.json';
             if (!fs.existsSync(backup)) fs.copyFileSync(this.dataFile, backup, fs.constants.COPYFILE_EXCL);
         }
         this.query.getAddressNonce = (value, pending = true) => {
@@ -113,7 +124,18 @@ class EvmBlockchain extends Blockchain {
         const tx = Transaction.fromJSON(data);
         const evaluation = await this.evaluateChain();
         if (!evaluation.valid) throw new Error(evaluation.error);
-        const pool = await this.consensus.rebuildPoolAsync(evaluation, [...this.pendingTransactions, tx]);
+        let candidates = this.pendingTransactions;
+        if (tx.version === 4 && tx.kind === 'evmRaw') {
+            const previous = candidates.find(item => item.version === 4 && item.kind === 'evmRaw' && item.from === tx.from && item.nonce === tx.nonce);
+            if (previous && previous.id !== tx.id) {
+                const caps = raw => { const parsed = evaluation.engine.decode(raw, true); return parsed.type === 2
+                    ? [parsed.maxFeePerGas, parsed.maxPriorityFeePerGas] : [parsed.gasPrice, parsed.gasPrice]; };
+                const oldCaps = caps(previous.rawTransaction), newCaps = caps(tx.rawTransaction);
+                if (newCaps.some((value, index) => value < (oldCaps[index] * 110n + 99n) / 100n || value <= oldCaps[index])) throw new Error('替换交易费用至少提高 10%');
+                candidates = candidates.filter(item => item !== previous);
+            }
+        }
+        const pool = await this.consensus.rebuildPoolAsync(evaluation, [...candidates, tx]);
         if (!pool.pending.some(item => item.id === tx.id) || this.hasPendingTransaction(tx.id)) {
             throw new Error(pool.rejected.find(item => item.id === tx.id)?.error || '交易已存在或无效');
         }
@@ -123,6 +145,14 @@ class EvmBlockchain extends Blockchain {
         return tx;
     }
     addTransaction(data) { return this.enqueue(() => this.addInside(data)); }
+    submitRaw(raw) { return this.enqueue(() => this.addInside(ExternalTransaction.raw(this.consensus.params.chainId, this._evaluation.engine, raw))); }
+    submitWithdrawal(message, signature) { return this.enqueue(() => this.addInside(ExternalTransaction.withdraw(this.consensus, message, signature))); }
+    pendingEvaluation() {
+        return this.enqueue(async () => {
+            const pool = await this.consensus.rebuildPoolAsync(this._evaluation, this.pendingTransactions);
+            return { ...this._evaluation, state: pool.state, engine: pool.engine, context: this.consensus.context(this.chain) };
+        });
+    }
     clearPendingTransactions() {
         return this.enqueue(async () => {
             const count = this.pendingTransactions.length;
@@ -147,6 +177,13 @@ class EvmBlockchain extends Blockchain {
             const kind = options.kind || 'evm';
             let tx;
             if (kind === 'evm') {
+                const context = this.consensus.context(this.chain), modern = this.consensus.rpc && context.index >= this.consensus.rpc.activationHeight;
+                if (modern) {
+                    const suggested = BigInt(context.baseFeePerGas) + BigInt(this.consensus.rpc.priorityFeeWei);
+                    const gasPrice = suggested > BigInt(this.consensus.evm.gasPriceWei) ? suggested : BigInt(this.consensus.evm.gasPriceWei);
+                    return this.addInside(ExternalTransaction.raw(this.consensus.params.chainId, this._poolEngine,
+                        this._poolEngine.sign(pem, { ...options, gasPrice: gasPrice.toString(), nonce: await this._poolEngine.nonce(source) }, true)));
+                }
                 const rawTransaction = this._poolEngine.sign(pem, { ...options, nonce: await this._poolEngine.nonce(source) });
                 const raw = this._poolEngine.decode(rawTransaction);
                 tx = new EvmTransaction({ chainId: this.consensus.params.chainId, kind, from: wallet.address,
@@ -166,14 +203,12 @@ class EvmBlockchain extends Blockchain {
         return this.enqueue(async () => {
             const evaluation = await this.evaluateChain();
             if (!evaluation.valid) throw new Error(evaluation.error);
-            const index = this.chain.length;
-            const times = this.chain.slice(-11).map(b => Date.parse(b.timestamp)).sort((a, b) => a - b);
-            const timestamp = new Date(Math.max(Date.now(), times[Math.floor(times.length / 2)] + 1)).toISOString();
-            const context = { index, timestamp, previousHash: this.getLatestBlock().hash };
+            const context = this.consensus.context(this.chain), { index, timestamp } = context;
             const reward = new Transaction('SYSTEM', minerAddress || this.miningAddress, this.miningReward, 0, 'Miner Reward', 'STC', undefined,
                 { version: 2, chainId: this.consensus.params.chainId, blockHeight: index });
             reward.timestamp = timestamp; reward.id = reward.calculateHash();
             const active = index >= this.consensus.evm.activationHeight;
+            const modern = this.consensus.rpc && index >= this.consensus.rpc.activationHeight;
             const selected = active ? await this.consensus.selectAsync(evaluation, this.pendingTransactions, reward, context)
                 : this.consensus.selectTransactions(evaluation, this.pendingTransactions);
             const transactions = [reward, ...selected];
@@ -182,7 +217,8 @@ class EvmBlockchain extends Blockchain {
                     { version: 2, chainId: this.consensus.params.chainId, blockHeight: index });
                 tx.timestamp = timestamp; tx.id = tx.calculateHash(); transactions.push(tx);
             }
-            const options = { version: active ? 3 : 2, chainId: this.consensus.params.chainId,
+            const options = { version: modern ? 4 : active ? 3 : 2, chainId: this.consensus.params.chainId,
+                ...(modern ? { rpcConsensusHash: this.consensus.rpcFingerprint, baseFeePerGas: context.baseFeePerGas } : {}),
                 consensusHash: this.consensus.fingerprint, target: targetHex(targetForDifficulty(evaluation.difficulty)) };
             const block = new Block(index, timestamp, transactions, context.previousHash, options);
             if (active) {
@@ -254,16 +290,17 @@ class EvmBlockchain extends Blockchain {
         return this.enqueue(async () => {
             if (!fs.existsSync(this.dataFile)) return false;
             const saved = JSON.parse(fs.readFileSync(this.dataFile, 'utf8'));
-            if (saved.consensusHash !== this.consensus.fingerprint || (saved.version === '5.0' && saved.evmConsensusHash !== this.consensus.evmFingerprint)) throw new Error('链文件共识配置不匹配');
+            if (saved.consensusHash !== this.consensus.fingerprint || (['5.0', '6.0'].includes(saved.version) && saved.evmConsensusHash !== this.consensus.evmFingerprint)
+                || (saved.version === '6.0' && saved.rpcConsensusHash !== this.consensus.rpcFingerprint)) throw new Error('链文件共识配置不匹配');
             const result = await this.consensus.evaluateAsync(saved.chain);
-            if (saved.version === '5.0' && result.evmStateRoot !== saved.evmStateRoot) throw new Error('EVM 状态根不匹配');
+            if (['5.0', '6.0'].includes(saved.version) && result.evmStateRoot !== saved.evmStateRoot) throw new Error('EVM 状态根不匹配');
             await this.commitAsync(result, saved.pendingTransactions || [], { revertedTransactions: new Map(saved.revertedTransactions || []), reorgEvents: saved.reorgEvents || [] });
             return true;
         });
     }
     clearDataFile() {
         return this.enqueue(async () => {
-            if (this.consensus.evm.activationHeight > 1 || this.consensus.params.activationHeight > 1) throw new Error('升级链不能重置到检查点之前');
+            if (this.consensus.evm.activationHeight > 1 || this.consensus.params.activationHeight > 1 || this.consensus.rpc?.activationHeight > 1) throw new Error('升级链不能重置到检查点之前');
             await this.commitAsync(await this.consensus.evaluateAsync([this.createGenesisBlock()]), [], { revertedTransactions: new Map(), reorgEvents: [] });
             return true;
         });

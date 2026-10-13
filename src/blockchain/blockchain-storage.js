@@ -37,7 +37,8 @@ class StorageManager {
             fs.mkdirSync(path.dirname(bc.dataFile), { recursive: true });
             const fd = fs.openSync(temporary, 'w');
             try {
-                fs.writeFileSync(fd, JSON.stringify({ ...data, version: bc.evmEnabled ? '5.0' : '4.0',
+                fs.writeFileSync(fd, JSON.stringify({ ...data, version: bc.rpcEnabled ? '6.0' : bc.evmEnabled ? '5.0' : '4.0',
+                    ...(bc.rpcEnabled ? { rpcProtocol: bc.consensus.rpc, rpcConsensusHash: bc.consensus.rpcFingerprint } : {}),
                     ...(bc.evmEnabled ? { evmProtocol: bc.consensus.evm, evmConsensusHash: bc.consensus.evmFingerprint,
                         evmStateRoot: snapshot?.evmStateRoot || bc._evaluation.evmStateRoot } : {}),
                     consensusHash: bc.consensus.fingerprint, savedAt: new Date().toISOString() }, null, 2));

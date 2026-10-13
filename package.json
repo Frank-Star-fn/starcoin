@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "contracts:build": "node scripts/compile-contracts.js",
-    "evm:prepare": "node scripts/prepare-evm.js"
+    "evm:prepare": "node scripts/prepare-evm.js",
+    "metamask:prepare": "node scripts/prepare-metamask.js"
   },
   "keywords": [],
   "author": "",

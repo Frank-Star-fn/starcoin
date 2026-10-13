@@ -17,7 +17,7 @@ function networkSettings(nativeConsensus, directory) {
         for (const file of fs.readdirSync(directory).filter(name => /^blockchain_[0-9]+\.json$/.test(name))) {
             const saved = JSON.parse(fs.readFileSync(path.join(directory, file), 'utf8'));
             if (saved.consensusHash && saved.consensusHash !== nativeConsensus.fingerprint) throw new Error('升级审计发现共识配置不同的链：' + file);
-            if (saved.version === '5.0') {
+            if (['5.0', '6.0'].includes(saved.version)) {
                 const settings = evmSettings(saved.evmProtocol);
                 if (recovered && recovered.fingerprint !== settings.fingerprint) throw new Error('已保存的 EVM 网络配置不一致');
                 recovered = settings;

@@ -18,7 +18,7 @@ function restoreBlock(data) {
     if (!data || typeof data !== 'object' || !Array.isArray(data.transactions)) throw new Error('无效区块对象');
     const block = Object.create(Block.prototype);
     for (const name of ['version', 'chainId', 'consensusHash', 'target', 'index', 'timestamp',
-        'previousHash', 'nonce', 'hash', 'merkleRoot', 'data', 'evmConsensusHash', 'evmStateRoot', 'receiptsRoot', 'evmGasUsed', 'evmGasLimit']) {
+        'previousHash', 'nonce', 'hash', 'merkleRoot', 'data', 'evmConsensusHash', 'evmStateRoot', 'receiptsRoot', 'evmGasUsed', 'evmGasLimit', 'rpcConsensusHash', 'baseFeePerGas']) {
         if (Object.hasOwn(data, name)) block[name] = data[name];
     }
     block.version = data.version ?? 1;

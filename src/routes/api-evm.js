@@ -11,8 +11,7 @@ function createEvmRoutes(chain, p2p, broadcast) {
         try { await handler(req, res); }
         catch (error) { if (error instanceof AppError) throw error; throw new AppError(400, error.message, 'EVM_REJECTED'); }
     });
-    const context = () => ({ index: chain.chain.length, previousHash: chain.getLatestBlock().hash,
-        timestamp: new Date(Math.max(Date.now(), Date.parse(chain.getLatestBlock().timestamp) + 1)).toISOString() });
+    const context = () => chain.consensus.context(chain.chain);
     const credentials = body => {
         if (typeof body.privateKey !== 'string' || body.privateKey.length > 4096) throw new Error('必须提供 PEM privateKey');
         return body.privateKey;
@@ -60,15 +59,16 @@ function createEvmRoutes(chain, p2p, broadcast) {
         const pem = credentials(req.body), engine = chain._evaluation.engine, from = evmAddressFromPem(pem);
         const stateRoot = chain._evaluation.evmStateRoot;
         const options = { ...transactionOptions(req.body), nonce: await engine.nonce(from) }, block = context();
+        const suggested = BigInt(block.baseFeePerGas) + BigInt(chain.consensus.rpc?.priorityFeeWei || '0');
+        const gasPrice = suggested > BigInt(chain.consensus.evm.gasPriceWei) ? suggested : BigInt(chain.consensus.evm.gasPriceWei);
         const requested = uint(String(options.gasLimit ?? chain.consensus.evm.transactionGasLimit), 'gasLimit');
         if (requested > BigInt(chain.consensus.evm.transactionGasLimit)) throw new Error('估算 Gas 上限过大');
         const available = await engine.balance(from) - BigInt(options.valueWei);
         if (available < 0n) throw new Error('EVM value 余额不足');
-        const affordable = available / BigInt(chain.consensus.evm.gasPriceWei);
+        const affordable = available / gasPrice;
         const limit = requested < affordable ? requested : affordable;
         const attempt = async gas => {
-            const fork = await engine.fork();
-            return fork.execute(fork.sign(pem, { ...options, gasLimit: gas.toString() }), block);
+            return engine.simulate({ ...options, from, gasPrice: gasPrice.toString(), gasLimit: gas.toString() }, block);
         };
         const result = await attempt(limit);
         if (!result.status) throw new AppError(400, '模拟执行失败：' + result.error, 'EVM_EXECUTION_FAILED', result);
@@ -79,7 +79,7 @@ function createEvmRoutes(chain, p2p, broadcast) {
             catch { low = middle; }
         }
         res.json({ success: true, gasLimit: high.toString(), gasUsed: result.gasUsed,
-            gasPriceWei: chain.consensus.evm.gasPriceWei, maxFeeWei: (high * BigInt(chain.consensus.evm.gasPriceWei)).toString(),
+            gasPriceWei: gasPrice.toString(), maxFeeWei: (high * gasPrice).toString(),
             stateRoot });
     }));
     router.get('/evm/receipt/:id', route(async (req, res) => {

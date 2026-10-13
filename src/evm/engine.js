@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const { createVM, runTx } = require('@ethereumjs/vm');
 const { createCustomCommon, Mainnet, Hardfork } = require('@ethereumjs/common');
 const { MerkleStateManager } = require('@ethereumjs/statemanager');
-const { createLegacyTx, createTxFromRLP } = require('@ethereumjs/tx');
+const { createLegacyTx, createTx, createTxFromRLP } = require('@ethereumjs/tx');
 const { createBlock } = require('@ethereumjs/block');
 const { createAccount, createAddressFromString, createAddressFromPrivateKey,
     createAddressFromPublicKey, bytesToHex, hexToBytes } = require('@ethereumjs/util');
@@ -92,47 +92,67 @@ class EvmEngine {
 
     block(context) {
         return createBlock({ header: { number: BigInt(context.index), timestamp: BigInt(Math.floor(Date.parse(context.timestamp) / 1000)),
-            gasLimit: BigInt(this.settings.blockGasLimit), baseFeePerGas: 0n, difficulty: 0n,
+            gasLimit: BigInt(this.settings.blockGasLimit), baseFeePerGas: uint(context.baseFeePerGas ?? '0'), difficulty: 0n,
             coinbase: GAS_ACCOUNT, mixHash: '0x' + (context.previousHash || '0'.repeat(64)) } },
         { common: this.vm.common, skipConsensusFormatValidation: true });
     }
 
-    decode(raw) {
+    decode(raw, modern = false) {
         const tx = createTxFromRLP(hexToBytes(hex(raw)), { common: this.vm.common });
-        if (tx.type !== 0 || !tx.isSigned() || !tx.verifySignature()
+        if (!(modern ? [0, 1, 2] : [0]).includes(tx.type) || !tx.isSigned() || !tx.verifySignature()
             || tx.common.chainId() !== BigInt(this.settings.chainId)
-            || (tx.v !== BigInt(this.settings.chainId) * 2n + 35n && tx.v !== BigInt(this.settings.chainId) * 2n + 36n)
-            || tx.gasPrice !== BigInt(this.settings.gasPriceWei)
+            || (tx.type === 0 && tx.v !== BigInt(this.settings.chainId) * 2n + 35n && tx.v !== BigInt(this.settings.chainId) * 2n + 36n)
+            || (!modern && tx.gasPrice !== BigInt(this.settings.gasPriceWei))
             || tx.gasLimit > BigInt(this.settings.transactionGasLimit)
             || tx.nonce > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('EVM 签名、chainId、Gas 价格、Gas 上限或 nonce 无效');
         return tx;
     }
 
-    sign(pem, options) {
+    sign(pem, options, modern = false) {
         const gasLimit = uint(String(options.gasLimit ?? this.settings.transactionGasLimit), 'gasLimit');
         const tx = createLegacyTx({ nonce: uint(String(options.nonce), 'nonce'), gasLimit,
-            gasPrice: BigInt(this.settings.gasPriceWei), value: uint(options.valueWei ?? '0', 'valueWei'),
+            gasPrice: uint(options.gasPrice ?? this.settings.gasPriceWei), value: uint(options.valueWei ?? '0', 'valueWei'),
             to: options.to ? address(options.to) : undefined, data: hexToBytes(hex(options.data ?? '0x')) }, { common: this.vm.common });
         const raw = bytesToHex(tx.sign(privateBytes(pem)).serialize());
-        this.decode(raw);
+        this.decode(raw, modern);
         return raw;
     }
 
-    async execute(raw, context, gasUsed = 0n) {
-        const tx = this.decode(raw);
+    async execute(raw, context, gasUsed = 0n, modern = false) {
+        return this.executeTransaction(this.decode(raw, modern), context, gasUsed);
+    }
+
+    async executeTransaction(tx, context, gasUsed = 0n, skipBalance = false) {
         // runTx only checks the individual limit; the host must enforce remaining block Gas.
         if (gasUsed + tx.gasLimit > BigInt(this.settings.blockGasLimit)) throw new Error('交易 Gas 上限超过区块剩余 Gas');
-        const result = await runTx(this.vm, { tx, block: this.block(context), blockGasUsed: gasUsed });
-        const fee = result.totalGasSpent * tx.gasPrice;
+        const result = await runTx(this.vm, { tx, block: this.block(context), blockGasUsed: gasUsed, skipBalance });
+        const fee = result.amountSpent;
         // Native StarCoin fees are burned; apply the same policy to the VM's miner credit.
-        await this.moveBalance(GAS_ACCOUNT, -fee);
-        return { transactionHash: bytesToHex(tx.hash()), from: tx.getSenderAddress().toString(),
+        if (result.minerValue) await this.moveBalance(GAS_ACCOUNT, -result.minerValue);
+        return { transactionHash: tx.isSigned() ? bytesToHex(tx.hash()) : null, from: tx.getSenderAddress().toString(),
             to: tx.to?.toString() || null, contractAddress: result.execResult.exceptionError ? null : result.createdAddress?.toString() || null,
             status: result.execResult.exceptionError ? 0 : 1, gasUsed: result.totalGasSpent.toString(),
-            gasPriceWei: tx.gasPrice.toString(), feeWei: fee.toString(), valueWei: tx.value.toString(),
+            gasPriceWei: (fee / result.totalGasSpent).toString(), feeWei: fee.toString(), valueWei: tx.value.toString(),
             returnData: bytesToHex(result.execResult.returnValue), error: result.execResult.exceptionError ? String(result.execResult.exceptionError.error) : null,
             logs: result.receipt.logs.map(([emitter, topics, data], index) => ({ address: bytesToHex(emitter),
                 topics: topics.map(bytesToHex), data: bytesToHex(data), logIndex: index })) };
+    }
+
+    // Unsigned simulation is isolated and is never accepted by consensus or submitted to the pool.
+    async simulate(options, context) {
+        const isolated = await this.fork();
+        const from = address(options.from || '0x' + '0'.repeat(40));
+        const type = options.maxFeePerGas !== undefined ? 2 : options.accessList !== undefined ? 1 : 0;
+        const base = uint(context.baseFeePerGas ?? '0');
+        const tx = createTx({ type, chainId: BigInt(this.settings.chainId), nonce: await isolated.nonce(from),
+            to: options.to ? address(options.to) : undefined, value: uint(options.valueWei ?? '0'), data: hexToBytes(hex(options.data ?? '0x')),
+            gasLimit: uint(String(options.gasLimit ?? this.settings.transactionGasLimit)), accessList: options.accessList ?? [],
+            gasPrice: uint(options.gasPrice ?? (base + 1000000000n).toString()),
+            maxFeePerGas: uint(options.maxFeePerGas ?? (base * 2n + 1000000000n).toString()),
+            maxPriorityFeePerGas: uint(options.maxPriorityFeePerGas ?? '1000000000') }, { common: isolated.vm.common, freeze: false });
+        tx.getSenderAddress = () => createAddressFromString(from);
+        if (tx.gasLimit > BigInt(this.settings.transactionGasLimit)) throw new Error('模拟 Gas 上限过大');
+        return isolated.executeTransaction(tx, context, 0n, !options.from);
     }
 
     async call(options, context) {
@@ -141,7 +161,8 @@ class EvmEngine {
         if (gasLimit > BigInt(this.settings.transactionGasLimit)) throw new Error('调用 Gas 上限过大');
         const from = createAddressFromString(address(options.from || '0x' + '0'.repeat(40)));
         const result = await isolated.vm.evm.runCall({ caller: from, origin: from, to: options.to ? createAddressFromString(address(options.to)) : undefined,
-            data: hexToBytes(hex(options.data || '0x')), value: uint(options.valueWei ?? '0'), gasLimit, block: isolated.block(context) });
+            data: hexToBytes(hex(options.data || '0x')), value: uint(options.valueWei ?? '0'), gasLimit,
+            gasPrice: uint(options.gasPrice ?? '0'), block: isolated.block(context) });
         return { status: result.execResult.exceptionError ? 0 : 1, returnData: bytesToHex(result.execResult.returnValue),
             executionGasUsed: result.execResult.executionGasUsed.toString(), error: result.execResult.exceptionError ? String(result.execResult.exceptionError.error) : null };
     }

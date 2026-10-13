@@ -3,16 +3,54 @@ const { calculateMerkleRoot, Transaction } = require('../core');
 const { toUnits, hash, targetForDifficulty, targetHex, meetsTarget, workForTarget } = require('../protocol');
 const { EvmEngine, address, evmAddressFromPublicKey, WEI_PER_UNIT } = require('./engine');
 const { evmSettings } = require('./settings');
+const { rpcSettings, nextBaseFee } = require('./rpc-settings');
+const { ExternalTransaction, withdrawalData } = require('./external-transaction');
 
 function cloneNative(state) {
-    return { ...cloneState(state), bridgeLockedWei: state.bridgeLockedWei || 0n, evmBurnedWei: state.evmBurnedWei || 0n };
+    return { ...cloneState(state), bridgeLockedWei: state.bridgeLockedWei || 0n, evmBurnedWei: state.evmBurnedWei || 0n,
+        bridgeNonces: new Map(state.bridgeNonces || []) };
 }
 
 class EvmConsensus extends Consensus {
-    constructor(genesis, nativeOptions = {}, evmOptions = {}) {
+    constructor(genesis, nativeOptions = {}, evmOptions = {}, rpcOptions = null) {
         super(genesis, nativeOptions);
         this.evm = evmSettings(evmOptions);
         this.evmFingerprint = hash(JSON.stringify([this.fingerprint, this.evm.fingerprint]));
+        this.rpc = rpcSettings(rpcOptions);
+        if (this.rpc && this.rpc.activationHeight < this.evm.activationHeight) throw new Error('MetaMask 激活高度不能早于 EVM');
+        this.rpcFingerprint = this.rpc ? hash(JSON.stringify([this.evmFingerprint, this.rpc.fingerprint])) : null;
+    }
+
+    context(blocks) {
+        const last = blocks.at(-1), index = blocks.length;
+        const times = blocks.slice(-11).map(block => Date.parse(block.timestamp)).sort((a, b) => a - b);
+        return { index, previousHash: last.hash, timestamp: new Date(Math.max(Date.now(), times[Math.floor(times.length / 2)] + 1)).toISOString(),
+            baseFeePerGas: nextBaseFee(last, this.rpc, index, this.evm.blockGasLimit).toString() };
+    }
+
+    async applyExternal(state, engine, tx, context, gasUsed, reserveOnly) {
+        if (!this.rpc || context.index < this.rpc.activationHeight) throw new Error('MetaMask 协议尚未激活');
+        if (state.ids.has(tx.id)) throw new Error('交易已确认或重复');
+        let receipt;
+        if (tx.kind === 'evmRaw') {
+            tx.assertCanonical(ExternalTransaction.raw(this.params.chainId, engine, tx.rawTransaction));
+            receipt = { id: tx.id, kind: 'evm', ...await engine.execute(tx.rawTransaction, context, gasUsed, true) };
+            state.evmBurnedWei += BigInt(receipt.feeWei); state.bridgeLockedWei -= BigInt(receipt.feeWei);
+        } else if (tx.kind === 'evmWithdraw') {
+            tx.assertCanonical(ExternalTransaction.withdraw(this, withdrawalData(this, tx.from, tx.to, tx.amountUnits, tx.nonce, tx.deadline).message, tx.signature));
+            const nonce = state.bridgeNonces.get(tx.from) || 0n;
+            if (BigInt(tx.nonce) !== nonce || nonce >= (1n << 256n) - 1n) throw new Error('取回授权 nonce 无效');
+            if (BigInt(tx.deadline) <= BigInt(Math.floor(Date.parse(context.timestamp) / 1000))) throw new Error('取回授权已过期');
+            const amount = BigInt(tx.amountUnits), wei = amount * WEI_PER_UNIT;
+            if (amount <= 0n) throw new Error('取回金额必须大于 0');
+            await engine.moveBalance(tx.from, -wei);
+            if (!reserveOnly) credit(state, tx.to, 'STC', amount);
+            state.bridgeLockedWei -= wei; state.bridgeNonces.set(tx.from, nonce + 1n);
+            receipt = { id: tx.id, kind: 'withdraw', status: 1, evmAddress: tx.from, nativeAddress: tx.to,
+                valueWei: wei.toString(), gasUsed: '0', feeWei: '0', logs: [] };
+        } else throw new Error('不支持的外部交易类型');
+        if (state.bridgeLockedWei < 0n) throw new Error('EVM 资金衔接余额无效');
+        state.ids.add(tx.id); return receipt;
     }
 
     validateEnvelope(tx, state) {
@@ -30,6 +68,7 @@ class EvmConsensus extends Consensus {
     }
 
     async applyTransaction(state, engine, tx, context, gasUsed = 0n, reserveOnly = false) {
+        if (tx.version === 4) return this.applyExternal(state, engine, tx, context, gasUsed, reserveOnly);
         if (tx.version !== 3) { super.applyTransfer(state, tx, context.index, reserveOnly); return null; }
         const { amount, fee, source } = this.validateEnvelope(tx, state);
         if (balance(state, tx.from, 'STC') < fee) throw new Error('原生手续费余额不足');
@@ -101,6 +140,8 @@ class EvmConsensus extends Consensus {
             const blocks = chain.map(restoreBlock);
             const activation = this.evm.activationHeight;
             if (blocks.length >= activation && activation > 1 && blocks[activation - 1].hash !== this.evm.checkpointHash) throw new Error('EVM 升级检查点不匹配');
+            if (this.rpc && blocks.length >= this.rpc.activationHeight && this.rpc.activationHeight > 1
+                && blocks[this.rpc.activationHeight - 1].hash !== this.rpc.checkpointHash) throw new Error('MetaMask 升级检查点不匹配');
             const legacy = super.evaluate(blocks.slice(0, Math.min(activation, blocks.length)));
             if (!legacy.valid) return legacy;
             let result = { ...legacy, state: cloneNative(legacy.state), engine: await EvmEngine.create(this.evm, legacy.blocks), receipts: new Map() };
@@ -110,13 +151,16 @@ class EvmConsensus extends Consensus {
                 const block = blocks[index], previous = blocks[index - 1];
                 const median = blocks.slice(Math.max(0, index - 11), index).map(b => Date.parse(b.timestamp)).sort((a, b) => a - b);
                 const time = Date.parse(block.timestamp), target = targetForDifficulty(dm.difficulty);
-                if (block.version !== 3 || block.index !== index || block.previousHash !== previous.hash
+                const modern = !!this.rpc && index >= this.rpc.activationHeight;
+                if (block.version !== (modern ? 4 : 3) || block.index !== index || block.previousHash !== previous.hash
                     || !Number.isSafeInteger(block.nonce) || block.nonce < 0 || typeof block.timestamp !== 'string'
                     || !Number.isFinite(time) || time <= median[Math.floor(median.length / 2)] || time > Date.now() + this.params.maxFutureSeconds * 1000
                     || block.chainId !== this.params.chainId || block.consensusHash !== this.fingerprint || block.evmConsensusHash !== this.evmFingerprint
                     || block.target !== targetHex(target) || block.evmGasLimit !== this.evm.blockGasLimit
                     || block.merkleRoot !== calculateMerkleRoot(block.transactions) || block.hash !== block.calculateHash()
                     || !meetsTarget(block.hash, target)) throw new Error('v3 区块头、共识配置或 PoW 无效');
+                if (modern && (block.rpcConsensusHash !== this.rpcFingerprint
+                    || block.baseFeePerGas !== nextBaseFee(previous, this.rpc, index, this.evm.blockGasLimit).toString())) throw new Error('MetaMask 共识参数或 baseFee 无效');
                 const executed = await this.executeBlock(result, block);
                 if (executed.evmStateRoot !== block.evmStateRoot || executed.receiptsRoot !== block.receiptsRoot || executed.evmGasUsed !== block.evmGasUsed) {
                     throw new Error('EVM 状态根、回执承诺或 Gas 不匹配');
@@ -134,16 +178,24 @@ class EvmConsensus extends Consensus {
     async rebuildPoolAsync(evaluation, candidates) {
         let state = cloneNative(evaluation.state), engine = await evaluation.engine.fork(evaluation.blocks);
         const pending = [], rejected = [];
-        const context = { index: evaluation.blocks.length, timestamp: new Date(Math.max(Date.now(), Date.parse(evaluation.blocks.at(-1).timestamp) + 1)).toISOString(), previousHash: evaluation.blocks.at(-1).hash };
-        for (const candidate of [...candidates].sort((a, b) => (a?.nonce ?? 0) - (b?.nonce ?? 0))) {
+        const context = this.context(evaluation.blocks);
+        const remaining = [...candidates], errors = new Map();
+        let progress = true;
+        while (remaining.length && progress) {
+        progress = false;
+        for (let i = 0; i < remaining.length;) {
+            const candidate = remaining[i];
             try {
                 const tx = Transaction.fromJSON(candidate), trial = cloneNative(state);
                 if (tx.version === 3 && context.index < this.evm.activationHeight) throw new Error('EVM 尚未激活');
-                const fork = tx.version === 3 ? await engine.fork(evaluation.blocks) : engine;
+                const fork = tx.version >= 3 ? await engine.fork(evaluation.blocks) : engine;
                 await this.applyTransaction(trial, fork, tx, context, 0n, true);
                 state = trial; engine = fork; pending.push(tx);
-            } catch (error) { rejected.push({ id: candidate?.id, error: error.message }); }
+                remaining.splice(i, 1); progress = true;
+            } catch (error) { errors.set(candidate, error.message); i++; }
         }
+        }
+        for (const candidate of remaining) rejected.push({ id: candidate?.id, error: errors.get(candidate) || '无效交易' });
         return { pending, rejected, state, engine };
     }
 
@@ -157,7 +209,7 @@ class EvmConsensus extends Consensus {
             let chosen = -1;
             for (let i = 0; i < remaining.length; i++) {
                 try {
-                    const trial = cloneNative(state), fork = remaining[i].version === 3 ? await engine.fork(evaluation.blocks) : engine;
+                    const trial = cloneNative(state), fork = remaining[i].version >= 3 ? await engine.fork(evaluation.blocks) : engine;
                     const receipt = await this.applyTransaction(trial, fork, remaining[i], context, gasUsed);
                     state = trial; engine = fork;
                     if (receipt) gasUsed += BigInt(receipt.gasUsed);

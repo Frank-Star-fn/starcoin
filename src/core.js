@@ -128,6 +128,7 @@ class Transaction {
     static fromJSON(data) {
         if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('无效交易对象');
         if (data.version === 3) return require('./evm/transaction').EvmTransaction.fromJSON(data);
+        if (data.version === 4) return require('./evm/external-transaction').ExternalTransaction.fromJSON(data);
         const tx = Object.create(Transaction.prototype);
         for (const key of ['version', 'chainId', 'id', 'from', 'to', 'amount', 'fee', 'note',
             'currency', 'nonce', 'timestamp', 'publicKey', 'signature', 'blockHeight']) {
@@ -255,7 +256,7 @@ function calculateMerkleRoot(transactions) {
     // 注意：从其他节点或文件加载的 tx 可能是普通 JSON 对象（非 Transaction 实例），
     // 此时 tx.calculateHash 不存在，需要直接计算 hash
     let layer = transactions.map(tx => {
-        if (tx.version === 2 || tx.version === 3) return Transaction.fromJSON(tx).calculateHash();
+        if ([2, 3, 4].includes(tx.version)) return Transaction.fromJSON(tx).calculateHash();
         if (typeof tx.calculateHash === 'function') {
             return tx.calculateHash();
         }
@@ -295,12 +296,13 @@ function calculateMerkleRoot(transactions) {
 class Block {
     constructor(index, timestamp, dataOrTransactions, previousHash = '', options = {}) {
         this.version = options.version ?? 1;
-        if (this.version === 2 || this.version === 3) {
+        if ([2, 3, 4].includes(this.version)) {
             this.chainId = options.chainId;
             this.consensusHash = options.consensusHash;
             this.target = options.target;
-            if (this.version === 3) {
+            if (this.version >= 3) {
                 for (const field of ['evmConsensusHash', 'evmStateRoot', 'receiptsRoot', 'evmGasUsed', 'evmGasLimit']) this[field] = options[field];
+                if (this.version === 4) for (const field of ['rpcConsensusHash', 'baseFeePerGas']) this[field] = options[field];
             }
         }
         this.index = index;
@@ -340,6 +342,11 @@ class Block {
     }
 
     calculateHash() {
+        if (this.version === 4) {
+            return hash(JSON.stringify(['StarCoin/block', 4, this.chainId, this.consensusHash, this.evmConsensusHash,
+                this.rpcConsensusHash, this.index, this.previousHash, this.timestamp, this.target, this.merkleRoot,
+                this.evmStateRoot, this.receiptsRoot, this.evmGasUsed, this.evmGasLimit, this.baseFeePerGas, this.nonce]));
+        }
         if (this.version === 3) {
             return hash(JSON.stringify(['StarCoin/block', 3, this.chainId, this.consensusHash,
                 this.evmConsensusHash, this.index, this.previousHash, this.timestamp, this.target,
