@@ -85,7 +85,7 @@ class DifficultyManager {
                 newDifficulty: this.difficulty,
                 avgTime: Math.round(avgTime * 10) / 10,
                 targetTime: this.targetBlockTime,
-                reason: avgTime > this.targetBlockTime * 1.3 ? '出块偏慢 ↓' : '出块偏快 ↑'
+                reason: this.difficulty < oldDifficulty ? '出块偏慢 ↓' : '出块偏快 ↑'
             });
             this.log.info('难度调整', {
                 blockIndex: latestIndex,
