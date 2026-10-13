@@ -75,7 +75,7 @@ async function mineBlock() {
     const statusText = document.getElementById('miningStatus');
     const difficultyDisplay = document.getElementById('miningDifficulty');
 
-    if (!minerAddr) { showMessage('txMessage', '❌ 请先选择或填写矿工奖励地址', 'error'); return; }
+    if (!minerAddr) { showMessage('nodeMessage', '❌ 请先选择或填写矿工奖励地址', 'error'); return; }
 
     // 如果自动挖矿正在运行，先停止它，防止两个挖矿模式冲突
     if (autoMineState.active) {
@@ -99,7 +99,7 @@ async function mineBlock() {
     statusText.textContent = '⛏️ 正在寻找满足条件的 nonce...';
     const hashrateElInit = document.getElementById('miningHashrate');
     if (hashrateElInit) hashrateElInit.textContent = '--';
-    showMessage('txMessage', '', 'info', 0);
+    showMessage('nodeMessage', '', 'info', 0);
 
     // 最佳进度（单调递增，防止进度条抖动）
     let bestPct = 0;
@@ -147,7 +147,7 @@ async function mineBlock() {
 
                 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
                 if (data.block && data.block.index != null) {
-                    showMessage('txMessage', `🎉 挖矿成功！区块 #${data.block.index} 已生成，耗时 ${elapsed}s，nonce: ${data.nonce}`, 'success', 5000);
+                    showMessage('nodeMessage', `🎉 挖矿成功！区块 #${data.block.index} 已生成，耗时 ${elapsed}s，nonce: ${data.nonce}`, 'success', 5000);
                 }
 
                 // 清理全局引用
@@ -184,7 +184,7 @@ async function mineBlock() {
                 _miningDisplayState.animClass = 'mining-animation mining-error';
                 _scheduleMiningFlush();
                 enableMineButton();
-                showMessage('txMessage', '❌ ' + data.error, 'error');
+                showMessage('nodeMessage', '❌ ' + data.error, 'error');
                 return;
             }
 
@@ -253,7 +253,7 @@ async function mineBlock() {
             statusText.textContent = '❌ 连接中断';
             animContainer.className = 'mining-animation mining-error';
             enableMineButton();
-            showMessage('txMessage', '❌ 挖矿连接中断，请重试', 'error');
+            showMessage('nodeMessage', '❌ 挖矿连接中断，请重试', 'error');
         }
     };
 }
@@ -319,14 +319,14 @@ async function toggleAutoMine() {
         // 恢复普通挖矿按钮
         enableMineButton();
 
-        showMessage('txMessage', '⏸️ 自动挖矿已停止（共挖了 ' + autoMineState.blocksMined + ' 个区块）', 'info', 3000);
+        showMessage('nodeMessage', '⏸️ 自动挖矿已停止（共挖了 ' + autoMineState.blocksMined + ' 个区块）', 'info', 3000);
         return;
     }
 
     // === 启动自动挖矿 ===
     const minerAddr = document.getElementById('minerAddress').value.trim();
     if (!minerAddr) {
-        showMessage('txMessage', '❌ 请先选择或填写矿工奖励地址', 'error');
+        showMessage('nodeMessage', '❌ 请先选择或填写矿工奖励地址', 'error');
         return;
     }
 
@@ -342,7 +342,7 @@ async function toggleAutoMine() {
     btn.className = 'danger';
     btn.textContent = '⏹️ 停止自动挖矿';
 
-    showMessage('txMessage', '🚀 自动挖矿已启动！每次挖矿成功后自动开始下一次', 'info', 3000);
+    showMessage('nodeMessage', '🚀 自动挖矿已启动！每次挖矿成功后自动开始下一次', 'info', 3000);
 
     // 关闭任何正在进行的单次挖矿 SSE，防止两个 SSE 同时更新同一批 DOM 导致文字抖动
     if (singleMineEventSource) {
@@ -584,5 +584,5 @@ function stopAutoMineOnError(errMsg) {
     }
 
     enableMineButton();
-    showMessage('txMessage', '❌ 自动挖矿出错: ' + errMsg + '，请重试', 'error');
+    showMessage('nodeMessage', '❌ 自动挖矿出错: ' + errMsg + '，请重试', 'error');
 }

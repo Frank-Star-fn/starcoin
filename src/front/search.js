@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
  * 执行搜索（全局函数，由 HTML onclick 调用）
  */
 async function performSearch() {
+    if (typeof navigatePage === 'function') navigatePage('explorer');
     const input = document.getElementById('searchInput');
     const query = (input.value || '').trim();
     if (!query) {

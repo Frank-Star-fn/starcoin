@@ -74,9 +74,10 @@ async function mmRefreshWallet() {
 }
 function mmTx(options) { return { from: mmState.address, ...(options.to ? { to: options.to } : {}), data: options.data,
     value: mmQ(options.valueWei), gas: mmQ(options.gasLimit), chainId: mmState.network.chainId }; }
-function mmSubmitted(hash) {
+function mmSubmitted(hash, kind = 'call', artifact = null) {
     evmEl('evmReceiptId').value = hash; evmEl('evmReceiptStatus').textContent = '待打包，请挖矿确认'; evmEl('evmReceiptOutput').textContent = '';
     evmEl('evmResult').textContent = '签名交易已提交：' + hash + '\n请挖矿确认，然后查询回执。'; debouncedRefreshAll('high');
+    if (typeof trackContractTransaction === 'function') { trackContractTransaction(hash, kind, artifact); showContractTab('receipts'); }
 }
 async function mmEstimate(deploy) {
     if (!mmState.address) throw new Error('请先连接 MetaMask');
@@ -91,13 +92,13 @@ async function mmExecute(deploy) {
     if (readonly) {
         const result = await mmRpc('eth_call', [{ to: options.to, data: options.data, ...(mmState.address ? { from: mmState.address } : {}) }, 'latest']);
         evmEl('evmResult').textContent = '查询结果：\n' + evmJson(Array.from(evmInterface().decodeFunctionResult(evmEl('evmMethod').value, result)));
-    } else { const provider = await mmGuard(); mmSubmitted(await provider.request({ method: 'eth_sendTransaction', params: [mmTx(options)] })); }
+    } else { const artifact = deploy ? evmArtifactSnapshot() : null; const provider = await mmGuard(); mmSubmitted(await provider.request({ method: 'eth_sendTransaction', params: [mmTx(options)] }), deploy ? 'deploy' : 'call', artifact); }
 }
 function mmTransfer() {
     return evmAction(async () => {
         const provider = await mmGuard(), to = ethers.getAddress(evmEl('mmRecipient').value.trim()), value = ethers.parseEther(evmEl('mmAmount').value.trim());
         if (value <= 0n) throw new Error('转账金额必须大于 0');
-        mmSubmitted(await provider.request({ method: 'eth_sendTransaction', params: [{ from: mmState.address, to, value: mmQ(value), chainId: mmState.network.chainId }] }));
+        mmSubmitted(await provider.request({ method: 'eth_sendTransaction', params: [{ from: mmState.address, to, value: mmQ(value), chainId: mmState.network.chainId }] }), 'transfer');
     });
 }
 async function mmWithdraw() {
@@ -115,7 +116,7 @@ async function mmWithdraw() {
         Withdraw: [{ name: 'owner', type: 'address' }, { name: 'nativeAddress', type: 'bytes16' }, { name: 'amountUnits', type: 'uint256' }, { name: 'nonce', type: 'uint256' }, { name: 'deadline', type: 'uint256' }]
     }, message: { owner: mmState.address, nativeAddress: '0x' + target, amountUnits: ethers.parseUnits(amount, 8).toString(), nonce: data.message.nonce, deadline: data.message.deadline } };
     const signature = await provider.request({ method: 'eth_signTypedData_v4', params: [mmState.address, JSON.stringify(typed)] });
-    mmSubmitted(await mmRpc('starcoin_submitWithdrawal', [{ message: data.message, signature }]));
+    mmSubmitted(await mmRpc('starcoin_submitWithdrawal', [{ message: data.message, signature }]), 'withdraw');
 }
 async function mmReceipt(hash) {
     const receipt = await mmRpc('eth_getTransactionReceipt', [hash]);

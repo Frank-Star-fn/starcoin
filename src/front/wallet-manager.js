@@ -80,6 +80,7 @@ function setAsReceiver(index) {
     const w = state.wallets[index];
     if (!w) return;
     document.getElementById('toAddress').value = w.address;
+    if (typeof openTransfer === 'function') openTransfer();
     showMessage('txMessage', '📋 已将 ' + w.label + ' 设为接收方', 'info', 2000);
 }
 
@@ -338,6 +339,7 @@ async function doImportPrivateKey() {
  * 显示私钥导入对话框
  */
 function showImportKeyDialog() {
+    if (typeof navigatePage === 'function') navigatePage('wallet');
     const dialog = document.getElementById('importKeyDialog');
     dialog.style.display = 'block';
     document.getElementById('importKeyInput').value = '';
@@ -447,6 +449,7 @@ async function importPrivateKey() {
 
 /** 显示助记词显示对话框并填入内容 */
 function showMnemonicDisplay(mnemonicText) {
+    if (typeof navigatePage === 'function') navigatePage('wallet');
     const dialog = document.getElementById('mnemonicDisplayDialog');
     const wordsEl = document.getElementById('mnemonicWords');
     if (wordsEl) wordsEl.textContent = mnemonicText;
@@ -462,6 +465,7 @@ function hideMnemonicDisplayDialog() {
 
 /** 显示导入助记词对话框 */
 function showImportMnemonicDialog() {
+    if (typeof navigatePage === 'function') navigatePage('wallet');
     const dialog = document.getElementById('importMnemonicDialog');
     if (dialog) {
         document.getElementById('importMnemonicType').value = 'legacy';

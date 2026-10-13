@@ -6,6 +6,18 @@
    渲染：钱包列表
    ============================================================ */
 
+const walletHistoryView = { address: null, limit: 10, transactions: [] };
+function showMoreWalletHistory() { walletHistoryView.limit += 10; renderWalletHistory(); }
+function renderWalletHistory() {
+    const address = walletHistoryView.address, transactions = walletHistoryView.transactions, hist = document.getElementById('selectedWalletHistory');
+    hist.innerHTML = transactions.slice(0, walletHistoryView.limit).map(tx => {
+        const display = typeof transactionDisplay === 'function' ? transactionDisplay(tx) : { amount: tx.amount, label: (tx.currency || 'STC').toUpperCase() };
+        return `<div class="history-row"><div style="color:${tx.from === address ? '#f87171' : '#4ade80'}; font-weight:bold;">${tx.from === address ? '→ 转出' : '← 收到'}: ${display.amount} ${display.label}</div><div>区块 <a onclick="searchBlock('${tx.blockIndex}')">#${tx.blockIndex}</a> · <a onclick="searchTxId('${tx.id}')">${shortAddr(tx.id, 16)}</a> · ${new Date(tx.timestamp).toLocaleString()}</div></div>`;
+    }).join('') || '<div class="empty-state">暂无交易记录</div>';
+    const more = document.getElementById('walletHistoryMore');
+    if (more) { more.hidden = transactions.length <= walletHistoryView.limit; more.textContent = `加载更多交易（剩余 ${Math.max(0, transactions.length - walletHistoryView.limit)} 条）`; }
+}
+
 /**
  * 渲染钱包列表 + 异步查询每个钱包的多币种余额
  */
@@ -16,18 +28,21 @@ async function renderWallets() {
         list.innerHTML = '<div style="color:#888; font-size:13px; padding:20px 0; text-align:center;">还没有钱包<br>点击上方 "＋ 生成新钱包" 开始</div>';
         document.getElementById('selectedWalletInfo').style.display = 'none';
     } else {
+        const openMenus = new Set([...list.querySelectorAll?.('details[data-wallet-menu][open]') || []].map(menu => menu.dataset.walletMenu));
         const renderChild = (w, i) => `
             <div data-wallet-index="${i}" class="wallet-item ${i === state.selectedWallet ? 'selected' : ''}" onclick="selectWallet(${i})">
-                <div class="wallet-label">${escapeHtml(w.label)}</div>
-                ${w.type === 'hd' ? `<div class="hint">${escapeHtml(w.path)}</div>` : ''}
-                <div class="wallet-address">${escapeHtml(shortAddr(w.address, 40))}</div>
+                <button class="wallet-select wallet-label" onclick="event.stopPropagation(); selectWallet(${i})">${escapeHtml(w.label)}</button>
+                <div class="wallet-address" title="${escapeHtml(w.address)}">${escapeHtml(shortAddr(w.address, 20))}</div>
                 <div class="wallet-balance" id="wallet-balance-${i}">余额: --</div>
                 <div class="wallet-actions">
-                    <button class="secondary small" onclick="event.stopPropagation(); exportPrivateKey(${i})">🔑 导出私钥</button>
                     <button class="secondary small" onclick="event.stopPropagation(); copyWalletAddress(${i})">复制地址</button>
+                    <details class="menu-details" data-wallet-menu="${w.address}" onclick="event.stopPropagation()"><summary>更多操作</summary><div class="menu-content">
+                    ${w.type === 'hd' ? `<span class="hint">${escapeHtml(w.path)}</span>` : ''}
+                    <button class="secondary small" onclick="event.stopPropagation(); exportPrivateKey(${i})">🔑 导出私钥</button>
                     <button class="secondary small" onclick="event.stopPropagation(); setAsReceiver(${i})">设为接收方</button>
                     <button class="secondary small" onclick="event.stopPropagation(); renameWallet(${i})">✏️ 重命名</button>
                     <button class="danger small" onclick="event.stopPropagation(); removeWallet(${i})">删除</button>
+                    </div></details>
                 </div>
             </div>
         `;
@@ -38,11 +53,13 @@ async function renderWallets() {
                     <div class="hint">${state.wallets.filter(w => w.rootId === root.id).length} 个子地址 · 已扫描 ${root.scanNextIndex || 0} 个地址</div>
                     <div class="wallet-actions">
                         <button class="secondary small" onclick="addHdAddress('${root.id}')">＋ 新增地址</button>
+                        <details class="menu-details" data-wallet-menu="${root.id}"><summary>备份与管理</summary><div class="menu-content">
                         <button class="secondary small" onclick="exportHdBackup('${root.id}')">📁 完整备份</button>
                         <button class="secondary small" onclick="showHdMnemonic('${root.id}')">助记词</button>
                         <button class="secondary small" onclick="continueHdScan('${root.id}')">继续扫描</button>
                         <button class="secondary small" onclick="renameHdRoot('${root.id}')">重命名钱包</button>
                         <button class="danger small" onclick="removeHdRoot('${root.id}')">删除钱包</button>
+                        </div></details>
                     </div>
                 </div>
                 ${state.wallets.map((w, i) => w.rootId === root.id ? renderChild(w, i) : '').join('')}
@@ -50,6 +67,7 @@ async function renderWallets() {
         `).join('');
         const independent = state.wallets.map((w, i) => w.type !== 'hd' ? renderChild(w, i) : '').join('');
         list.innerHTML = hdGroups + (independent ? '<div class="hint">独立地址钱包</div>' + independent : '');
+        for (const menu of list.querySelectorAll?.('details[data-wallet-menu]') || []) if (openMenus.has(menu.dataset.walletMenu)) menu.open = true;
 
         // 异步查询每个钱包余额（多币种）
         for (let i = 0; i < state.wallets.length; i++) {
@@ -58,7 +76,7 @@ async function renderWallets() {
                 const el = document.getElementById('wallet-balance-' + i);
                 if (el) {
                     if (data.balances) {
-                        el.innerHTML = formatMultiCurrencyBalances(data.balances, data.lockedRewards);
+                        el.innerHTML = `${formatBalance(data.balances.STC)} STC${data.lockedRewards > 0 ? ' <span class="hint">· 奖励锁定中</span>' : ''}`;
                     } else {
                         el.innerHTML = '余额: ' + formatBalance(data.balance) + ' STC';
                     }
@@ -73,6 +91,7 @@ async function renderWallets() {
         } else document.getElementById('selectedWalletInfo').style.display = 'none';
     }
     renderTransfer();
+    if (typeof updateWalletEmpty === 'function') updateWalletEmpty();
 }
 
 /**
@@ -96,16 +115,19 @@ function copyWalletAddress(i) {
  */
 async function refreshSelectedWalletDetails() {
     if (typeof refreshEvmWallet === 'function') refreshEvmWallet();
+    if (typeof updateWalletEmpty === 'function') updateWalletEmpty();
     const w = state.wallets[state.selectedWallet];
     if (!w) { document.getElementById('selectedWalletInfo').style.display = 'none'; return; }
     document.getElementById('selectedWalletInfo').style.display = 'block';
+    if (walletHistoryView.address !== w.address) { walletHistoryView.address = w.address; walletHistoryView.limit = 10; walletHistoryView.transactions = []; }
     document.getElementById('selectedWalletAddress').textContent = w.address;
 
     try {
         const data = await api('/api/balance/' + w.address);
+        if (w !== state.wallets[state.selectedWallet]) return;
         const balEl = document.getElementById('selectedWalletBalance');
         if (data.balances) {
-            balEl.innerHTML = formatMultiCurrencyBalances(data.balances, data.lockedRewards);
+            balEl.innerHTML = formatMultiCurrencyBalances(data.balances, data.lockedRewards).replace(/^余额: /, '');
         } else {
             let txt = formatBalance(data.balance) + ' STC';
             if (data.lockedRewards > 0) {
@@ -122,25 +144,9 @@ async function refreshSelectedWalletDetails() {
     // 交易历史（显示币种）
     try {
         const history = await api('/api/transactions/' + w.address);
-        const hist = document.getElementById('selectedWalletHistory');
-        if (!history.transactions || history.transactions.length === 0) {
-            hist.innerHTML = '<div style="color:#666; font-size:11px; padding:10px; text-align:center;">暂无交易记录</div>';
-        } else {
-            hist.innerHTML = history.transactions.slice(0, 10).map(tx => {
-                const cur = (tx.currency || 'STC').toUpperCase();
-                return `
-                <div style="background:rgba(255,255,255,0.04); padding:6px 8px; border-radius:4px; margin:4px 0; font-size:11px;">
-                    <div style="color:${tx.from === w.address ? '#f87171' : '#4ade80'}; font-weight:bold;">
-                        ${tx.from === w.address ? '→ 转出' : '← 收到'}: ${tx.amount} ${cur}
-                    </div>
-                    <div style="color:#666; font-size:10px; margin-top:2px;">
-                        Block <a onclick="searchBlock('${tx.blockIndex}')" style="color:#60a5fa;cursor:pointer;">#${tx.blockIndex}</a>
-                        | <span class="tx-id" onclick="searchTxId('${tx.id}')" style="color:#60a5fa;cursor:pointer;font-family:monospace;">${shortAddr(tx.id, 16)}</span>
-                        | ${new Date(tx.timestamp).toLocaleString()}
-                    </div>
-                </div>
-            `;}).join('');
-        }
+        if (w !== state.wallets[state.selectedWallet]) return;
+        walletHistoryView.transactions = history.transactions || [];
+        renderWalletHistory();
     } catch (e) {
         document.getElementById('selectedWalletHistory').textContent = '查询失败';
     }

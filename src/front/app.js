@@ -91,6 +91,7 @@ function connectWebSocket() {
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
+        if (typeof setNodeConnection === 'function') setNodeConnection(true);
         console.log('✅ WebSocket 已连接');
     };
 
@@ -108,6 +109,7 @@ function connectWebSocket() {
     };
 
     ws.onclose = () => {
+        if (typeof setNodeConnection === 'function') setNodeConnection(false);
         console.log('🔌 WebSocket 连接关闭，5秒后重连...');
         wsReconnectTimer = setTimeout(() => {
             connectWebSocket();
@@ -219,7 +221,9 @@ function escapeHtml(s) {
 }
 
 function showMessage(id, text, type = 'info', timeoutMs = 3500) {
-    const el = document.getElementById(id);
+    const target = id === 'txMessage' && document.getElementById('transferDialog') && !document.getElementById('transferDialog').open ? 'workspaceMessage' : id;
+    const el = document.getElementById(target);
+    if (!el) return;
     el.className = 'message ' + type;
     el.textContent = text;
     if (timeoutMs > 0) {
@@ -453,6 +457,7 @@ function showKeyMismatchDialog() {
     const importBtn = document.getElementById('keyMismatchImportBtn');
     document.getElementById('keyMismatchImportHdBtn').onclick = () => {
         overlay.style.display = 'none';
+        if (typeof navigatePage === 'function') navigatePage('wallet');
         document.getElementById('hdBackupFile').click();
     };
     document.getElementById('keyMismatchImportMnemonicBtn').onclick = () => {

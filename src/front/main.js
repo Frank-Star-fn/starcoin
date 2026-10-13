@@ -249,66 +249,7 @@ async function refreshChain() {
             difficultyEl.textContent = '--';
         }
 
-        const el = document.getElementById('chainVisual');
-        const chain = data.chain || [];
-        if (chain.length === 0) {
-            el.innerHTML = '<div class="mempool-empty">暂无区块</div>';
-            return;
-        }
-        el.innerHTML = chain.slice().reverse().map(b => {
-            const isGenesis = b.index === 0;
-            // 计算本块总燃烧手续费
-            let blockBurnedFees = 0;
-            let feeTxCount = 0;
-            const txList = (b.transactions || []).map(tx => {
-                const display = transactionDisplay(tx);
-                let cls = 'block-tx ';
-                let prefix = '';
-                if (tx.from === 'SYSTEM' || !tx.from) { cls += 'reward'; prefix = '🎁 '; }
-                else if (display.signed) { cls += 'signed'; prefix = '✍️ '; }
-                else { cls += 'unsigned'; prefix = '⚠ '; }
-
-                const fee = Number(tx.fee) || 0;
-                if (fee > 0) {
-                    blockBurnedFees += fee;
-                    feeTxCount++;
-                }
-
-                const cur = display.label;
-                if (tx.from === 'SYSTEM') {
-                    return `<div class="${cls}">${prefix}奖励 → ${shortAddr(tx.to, 10)}: ${tx.amount} ${cur}</div>`;
-                }
-                if (!tx.from) {
-                    return `<div class="${cls}">${prefix}备注: ${escapeHtml(tx.note || tx.to || '')}</div>`;
-                }
-                // 普通交易：显示币种 + 手续费标签 + nonce
-                const feeTag = fee > 0 ? `<span class="fee-tag">🔥${formatBalance(fee)} STC</span>` : '';
-                const nonceTag = (tx.nonce !== undefined && tx.nonce !== null) ? `<span style="color:#a78bfa; font-size:10px;"> #n=${tx.nonce}</span>` : '';
-                return `<div class="${cls}">${prefix}${shortAddr(tx.from, 8)} → ${shortAddr(tx.to, 8)}: ${display.amount} ${cur}${feeTag}${nonceTag}</div>`;
-            }).join('');
-
-            // 本块燃烧手续费汇总
-            const feeSummary = (!isGenesis && blockBurnedFees > 0)
-                ? `<div class="block-fee-summary">
-                        <span>🔥 本块燃烧: <b>${formatBalance(blockBurnedFees)} STC</b></span>
-                        <span style="color:#888;">${feeTxCount} 笔含费交易</span>
-                   </div>`
-                : '';
-
-            return `
-                <div class="block-card ${isGenesis ? 'genesis' : ''}" title="区块 #${b.index}">
-                    <div class="block-height">${isGenesis ? '🌱 创世区块' : '📦 区块 #' + b.index}</div>
-                    <div class="block-hash">本块: ${shortAddr(b.hash, 24)}</div>
-                    <div class="block-hash">前驱: ${shortAddr(b.previousHash, 24)}</div>
-                    <div style="color:#888; font-size:10px; margin-top:4px;">Nonce: ${b.nonce} · ${new Date(b.timestamp).toLocaleString()}</div>
-                    <div style="margin-top:6px; border-top:1px dashed rgba(255,255,255,0.1); padding-top:6px;">
-                        <div style="color:#ffd700; font-size:11px; margin-bottom:4px;">包含交易:</div>
-                        ${txList || '<div style="color:#666;font-size:10px;">无交易</div>'}
-                    </div>
-                    ${feeSummary}
-                </div>
-            `;
-        }).join('');
+        renderBlockList(data.chain || []);
 
             // 难度调整历史（放在 try 内部，确保 data 可访问）
             const diffHistoryEl = document.getElementById('chainDiffHistory');
