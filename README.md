@@ -5,10 +5,18 @@
 
 ## 启动
 
+启动：
+
 ```sh
 $env:PORT="3000" ; node src/server.js
 $env:PORT="3001" ; node src/server.js
 $env:PORT="3002" ; node src/server.js
+```
+
+从浏览器进入：
+
+```sh
+http://localhost:3000/
 ```
 
 ## 配置管理
@@ -30,5 +38,3 @@ $env:PORT="3002" ; node src/server.js
 - 动态难度调整。控制平均出块速度在12秒左右。支持自动持续挖矿。矿工奖励需要5个区块确认后才能使用。挖矿节点优先打包手续费最高的交易。
 
 - 单元测试。使用Vitest框架。
-
-## TODO
