@@ -7,6 +7,8 @@ const { chromium } = require('playwright');
         const page = await browser.newPage();
         const html = fs.readFileSync('public/index.html', 'utf8').replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
         await page.setContent(html); await page.waitForLoadState('networkidle');
+        await page.addStyleTag({ path: 'public/style.css' });
+        await page.addStyleTag({ path: 'public/workspace.css' });
         for (const name of ['app', 'wallet-utils', 'search', 'wallet-ui', 'workspace', 'main']) {
             let code = fs.readFileSync('src/front/' + name + '.js', 'utf8');
             if (name === 'workspace') code = code.split('// Shared gas controls')[0];
@@ -41,5 +43,18 @@ const { chromium } = require('playwright');
             return { checked, payloadExecuted: globalThis.pwned };
         });
         console.log(JSON.stringify(result));
+        await page.setViewportSize({ width: 375, height: 900 });
+        await page.evaluate(() => {
+            document.querySelectorAll('.workspace-page').forEach(page => { page.hidden = page.id !== 'page-explorer'; });
+            document.getElementById('searchResults').style.display = 'block';
+        });
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+        if (overflow > 1) {
+            console.log(await page.evaluate(() => [...document.querySelectorAll('body *')]
+                .filter(el => el.getBoundingClientRect().width && (el.getBoundingClientRect().right > innerWidth + 1 || el.scrollWidth > el.clientWidth + 1))
+                .map(el => ({ tag: el.tagName, id: el.id, className: el.className, right: el.getBoundingClientRect().right, width: el.clientWidth, scrollWidth: el.scrollWidth })).slice(0, 15)));
+            throw new Error('mobile horizontal overflow: ' + overflow);
+        }
+        console.log('Mobile search layout: no horizontal overflow');
     } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });

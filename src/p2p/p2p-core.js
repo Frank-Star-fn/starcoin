@@ -51,8 +51,8 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
     const log = logger.module('P2P-Core');
 
     // WebSocket 服务器
-    const sockets = new Set(), attempts = new Map();
-    const wss = new WebSocket.Server({ server, maxPayload: config.P2P_MAX_PAYLOAD, perMessageDeflate: false,
+    const sockets = new Set(), attempts = new Map(), advertisedUrls = new Map();
+    const wss = new WebSocket.Server({ server, maxPayload: config.P2P_MAX_PAYLOAD, maxFragments: 1024, maxBufferedChunks: 4096, perMessageDeflate: false,
         verifyClient: ({ req }) => {
             if (sockets.size >= config.P2P_MAX_CONNECTIONS) return false;
             const key = req.socket.remoteAddress, now = Date.now();
@@ -94,6 +94,14 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
     function getHandler() {
         return _messageHandler;
     }
+    function dispatchMessage(ws, message, connectionId) {
+        if (message.type === MESSAGE_TYPES.NODE_INFO) {
+            const previous = advertisedUrls.get(connectionId);
+            if (previous && previous !== message.node.url) throw new Error('peer URL changed');
+            advertisedUrls.set(connectionId, message.node.url);
+        }
+        return _messageHandler?.(ws, message, connectionId);
+    }
 
     // ========== 内部工具函数 ==========
 
@@ -115,6 +123,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
 
     /** 初始化重连状态（如果尚未初始化） */
     function _initReconnect(url) {
+        if (reconnectState.size >= config.P2P_MAX_CONNECTIONS && !reconnectState.has(url)) return;
         if (!reconnectState.has(url)) {
             reconnectState.set(url, { attempts: 0, timer: null });
         }
@@ -218,7 +227,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
      */
     function connectToPeer(peerUrl, options = {}) {
         if (!validPeerUrl(peerUrl)) throw new Error('节点 URL 或主机不受信任，请配置 P2P_ALLOWED_HOSTS');
-        if (sockets.size >= config.P2P_MAX_CONNECTIONS) return;
+        if (sockets.size >= config.P2P_MAX_CONNECTIONS) { options?.onDisconnected?.(peerUrl); return; }
         // 向后兼容：如果第二个参数是 boolean，转为 { enableReconnect }
         if (typeof options === 'boolean') {
             options = { enableReconnect: options };
@@ -247,7 +256,8 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
         }
 
         const ws = createSocket ? createSocket(peerUrl) : new WebSocket(peerUrl, {
-            maxPayload: config.P2P_MAX_PAYLOAD, perMessageDeflate: false, handshakeTimeout: 5000, followRedirects: false
+            maxPayload: config.P2P_MAX_PAYLOAD, maxFragments: 1024, maxBufferedChunks: 4096,
+            perMessageDeflate: false, handshakeTimeout: 5000, followRedirects: false
         });
         sockets.add(ws);
         ws.once('close', () => sockets.delete(ws));
@@ -290,7 +300,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
             if (onConnected) onConnected(peerUrl);
         });
 
-        receiveMessages(ws, MESSAGE_TYPES, parsed => _messageHandler?.(ws, parsed, connectionId),
+        receiveMessages(ws, MESSAGE_TYPES, parsed => dispatchMessage(ws, parsed, connectionId),
             reason => { _clearReconnect(peerUrl); log.warn('拒绝对等节点消息', { reason }); });
 
         ws.on('close', () => {
@@ -300,6 +310,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
             // 清理连接记录
             nodes.delete(peerUrl);
             nodeConnections.delete(connectionId);
+            nodes.delete(advertisedUrls.get(connectionId)); advertisedUrls.delete(connectionId);
 
             // 断开后回调
             if (onDisconnected) onDisconnected(peerUrl);
@@ -455,7 +466,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
                 // nodes.add 由 handleMessage → handleNodeInfo 完成，此处不重复添加
             }
             if (_messageHandler) {
-                return _messageHandler(ws, parsed, connectionId);
+                return dispatchMessage(ws, parsed, connectionId);
             }
         }, reason => log.warn('拒绝对等节点消息', { reason }));
 
@@ -463,6 +474,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
             log.info('节点已断开连接', { remoteAddr });
             _stopHeartbeat(connectionId);
             nodeConnections.delete(connectionId);
+            advertisedUrls.delete(connectionId);
             // 清理对应的 nodes 条目（通过 NODE_INFO 关联的 URL）
             const nodeUrl = inboundNodeUrls.get(connectionId);
             if (nodeUrl) {

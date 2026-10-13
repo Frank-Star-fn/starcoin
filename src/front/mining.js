@@ -69,15 +69,24 @@ function _cancelMiningFlush() {
 function openMiningStream(minerAddress) {
     const controller = new AbortController();
     let closed = false, done = false, jobId = null;
+    const starting = api('/api/mine/start', 'POST', { minerAddress });
+    let stopping = null;
+    async function stopJob() {
+        const job = await starting.catch(() => null);
+        if (!job || done) return;
+        jobId = job.jobId;
+        stopping ??= api('/api/mine/stop', 'POST', { jobId }).catch(() => {});
+        await stopping;
+    }
     const source = { onmessage: null, onerror: null, async close() {
         if (closed) return;
         closed = true; controller.abort();
-        if (jobId && !done) await api('/api/mine/stop', 'POST', { jobId }).catch(() => {});
+        await stopJob();
     } };
     (async () => {
         try {
-            const job = await api('/api/mine/start', 'POST', { minerAddress }); jobId = job.jobId;
-            if (closed) { await api('/api/mine/stop', 'POST', { jobId }); return; }
+            const job = await starting; jobId = job.jobId;
+            if (closed) { await stopJob(); return; }
             const response = await fetch('/api/mine/stream?jobId=' + encodeURIComponent(jobId), {
                 headers: adminHeaders(), signal: controller.signal
             });
@@ -279,7 +288,7 @@ async function mineBlock() {
         }
     };
 
-    eventSource.onerror = () => {
+    eventSource.onerror = (error) => {
         singleMineEventSource = null;
         if (!miningCompleted) {
             // 如果单次挖矿是被自动挖矿主动取消的，则静默关闭，不显示错误信息
@@ -289,10 +298,10 @@ async function mineBlock() {
                 return;
             }
             eventSource.close();
-            statusText.textContent = '❌ 连接中断';
+            statusText.textContent = '❌ ' + (error?.message || '连接中断');
             animContainer.className = 'mining-animation mining-error';
             enableMineButton();
-            showMessage('nodeMessage', '❌ 挖矿连接中断，请重试', 'error');
+            showMessage('nodeMessage', '❌ ' + (error?.message || '挖矿连接中断，请重试'), 'error');
         }
     };
 }
@@ -576,7 +585,8 @@ async function startNextAutoMine() {
         }
     };
 
-    eventSource.onerror = () => {
+    eventSource.onerror = (error) => {
+        if ([401, 403, 503].includes(error?.statusCode)) { eventSource.close(); stopAutoMineOnError(error.message); return; }
         if (autoMineState.eventSource === eventSource) {
             autoMineState.eventSource = null;
         }

@@ -108,6 +108,10 @@ describe('p2p-message-handlers', () => {
         fromNode: 'ws://localhost:3000'
       });
     });
+    it('CHAIN_LENGTH 响应不再引发相互应答', () => {
+      handlers.handleMessage({}, { type: 'CHAIN_LENGTH', length: 1 });
+      expect(mockNetwork.sendMessage).not.toHaveBeenCalled();
+    });
 
     it('SYNC_REQUEST → 发送完整链', () => {
       const ws = {};

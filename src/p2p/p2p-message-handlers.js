@@ -133,6 +133,7 @@ function createMessageHandlers(network, starCoin, options = {}) {
                 handleNodeInfo(message.node);
                 break;
             case MESSAGE_TYPES.CHAIN_LENGTH:
+                if (message.length !== undefined) break;
                 network.sendMessage(ws, {
                     type: MESSAGE_TYPES.CHAIN_LENGTH,
                     length: starCoin.chain.length,

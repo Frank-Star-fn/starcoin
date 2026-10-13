@@ -40,7 +40,7 @@ describe('api-mining 路由 — 挖矿', () => {
     it('指定矿工地址挖矿成功', async () => {
       const res = await request(app)
         .post('/mine')
-        .send({ minerAddress: 'MY_MINER_ADDRESS' });
+        .send({ minerAddress: 'b'.repeat(32) });
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
     });

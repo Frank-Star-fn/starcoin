@@ -3,6 +3,7 @@ const { randomUUID } = require('crypto');
 const config = require('../config');
 const { AppError, wrapAsync } = require('./error-handler');
 const { requireAdmin } = require('../middleware/access-control');
+const { requireNativeAddress } = require('./input-policy');
 
 function createMiningRoutes(starCoin, p2p, broadcastToFrontend) {
     const router = express.Router(), jobs = new Map();
@@ -12,7 +13,7 @@ function createMiningRoutes(starCoin, p2p, broadcastToFrontend) {
     function address(body = {}) {
         const value = body.minerAddress || starCoin.miningAddress;
         if (typeof value !== 'string' || !value) throw new AppError(400, '必须提供 minerAddress 参数', 'MISSING_MINER');
-        return value;
+        return requireNativeAddress(value);
     }
     function available() {
         if (active || singleMining) throw new AppError(409, '已有挖矿任务运行中', 'MINING_BUSY');

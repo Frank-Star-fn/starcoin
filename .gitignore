@@ -4,3 +4,5 @@ pic/
 .env
 *.log
 dist/
+/.cache/
+/.cache-audit.json

@@ -75,4 +75,27 @@ describe('untrusted P2P messages', () => {
             }
         } finally { core.wss.close(); await new Promise(resolve => server.close(resolve)); }
     });
+    it('closes a peer sending excessive tiny fragments below the byte-size limit', async () => {
+        const server = http.createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+        const core = createP2PCore(server, { chain: [] }, server.address().port);
+        try {
+            const ws = new WebSocket(`ws://127.0.0.1:${server.address().port}`); await once(ws, 'open');
+            const closed = once(ws, 'close');
+            for (let i = 0; i < 1025; i++) ws.send('x', { binary: false, fin: false });
+            expect((await closed)[0]).toBe(1008);
+        } finally { for (const ws of core.wss.clients) ws.terminate(); core.wss.close(); await new Promise(resolve => server.close(resolve)); }
+    });
+    it('bounds reconnect entries and rejects a peer that changes its advertised address', async () => {
+        const server = http.createServer(); await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+        const core = createP2PCore(server, { chain: [] }, server.address().port); core.setHandler(() => {});
+        try {
+            for (let i = 0; i < 50; i++) core.reconnect.init('ws://localhost:' + (30000 + i));
+            expect(core.reconnect.getState().size).toBe(config.P2P_MAX_CONNECTIONS);
+            const ws = new WebSocket(`ws://127.0.0.1:${server.address().port}`); await once(ws, 'open');
+            const closed = once(ws, 'close');
+            ws.send(JSON.stringify({ type: 'NODE_INFO', node: { url: 'ws://localhost:30000' } }));
+            ws.send(JSON.stringify({ type: 'NODE_INFO', node: { url: 'ws://localhost:30001' } }));
+            expect((await closed)[0]).toBe(1008);
+        } finally { for (const ws of core.wss.clients) ws.terminate(); core.wss.close(); await new Promise(resolve => server.close(resolve)); }
+    });
 });

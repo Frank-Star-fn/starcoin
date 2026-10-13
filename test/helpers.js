@@ -136,7 +136,7 @@ function createMockStarCoin(overrides = {}) {
         pendingTransactions: [],
         coinbaseMaturity: 100,
         miningReward: 50,
-        miningAddress: 'TEST_MINER_ADDR',
+        miningAddress: 'a'.repeat(32),
         dataFile: '/tmp/test_starcoin_data.json',
         freshStart: false,
         consensus: { params: { chainId: 'starcoin-main-v2', activationHeight: 1 }, fingerprint: 'test-consensus' },
