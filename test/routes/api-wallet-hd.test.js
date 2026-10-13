@@ -1,4 +1,9 @@
+const config = require('../../src/config');
 const express = require('express');
+const legacyConfig = { token: config.ADMIN_TOKEN, legacy: config.LEGACY_WALLET_API };
+beforeAll(() => { config.ADMIN_TOKEN = 'test-admin'; config.LEGACY_WALLET_API = true; });
+afterAll(() => { config.ADMIN_TOKEN = legacyConfig.token; config.LEGACY_WALLET_API = legacyConfig.legacy; });
+
 const request = require('supertest');
 const createTxRoutes = require('../../src/routes/api-tx');
 const { createHdContext, deriveAddress, MAX_INDEX } = require('../../src/hd-wallet');
@@ -7,7 +12,7 @@ const mnemonic = 'abandon abandon abandon abandon abandon abandon abandon abando
 
 function appFor(chain = createMockStarCoin()) {
     const app = express();
-    app.use(express.json());
+    app.use(express.json()); app.use((req, _res, next) => { req.headers.authorization = 'Bearer test-admin'; next(); });
     app.use(createTxRoutes(chain, () => {}, createMockP2P()));
     return app;
 }

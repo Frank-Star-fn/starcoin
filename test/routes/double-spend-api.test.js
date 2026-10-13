@@ -1,11 +1,15 @@
+const config = require('../../src/config');
 const express = require('express');
+const legacyConfig = { token: config.ADMIN_TOKEN, legacy: config.LEGACY_WALLET_API };
+beforeAll(() => { config.ADMIN_TOKEN = 'test-admin'; config.LEGACY_WALLET_API = true; });
+afterAll(() => { config.ADMIN_TOKEN = legacyConfig.token; config.LEGACY_WALLET_API = legacyConfig.legacy; });
+
 const request = require('supertest');
 const { generateWallet } = require('../../src/core');
 const createTxRoutes = require('../../src/routes/api-tx');
 const createNetRoutes = require('../../src/routes/api-net');
 const { createErrorMiddleware } = require('../../src/routes/error-handler');
 const { newFreshChain, createMockP2P, createSignedTx } = require('../helpers');
-const config = require('../../src/config');
 
 describe('真实账本上的 HTTP 双花防护', () => {
     let chain, alice, app;
@@ -15,7 +19,7 @@ describe('真实账本上的 HTTP 双花防护', () => {
     beforeEach(() => {
         chain = newFreshChain(); alice = generateWallet(); chain.mineBlock(alice.address);
         chain.paymentConfirmations = 2;
-        const p2p = createMockP2P(); app = express(); app.use(express.json());
+        const p2p = createMockP2P(); app = express(); app.use(express.json()); app.use((req, _res, next) => { req.headers.authorization = 'Bearer test-admin'; next(); });
         app.use('/api', createTxRoutes(chain, () => {}, p2p));
         app.use('/api', createNetRoutes(chain, p2p, 9876));
         app.use(createErrorMiddleware());

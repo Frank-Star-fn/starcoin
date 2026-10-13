@@ -44,6 +44,7 @@ const config = {
     PORT: int(process.env.PORT, 3000),
     HOST: process.env.HOST || '127.0.0.1',
     ADMIN_TOKEN: process.env.ADMIN_TOKEN || '',
+    LEGACY_WALLET_API: bool(process.env.LEGACY_WALLET_API, false),
     TRUSTED_PROXIES: (process.env.TRUSTED_PROXIES || '').split(',').map(s => s.trim()).filter(Boolean),
     HTTP_ALLOWED_HOSTS: (process.env.HTTP_ALLOWED_HOSTS || 'localhost,127.0.0.1,[::1]').split(',').map(s => s.trim().toLowerCase()).filter(Boolean),
     /** 种子节点列表（逗号分隔的 WebSocket URL） */

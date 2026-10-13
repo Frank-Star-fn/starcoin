@@ -6,6 +6,8 @@ const { Transaction, generateWallet, importWalletFromPem,
         generateMnemonic, validateMnemonic, mnemonicToWallet, normalizeCurrency } = require('../blockchain/blockchain');
 const { AppError, wrapAsync } = require('./error-handler');
 const { requireNativeAddress } = require('./input-policy');
+const { requireLegacyWallet } = require('../middleware/access-control');
+const signedTransaction = require('./signed-input');
 
 /**
  * 创建钱包与交易相关的路由
@@ -16,7 +18,24 @@ const { requireNativeAddress } = require('./input-policy');
  */
 function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     const router = express.Router();
+    router.use('/wallet', requireLegacyWallet);
     router.use('/wallet/hd', require('./api-wallet-hd')(starCoin));
+    router.get('/transaction/context/:address', wrapAsync(async (req, res) => {
+        const address = requireNativeAddress(req.params.address);
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ success: true, version: 2, chainId: starCoin.consensus.params.chainId,
+            nextNonce: starCoin.query?.getAddressNonce(address, true) ?? 0 });
+    }));
+    router.post('/transaction/signed', wrapAsync(async (req, res) => {
+        const tx = signedTransaction(req.body, 2);
+        requireNativeAddress(tx.from); requireNativeAddress(tx.to);
+        let saved;
+        try { saved = await starCoin.addTransaction(tx); }
+        catch { throw new AppError(400, '交易无效、nonce 不匹配或余额不足', 'TX_REJECTED'); }
+        p2p.broadcastTransaction(saved);
+        broadcastToFrontend('newTransaction', { poolCount: starCoin.pendingTransactions.length, txId: saved.id });
+        res.json({ success: true, transaction: saved, poolCount: starCoin.pendingTransactions.length });
+    }));
 
     // ============================================================
     // 1. 创建新钱包（生成地址和私钥）
@@ -167,7 +186,7 @@ function createTxRoutes(starCoin, broadcastToFrontend, p2p) {
     // ============================================================
     // 2. 提交一笔转账到交易池（支持多币种：currency = STC | cBTC | cETH；自动填充 nonce 防重放）
     // ============================================================
-    router.post('/transaction', wrapAsync(async (req, res) => {
+    router.post('/transaction', requireLegacyWallet, wrapAsync(async (req, res) => {
         const { from, to, amount, fee, note, privateKey, publicKey, currency, nonce } = req.body;
 
         if (!from || !to || !amount) {

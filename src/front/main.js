@@ -70,8 +70,8 @@ async function submitTransaction() {
     const btn = document.querySelector('button[onclick="submitTransaction()"]');
     const fromIdx = parseInt(document.getElementById('fromWallet').value);
     const to = document.getElementById('toAddress').value.trim();
-    const amount = parseFloat(document.getElementById('amount').value);
-    const fee = parseFloat(document.getElementById('fee').value) || 0;
+    const amount = document.getElementById('amount').value.trim();
+    const fee = document.getElementById('fee').value.trim() || '0';
     const note = document.getElementById('note').value.trim();
     const currencyEl = document.getElementById('currency');
     const currency = currencyEl ? currencyEl.value : 'STC';  // 多币种
@@ -99,16 +99,11 @@ async function submitTransaction() {
         const masterKey = await getOrCreateMasterKey();
         const privateKeyPem = await decryptPrivateKey(fromWallet.encryptedPrivateKey, masterKey);
 
-        const result = await api('/api/transaction', 'POST', {
-            from: fromWallet.address,
-            to: to,
-            amount: amount,
-            fee: fee,
-            note: note,
-            currency: currency,
-            privateKey: privateKeyPem, // 解密后的明文 PEM（仅在此请求中使用）
-            publicKey: fromWallet.publicKey
-        });
+        const context = await api('/api/transaction/context/' + fromWallet.address);
+        const transaction = walletCrypto.signNative(privateKeyPem, { to, amount, fee, note, currency,
+            chainId: context.chainId, nonce: context.nextNonce });
+        if (transaction.from !== fromWallet.address) throw new Error('钱包地址与私钥不匹配');
+        const result = await api('/api/transaction/signed', 'POST', { transaction });
 
         if (result.success) {
             showMessage('txMessage', '✅ 交易已提交到交易池！（txid: ' + (result.transaction && result.transaction.id ? shortAddr(result.transaction.id, 16) : '') + '）下一步点击"挖矿"来打包这笔交易', 'success', 6000);

@@ -19,7 +19,7 @@ describe('node access boundaries', () => {
     afterEach(() => { config.ADMIN_TOKEN = previous; });
     it.each(['/storage/reset', '/storage/import', '/storage/reload', '/connect', '/disconnect',
         '/sync', '/mempool/sync', '/mempool/broadcast', '/discovery/start', '/discovery/stop', '/discovery/scan',
-        '/mine', '/mine/start', '/mine/stop'])('rejects unauthenticated %s without side effects', async path => {
+        '/mine', '/mine/start', '/mine/stop', '/Storage/reset/', '/CONNECT/', '/MINE/start/'])('rejects unauthenticated %s without side effects', async path => {
         await request(app).post('/api' + path).send({}).expect(401);
         expect(chain.clearDataFile).not.toHaveBeenCalled();
         expect(chain.mineBlockAsync).not.toHaveBeenCalled(); expect(p2p.connectToPeer).not.toHaveBeenCalled();
@@ -36,6 +36,11 @@ describe('node access boundaries', () => {
         await request(app).get('/api/openapi.json').set('Host', 'attacker.example').expect(403);
         await request(app).post('/api/storage/reset').set('Authorization', 'Bearer test-admin-token').expect(200);
         expect(chain.clearDataFile).toHaveBeenCalledTimes(1);
+    });
+    it('accepts HTTPS websocket origins only when forwarded by a trusted proxy', () => {
+        const { sameOrigin } = require('../../src/middleware/access-control');
+        const req = { headers: { host: 'localhost:3000', origin: 'https://localhost:3000', 'x-forwarded-proto': 'https' }, socket: { remoteAddress: '127.0.0.1' } };
+        expect(sameOrigin(req, () => true)).toBe(true); expect(sameOrigin(req, () => false)).toBe(false);
     });
     it('GET progress cannot initiate mining', async () => {
         await request(app).get('/api/mine/stream?minerAddress=evil').expect(401);

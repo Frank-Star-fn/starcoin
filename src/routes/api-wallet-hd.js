@@ -1,10 +1,12 @@
 const express = require('express');
 const bip39 = require('bip39');
 const { AppError, wrapAsync } = require('./error-handler');
+const { requireLegacyWallet } = require('../middleware/access-control');
 const { createHdContext, deriveAddresses, deriveAddress, discoverAddresses, integer, MAX_INDEX, MAX_BATCH } = require('../hd-wallet');
 
 module.exports = function createHdRoutes(starCoin) {
     const router = express.Router();
+    router.use(requireLegacyWallet);
     router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
     function hdOperation(handler) {

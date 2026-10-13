@@ -28,7 +28,8 @@ async function browserHarness() {
     }
     context.showMessage = vi.fn();
     context.showForceBackupDialog = vi.fn();
-    context.api = vi.fn(async (url, method, body) => {
+    context.localHdWallet = vi.fn(async (operation, body = {}) => {
+        const url = '/api/wallet/hd/' + operation;
         const hd = createHdContext(body.mnemonic || mnemonic, body.passphrase, body.scheme, body.basePath);
         if (url.endsWith('/new')) return { mnemonic, ...deriveAddresses(hd) };
         if (url.endsWith('/import')) return discoverAddresses(hd, () => false, body);

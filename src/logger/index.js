@@ -15,6 +15,7 @@
 const { LEVELS, getLevel, shouldLog } = require('./levels');
 const { ConsoleTransport } = require('./transports/console');
 const { FileTransport } = require('./transports/file');
+const redact = require('./redact');
 
 // ============================================================
 // 默认配置（可由 config.js 覆盖）
@@ -128,14 +129,14 @@ class Logger {
         }
 
         // 构造日志记录
-        const record = {
+        const record = redact({
             time: new Date().toISOString(),
             level: levelDef.label,
             emoji: levelDef.emoji,
             module: moduleName,
             message: message,
             ctx: context,
-        };
+        });
 
         // 写入所有传输器
         for (const transport of this._transports) {

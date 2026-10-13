@@ -14,11 +14,16 @@ function allowedHost(req) {
 }
 
 // Host validation also prevents a browser on an unrelated domain from rebinding to the node.
-function sameOrigin(req) {
+function sameOrigin(req, trustProxy = req.app?.get('trust proxy fn')) {
     if (!allowedHost(req)) return false;
     const origin = req.headers.origin;
     if (!origin) return req.headers['sec-fetch-site'] !== 'cross-site';
-    try { return new URL(origin).origin === `${req.protocol || (req.socket?.encrypted ? 'https' : 'http')}://${req.headers.host}`; }
+    let protocol = req.protocol || (req.socket?.encrypted ? 'https' : 'http');
+    if (!req.protocol && trustProxy?.(req.socket?.remoteAddress, 0)) {
+        const forwarded = req.headers['x-forwarded-proto']?.split(',')[0].trim();
+        if (['http', 'https'].includes(forwarded)) protocol = forwarded;
+    }
+    try { return new URL(origin).origin === `${protocol}://${req.headers.host}`; }
     catch { return false; }
 }
 
@@ -44,3 +49,12 @@ function protectHttp(req, res, next) {
 }
 
 module.exports = { requireAdmin, protectHttp, allowedHost, sameOrigin };
+module.exports.requireLegacyWallet = function requireLegacyWallet(req, res, next) {
+    res.setHeader('Cache-Control', 'no-store');
+    if (!config.LEGACY_WALLET_API) return reject(res, 410, 'LEGACY_WALLET_DISABLED', '旧钱包接口已禁用，请在浏览器签名后提交交易');
+    // The actual transport peer, never a proxy header, decides local compatibility access.
+    const remote = req.socket?.remoteAddress;
+    if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote)
+        || ['forwarded', 'x-forwarded-for', 'x-real-ip'].some(header => req.headers[header])) return reject(res, 403, 'LOCAL_ONLY', '旧钱包接口仅允许本机直连');
+    return requireAdmin(req, res, next);
+};

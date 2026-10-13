@@ -67,7 +67,7 @@ function _formatErrorResponse(err) {
         details = err.details;
     } else if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
         statusCode = 400;
-        message = '请求体 JSON 格式错误: ' + err.message;
+        message = '请求体 JSON 格式错误';
         code = 'INVALID_JSON';
     } else if (err.statusCode && err.statusCode >= 400 && err.statusCode < 500) {
         statusCode = err.statusCode;
@@ -95,10 +95,6 @@ function _formatErrorResponse(err) {
     };
     if (details) {
         body.details = details;
-    }
-    // 非生产环境且为 5xx 时附带 stack（便于调试）
-    if (statusCode >= 500 && process.env.NODE_ENV !== 'production') {
-        body.stack = err.stack;
     }
     return body;
 }
@@ -154,10 +150,12 @@ function createErrorMiddleware(options = {}) {
 function _logError(err, req) {
     const timestamp = new Date().toISOString();
     const method = req.method || '?';
-    const url = req.originalUrl || req.url || '?';
+    const url = (req.originalUrl || req.url || '?').split('?')[0];
     const log = logger.module('HTTP');
 
-    if (err instanceof AppError && err.statusCode < 500) {
+    if (err instanceof SyntaxError && 'body' in err) {
+        log.warn('请求体 JSON 格式错误', { method, url });
+    } else if (err instanceof AppError && err.statusCode < 500) {
         // 4xx 业务错误：只打印简略信息
         log.warn('请求处理错误', { method, url, statusCode: err.statusCode, message: err.message });
     } else {

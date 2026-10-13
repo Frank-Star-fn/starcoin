@@ -8,12 +8,12 @@
    ============================================================ */
 
 /**
- * 请求后端生成新钱包（含 BIP39 助记词），
+ * 在浏览器生成新钱包（含 BIP39 助记词），
  * 加密私钥和助记词后加入列表，并显示助记词对话框
  */
 async function generateWallet() {
     try {
-        const data = await api('/api/wallet/new-with-mnemonic', 'POST');
+        const data = { mnemonic: walletCrypto.newMnemonic() }; data.wallet = walletCrypto.legacyWallet(data.mnemonic);
         if (!data.wallet || !data.mnemonic) throw new Error('生成失败');
 
         // 加密私钥
@@ -287,7 +287,7 @@ async function doImportPrivateKey() {
     msgEl.className = 'message info';
 
     try {
-        const data = await api('/api/wallet/import', 'POST', { privateKey });
+        const data = { success: true, wallet: walletCrypto.importPem(privateKey) };
         if (!data.success || !data.wallet) {
             throw new Error(data.error || '导入失败');
         }
@@ -395,7 +395,7 @@ async function importPrivateKey() {
     msgEl.textContent = '🔑 正在验证 PEM 私钥...';
 
     try {
-        const result = await api('/api/wallet/import', 'POST', { privateKeyPem: pemText });
+        const result = { success: true, wallet: walletCrypto.importPem(pemText) };
 
         if (result.success) {
             const w = result.wallet;
@@ -553,7 +553,7 @@ async function importWalletFromMnemonic() {
 
     try {
         const passphrase = document.getElementById('importMnemonicPassphrase').value;
-        const result = await api('/api/wallet/import-mnemonic', 'POST', { mnemonic: mnemonicText, passphrase });
+        const result = { success: true, wallet: walletCrypto.legacyWallet(mnemonicText, passphrase) };
 
         if (result.success) {
             const w = result.wallet;

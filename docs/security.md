@@ -8,6 +8,12 @@ HTTP/WS 默认监听 `127.0.0.1`。跨机器演示需显式设置 `HOST`，并�
 
 `POST /api/mine/start` 创建一个任务并返回 `jobId`，`GET /api/mine/stream?jobId=...` 只订阅进度，`POST /api/mine/stop` 用 `{ "jobId": "..." }` 停止任务。三个接口均需要管理凭证。每个节点同一时刻只有一个挖矿任务，SSE 连接默认最多 8 个，十分钟后自动断开。订阅断开不会自动停止任务；前端停止按钮发送显式停止请求。
 
+钱包生成、导入、BIP39/BIP32 派生、原生 ECDSA 和 EVM 签名在浏览器完成。浏览器只发送公开模拟参数、已签名原生交易、v3 桥接封装或 Ethereum 原始交易。旧地址、派生路径、HD 根标识、加密存储和备份保持兼容。客户端 API 层会拒绝带 `privateKey`、`privateKeyPem`、`mnemonic`、`passphrase` 或 `password` 字段的请求。
+
+旧 `/wallet/*`、`POST /transaction`、`/evm/deposit`、`/evm/withdraw`、`/evm/transaction` 默认返回 410。仅 `LEGACY_WALLET_API=true`、本机直连且通过管理鉴权时可用；带代理转发头的请求仍拒绝。`/evm/estimate` 默认使用公开 `from`，带私钥的旧请求受相同限制。这些兼容接口响应均禁止缓存。
+
+日志在所有传输器前脱敏秘密字段、PEM、Bearer 凭证和秘密查询参数。HTTP 错误不回显 JSON 请求体片段或堆栈。
+
 公开链查询和已签名交易广播不需要管理凭证。链数据可以含有旧版本接受的任意地址文本，浏览器必须始终把它当作文本显示。
 
 新提交的原生交易地址必须是 32 位小写十六进制字符串。这个 HTTP 输入策略不修改历史链的共识校验。搜索、区块列表和钱包历史使用文本节点与事件监听器；其余 HTML 模板中的外部文本进行 HTML 转义。恶意地址、备注和备份标签都不能成为 HTML 或 JavaScript。

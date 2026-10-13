@@ -5,337 +5,4355 @@
     "version": "1.0.0",
     "description": "StarCoin demo 的 HTTP API。基址为当前节点的 /api；JSON 请求使用 Content-Type: application/json。币种为 STC、cBTC、cETH，金额最多八位小数。当前服务未配置认证，钱包生成、助记词派生和交易签名由节点处理。本文档列出主要字段，对象允许包含扩展字段。"
   },
-  "servers": [{ "url": "/api", "description": "当前节点（如 localhost:3000）" }],
+  "servers": [
+    {
+      "url": "/api",
+      "description": "当前节点（如 localhost:3000）"
+    }
+  ],
   "tags": [
-    { "name": "文档" }, { "name": "钱包" }, { "name": "HD 钱包" }, { "name": "交易" },
-    { "name": "区块链" }, { "name": "挖矿" }, { "name": "节点" }, { "name": "存储" }, { "name": "搜索" }, { "name": "EVM" }
+    {
+      "name": "文档"
+    },
+    {
+      "name": "钱包"
+    },
+    {
+      "name": "HD 钱包"
+    },
+    {
+      "name": "交易"
+    },
+    {
+      "name": "区块链"
+    },
+    {
+      "name": "挖矿"
+    },
+    {
+      "name": "节点"
+    },
+    {
+      "name": "存储"
+    },
+    {
+      "name": "搜索"
+    },
+    {
+      "name": "EVM"
+    }
   ],
   "security": [],
   "paths": {
-    "/evm/status": {"get":{"tags":["EVM"],"summary":"EVM 网络配置和已确认状态","operationId":"evmStatus","description":"","responses":{"200":{"description":"成功","content":{"application/json":{"schema":{"type":"object","properties":{"success":{"type":"boolean"},"chainId":{"type":"integer"},"hardfork":{"type":"string"},"active":{"type":"boolean"},"activationHeight":{"type":"integer"},"checkpointHash":{"type":"string"},"blockGasLimit":{"type":"integer"},"transactionGasLimit":{"type":"integer"},"gasPriceWei":{"$ref":"#/components/schemas/Wei"},"stateRoot":{"type":"string"},"evmConsensusHash":{"type":"string"},"bridgeLockedWei":{"$ref":"#/components/schemas/Wei"},"burnedWei":{"$ref":"#/components/schemas/Wei"},"metamask":{"type":"object","nullable":true,"properties":{"activationHeight":{"type":"integer"},"checkpointHash":{"type":"string"},"initialBaseFeeWei":{"$ref":"#/components/schemas/Wei"},"priorityFeeWei":{"$ref":"#/components/schemas/Wei"},"fingerprint":{"type":"string"},"rpcUrl":{"type":"string","example":"/rpc"},"rpcConsensusHash":{"type":"string"},"baseFeePerGas":{"$ref":"#/components/schemas/Wei"}}}}}}}},"400":{"$ref":"#/components/responses/BadRequest"},"429":{"$ref":"#/components/responses/RateLimited"},"503":{"description":"EVM 未启用"}}}},
-    "/evm/address": {"post":{"tags":["EVM"],"summary":"由现有钱包公钥计算 EVM 地址","operationId":"evmAddress","description":"","responses":{"200":{"description":"成功","content":{"application/json":{"schema":{"type":"object","properties":{"success":{"type":"boolean"},"address":{"$ref":"#/components/schemas/EvmAddress"}}}}}},"400":{"$ref":"#/components/responses/BadRequest"},"429":{"$ref":"#/components/responses/RateLimited"},"503":{"description":"EVM 未启用"}},"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","required":["publicKey"],"properties":{"publicKey":{"type":"string","description":"SPKI DER 十六进制公钥"}}}}}}}},
-    "/evm/account/{address}": {"get":{"tags":["EVM"],"summary":"已确认 EVM 余额、nonce 和字节码","operationId":"evmAccount","description":"","parameters":[{"name":"address","in":"path","required":true,"schema":{"$ref":"#/components/schemas/EvmAddress"}}],"responses":{"200":{"description":"成功","content":{"application/json":{"schema":{"type":"object","properties":{"success":{"type":"boolean"},"address":{"$ref":"#/components/schemas/EvmAddress"},"balanceWei":{"$ref":"#/components/schemas/Wei"},"balanceSTC":{"type":"string"},"nonce":{"$ref":"#/components/schemas/Wei"},"code":{"type":"string"},"stateRoot":{"type":"string"}}}}}},"400":{"$ref":"#/components/responses/BadRequest"},"429":{"$ref":"#/components/responses/RateLimited"},"503":{"description":"EVM 未启用"}}}},
-    "/evm/storage/{address}/{slot}": {"get":{"tags":["EVM"],"summary":"查询已确认的 32 字节存储槽","operationId":"evmStorage","description":"","parameters":[{"name":"address","in":"path","required":true,"schema":{"$ref":"#/components/schemas/EvmAddress"}},{"name":"slot","in":"path","required":true,"schema":{"$ref":"#/components/schemas/Wei"}}],"responses":{"200":{"description":"成功","content":{"application/json":{"schema":{"type":"object","properties":{"success":{"type":"boolean"},"value":{"type":"string"}}}}}},"400":{"$ref":"#/components/responses/BadRequest"},"429":{"$ref":"#/components/responses/RateLimited"},"503":{"description":"EVM 未启用"}}}},
-    "/evm/deposit": {"post":{"tags":["EVM"],"summary":"把原生 STC 存入 EVM","operationId":"evmDeposit","description":"默认存入本钱包 EVM 地址；交易打包后生效。","responses":{"200":{"description":"成功","content":{"application/json":{"schema":{"type":"object","properties":{"success":{"type":"boolean"},"transaction":{"$ref":"#/components/schemas/EvmEnvelope"},"receipt":{"$ref":"#/components/schemas/EvmReceipt"}}}}}},"400":{"$ref":"#/components/responses/BadRequest"},"429":{"$ref":"#/components/responses/RateLimited"},"503":{"description":"EVM 未启用"}},"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/EvmBridgeRequest"}}}}}},
-    "/evm/withdraw": {"post":{"tags":["EVM"],"summary":"把 EVM STC 取回原生账户","operationId":"evmWithdraw","description":"仅可取回本私钥控制的 EVM 余额；无法表示为原生八位小数的 wei 留在 EVM。","responses":{"200":{"description":"成功","content":{"application/json":{"schema":{"type":"object","properties":{"success":{"type":"boolean"},"transaction":{"$ref":"#/components/schemas/EvmEnvelope"},"receipt":{"$ref":"#/components/schemas/EvmReceipt"}}}}}},"400":{"$ref":"#/components/responses/BadRequest"},"429":{"$ref":"#/components/responses/RateLimited"},"503":{"description":"EVM 未启用"}},"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/EvmBridgeRequest"}}}}}},
-    "/evm/transaction": {"post":{"tags":["EVM"],"summary":"部署合约或提交合约交易","operationId":"evmTransaction","description":"需要 privateKey；不传 to 时 data 为 creation bytecode + 构造参数。v4 使用动态 baseFee 与建议优先费，旧 v3 固定 10 gwei。REVERT/OOG 交易仍会入块并消耗 Gas。返回原生 id 供回执查询。MetaMask 使用独立的 /rpc，无需 privateKey，见 docs/ethereum-rpc.md。","responses":{"200":{"description":"成功","content":{"application/json":{"schema":{"type":"object","properties":{"success":{"type":"boolean"},"transaction":{"$ref":"#/components/schemas/EvmEnvelope"},"receipt":{"$ref":"#/components/schemas/EvmReceipt"}}}}}},"400":{"$ref":"#/components/responses/BadRequest"},"429":{"$ref":"#/components/responses/RateLimited"},"503":{"description":"EVM 未启用"}},"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/EvmRequest"}}}}}},
-    "/evm/call": {"post":{"tags":["EVM"],"summary":"隔离模拟合约调用","operationId":"evmCall","description":"使用已确认状态的副本，不写入链。privateKey 无需提供；status=0 表示模拟执行失败。","responses":{"200":{"description":"成功","content":{"application/json":{"schema":{"type":"object","properties":{"success":{"type":"boolean"},"status":{"type":"integer","enum":[0,1]},"returnData":{"type":"string"},"executionGasUsed":{"$ref":"#/components/schemas/Wei"},"error":{"type":"string","nullable":true}}}}}},"400":{"$ref":"#/components/responses/BadRequest"},"429":{"$ref":"#/components/responses/RateLimited"},"503":{"description":"EVM 未启用"}},"requestBody":{"required":true,"content":{"application/json":{"schema":{"allOf":[{"$ref":"#/components/schemas/EvmRequest"},{"type":"object","properties":{"from":{"$ref":"#/components/schemas/EvmAddress"}}}]}}}}}},
-    "/evm/estimate": {"post":{"tags":["EVM"],"summary":"隔离模拟并估算交易 Gas","operationId":"evmEstimate","description":"需要 privateKey 和已确认 EVM 余额；使用已确认 nonce，二分查找可成功执行的 Gas 上限。之后状态变化可能影响执行。","responses":{"200":{"description":"成功","content":{"application/json":{"schema":{"type":"object","properties":{"success":{"type":"boolean"},"gasLimit":{"$ref":"#/components/schemas/Wei"},"gasUsed":{"$ref":"#/components/schemas/Wei"},"gasPriceWei":{"$ref":"#/components/schemas/Wei"},"maxFeeWei":{"$ref":"#/components/schemas/Wei"},"stateRoot":{"type":"string"}}}}}},"400":{"$ref":"#/components/responses/BadRequest"},"429":{"$ref":"#/components/responses/RateLimited"},"503":{"description":"EVM 未启用"}},"requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/EvmRequest"}}}}}},
-    "/evm/receipt/{id}": {"get":{"tags":["EVM"],"summary":"查询原生交易 ID 对应的 EVM 回执","operationId":"evmReceipt","description":"已确认 status=1/0 表示执行成功/失败；待打包或重组后的交易使用字符串状态。","parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"string","pattern":"^[0-9a-f]{64}$"}}],"responses":{"200":{"description":"成功","content":{"application/json":{"schema":{"type":"object","properties":{"success":{"type":"boolean"},"receipt":{"$ref":"#/components/schemas/EvmReceipt"}}}}}},"400":{"$ref":"#/components/responses/BadRequest"},"429":{"$ref":"#/components/responses/RateLimited"},"503":{"description":"EVM 未启用"}}}},
-    "/evm/logs": {"get":{"tags":["EVM"],"summary":"查询当前主链事件日志","operationId":"evmLogs","description":"默认最近 100 个区块；最多跨 2000 个高度，最多 10000 条。topic 匹配第一个 topic；回滚日志不会返回。","parameters":[{"name":"fromBlock","in":"query","required":false,"schema":{"type":"integer"}},{"name":"toBlock","in":"query","required":false,"schema":{"type":"integer"}},{"name":"address","in":"query","required":false,"schema":{"$ref":"#/components/schemas/EvmAddress"}},{"name":"topic","in":"query","required":false,"schema":{"type":"string","pattern":"^0x[0-9a-fA-F]{64}$"}}],"responses":{"200":{"description":"成功","content":{"application/json":{"schema":{"type":"object","properties":{"success":{"type":"boolean"},"logs":{"type":"array","items":{"$ref":"#/components/schemas/EvmLog"}}}}}}},"400":{"$ref":"#/components/responses/BadRequest"},"429":{"$ref":"#/components/responses/RateLimited"},"503":{"description":"EVM 未启用"}}}},
+    "/evm/status": {
+      "get": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "EVM 网络配置和已确认状态",
+        "operationId": "evmStatus",
+        "description": "",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "chainId": {
+                      "type": "integer"
+                    },
+                    "hardfork": {
+                      "type": "string"
+                    },
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "activationHeight": {
+                      "type": "integer"
+                    },
+                    "checkpointHash": {
+                      "type": "string"
+                    },
+                    "blockGasLimit": {
+                      "type": "integer"
+                    },
+                    "transactionGasLimit": {
+                      "type": "integer"
+                    },
+                    "gasPriceWei": {
+                      "$ref": "#/components/schemas/Wei"
+                    },
+                    "stateRoot": {
+                      "type": "string"
+                    },
+                    "evmConsensusHash": {
+                      "type": "string"
+                    },
+                    "bridgeLockedWei": {
+                      "$ref": "#/components/schemas/Wei"
+                    },
+                    "burnedWei": {
+                      "$ref": "#/components/schemas/Wei"
+                    },
+                    "metamask": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "activationHeight": {
+                          "type": "integer"
+                        },
+                        "checkpointHash": {
+                          "type": "string"
+                        },
+                        "initialBaseFeeWei": {
+                          "$ref": "#/components/schemas/Wei"
+                        },
+                        "priorityFeeWei": {
+                          "$ref": "#/components/schemas/Wei"
+                        },
+                        "fingerprint": {
+                          "type": "string"
+                        },
+                        "rpcUrl": {
+                          "type": "string",
+                          "example": "/rpc"
+                        },
+                        "rpcConsensusHash": {
+                          "type": "string"
+                        },
+                        "baseFeePerGas": {
+                          "$ref": "#/components/schemas/Wei"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "EVM 未启用"
+          }
+        }
+      }
+    },
+    "/evm/address": {
+      "post": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "由现有钱包公钥计算 EVM 地址",
+        "operationId": "evmAddress",
+        "description": "",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "address": {
+                      "$ref": "#/components/schemas/EvmAddress"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "EVM 未启用"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "publicKey"
+                ],
+                "properties": {
+                  "publicKey": {
+                    "type": "string",
+                    "description": "SPKI DER 十六进制公钥"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/evm/account/{address}": {
+      "get": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "已确认 EVM 余额、nonce 和字节码",
+        "operationId": "evmAccount",
+        "description": "",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EvmAddress"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "address": {
+                      "$ref": "#/components/schemas/EvmAddress"
+                    },
+                    "balanceWei": {
+                      "$ref": "#/components/schemas/Wei"
+                    },
+                    "balanceSTC": {
+                      "type": "string"
+                    },
+                    "nonce": {
+                      "$ref": "#/components/schemas/Wei"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "stateRoot": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "EVM 未启用"
+          }
+        }
+      }
+    },
+    "/evm/storage/{address}/{slot}": {
+      "get": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "查询已确认的 32 字节存储槽",
+        "operationId": "evmStorage",
+        "description": "",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/EvmAddress"
+            }
+          },
+          {
+            "name": "slot",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Wei"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "value": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "EVM 未启用"
+          }
+        }
+      }
+    },
+    "/evm/deposit": {
+      "post": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "把原生 STC 存入 EVM",
+        "operationId": "evmDeposit",
+        "description": "兼容接口默认禁用（410）。仅 LEGACY_WALLET_API=true、本机直连且通过管理鉴权时启用；浏览器钱包已改为本地生成、派生和签名。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "transaction": {
+                      "$ref": "#/components/schemas/EvmEnvelope"
+                    },
+                    "receipt": {
+                      "$ref": "#/components/schemas/EvmReceipt"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "410": {
+            "description": "旧钱包接口已禁用"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "EVM 未启用"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvmBridgeRequest"
+              }
+            }
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
+      }
+    },
+    "/evm/withdraw": {
+      "post": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "把 EVM STC 取回原生账户",
+        "operationId": "evmWithdraw",
+        "description": "兼容接口默认禁用（410）。仅 LEGACY_WALLET_API=true、本机直连且通过管理鉴权时启用；浏览器钱包已改为本地生成、派生和签名。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "transaction": {
+                      "$ref": "#/components/schemas/EvmEnvelope"
+                    },
+                    "receipt": {
+                      "$ref": "#/components/schemas/EvmReceipt"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "410": {
+            "description": "旧钱包接口已禁用"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "EVM 未启用"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvmBridgeRequest"
+              }
+            }
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
+      }
+    },
+    "/evm/transaction": {
+      "post": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "部署合约或提交合约交易",
+        "operationId": "evmTransaction",
+        "description": "兼容接口默认禁用（410）。仅 LEGACY_WALLET_API=true、本机直连且通过管理鉴权时启用；浏览器钱包已改为本地生成、派生和签名。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "transaction": {
+                      "$ref": "#/components/schemas/EvmEnvelope"
+                    },
+                    "receipt": {
+                      "$ref": "#/components/schemas/EvmReceipt"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "410": {
+            "description": "旧钱包接口已禁用"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "EVM 未启用"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvmRequest"
+              }
+            }
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
+      }
+    },
+    "/evm/call": {
+      "post": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "隔离模拟合约调用",
+        "operationId": "evmCall",
+        "description": "使用已确认状态的副本，不写入链。privateKey 无需提供；status=0 表示模拟执行失败。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "status": {
+                      "type": "integer",
+                      "enum": [
+                        0,
+                        1
+                      ]
+                    },
+                    "returnData": {
+                      "type": "string"
+                    },
+                    "executionGasUsed": {
+                      "$ref": "#/components/schemas/Wei"
+                    },
+                    "error": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "EVM 未启用"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/EvmRequest"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "from": {
+                        "$ref": "#/components/schemas/EvmAddress"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/evm/estimate": {
+      "post": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "隔离模拟并估算交易 Gas",
+        "operationId": "evmEstimate",
+        "description": "仅需公开 from 地址。估算不改变链状态。含 privateKey 的旧请求默认禁用，兼容模式要求本机直连和管理鉴权。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "gasLimit": {
+                      "$ref": "#/components/schemas/Wei"
+                    },
+                    "gasUsed": {
+                      "$ref": "#/components/schemas/Wei"
+                    },
+                    "gasPriceWei": {
+                      "$ref": "#/components/schemas/Wei"
+                    },
+                    "maxFeeWei": {
+                      "$ref": "#/components/schemas/Wei"
+                    },
+                    "stateRoot": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "EVM 未启用"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "from"
+                ],
+                "properties": {
+                  "to": {
+                    "$ref": "#/components/schemas/EvmAddress"
+                  },
+                  "data": {
+                    "type": "string",
+                    "pattern": "^0x([0-9a-fA-F]{2})*$",
+                    "description": "ABI 编码 calldata；不传 to 表示创建合约"
+                  },
+                  "valueWei": {
+                    "$ref": "#/components/schemas/Wei"
+                  },
+                  "gasLimit": {
+                    "type": "string",
+                    "description": "Gas 整数字符串，最大 5000000；默认使用上限"
+                  },
+                  "from": {
+                    "$ref": "#/components/schemas/EvmAddress"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/evm/receipt/{id}": {
+      "get": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "查询原生交易 ID 对应的 EVM 回执",
+        "operationId": "evmReceipt",
+        "description": "已确认 status=1/0 表示执行成功/失败；待打包或重组后的交易使用字符串状态。",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "receipt": {
+                      "$ref": "#/components/schemas/EvmReceipt"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "EVM 未启用"
+          }
+        }
+      }
+    },
+    "/evm/logs": {
+      "get": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "查询当前主链事件日志",
+        "operationId": "evmLogs",
+        "description": "默认最近 100 个区块；最多跨 2000 个高度，最多 10000 条。topic 匹配第一个 topic；回滚日志不会返回。",
+        "parameters": [
+          {
+            "name": "fromBlock",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "toBlock",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "address",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/EvmAddress"
+            }
+          },
+          {
+            "name": "topic",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[0-9a-fA-F]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "logs": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/EvmLog"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "EVM 未启用"
+          }
+        }
+      }
+    },
     "/openapi.json": {
       "get": {
-        "tags": ["文档"], "summary": "获取 OpenAPI 文档", "operationId": "getOpenApi",
+        "tags": [
+          "文档"
+        ],
+        "summary": "获取 OpenAPI 文档",
+        "operationId": "getOpenApi",
         "responses": {
-          "200": { "description": "OpenAPI 3.0 文档", "content": { "application/json": { "schema": { "type": "object", "required": ["openapi", "info", "paths"], "properties": { "openapi": { "type": "string" }, "info": { "type": "object" }, "paths": { "type": "object" } } } } } },
-          "429": { "$ref": "#/components/responses/RateLimited" }
+          "200": {
+            "description": "OpenAPI 3.0 文档",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "openapi",
+                    "info",
+                    "paths"
+                  ],
+                  "properties": {
+                    "openapi": {
+                      "type": "string"
+                    },
+                    "info": {
+                      "type": "object"
+                    },
+                    "paths": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
         }
       }
     },
     "/wallet/new": {
       "post": {
-        "tags": ["钱包"], "summary": "生成单地址钱包", "operationId": "createWallet",
-        "responses": { "200": { "$ref": "#/components/responses/Wallet" }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "钱包"
+        ],
+        "summary": "生成单地址钱包",
+        "operationId": "createWallet",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Wallet"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "410": {
+            "description": "旧钱包接口已禁用"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "description": "兼容接口默认禁用（410）。仅 LEGACY_WALLET_API=true、本机直连且通过管理鉴权时启用；浏览器钱包已改为本地生成、派生和签名。"
       }
     },
     "/wallet/import": {
       "post": {
-        "tags": ["钱包"], "summary": "从 PEM 私钥导入钱包", "operationId": "importWallet",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PemImport" } } } },
-        "responses": { "200": { "$ref": "#/components/responses/Wallet" }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "钱包"
+        ],
+        "summary": "从 PEM 私钥导入钱包",
+        "operationId": "importWallet",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PemImport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Wallet"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "410": {
+            "description": "旧钱包接口已禁用"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "description": "兼容接口默认禁用（410）。仅 LEGACY_WALLET_API=true、本机直连且通过管理鉴权时启用；浏览器钱包已改为本地生成、派生和签名。"
       }
     },
     "/wallet/verify-pem": {
       "post": {
-        "tags": ["钱包"], "summary": "验证 PEM 并返回公钥和地址", "operationId": "verifyPem",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PemImport" } } } },
-        "responses": { "200": { "description": "私钥有效", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "publicKey": { "type": "string" }, "address": { "$ref": "#/components/schemas/Address" } } } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "钱包"
+        ],
+        "summary": "验证 PEM 并返回公钥和地址",
+        "operationId": "verifyPem",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PemImport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "私钥有效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "publicKey": {
+                      "type": "string"
+                    },
+                    "address": {
+                      "$ref": "#/components/schemas/Address"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "410": {
+            "description": "旧钱包接口已禁用"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "description": "兼容接口默认禁用（410）。仅 LEGACY_WALLET_API=true、本机直连且通过管理鉴权时启用；浏览器钱包已改为本地生成、派生和签名。"
       }
     },
     "/wallet/new-with-mnemonic": {
       "post": {
-        "tags": ["钱包"], "summary": "生成旧版助记词单地址钱包", "operationId": "createMnemonicWallet",
-        "description": "沿用旧版 seed 前 32 字节生成私钥的算法，与 HD 派生结果不同。",
-        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "strength": { "type": "integer", "enum": [128, 160, 192, 224, 256], "default": 128 } } } } } },
-        "responses": { "200": { "description": "助记词和钱包", "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/WalletResult" }, { "type": "object", "properties": { "mnemonic": { "type": "string" } } }] } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "钱包"
+        ],
+        "summary": "生成旧版助记词单地址钱包",
+        "operationId": "createMnemonicWallet",
+        "description": "兼容接口默认禁用（410）。仅 LEGACY_WALLET_API=true、本机直连且通过管理鉴权时启用；浏览器钱包已改为本地生成、派生和签名。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "strength": {
+                    "type": "integer",
+                    "enum": [
+                      128,
+                      160,
+                      192,
+                      224,
+                      256
+                    ],
+                    "default": 128
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "助记词和钱包",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/WalletResult"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mnemonic": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "410": {
+            "description": "旧钱包接口已禁用"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/wallet/import-mnemonic": {
       "post": {
-        "tags": ["钱包"], "summary": "从旧版助记词恢复单地址钱包", "operationId": "importMnemonicWallet",
-        "description": "passphrase 必须与创建时一致；返回原有单地址，HD 钱包请使用 /wallet/hd/import。",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["mnemonic"], "properties": { "mnemonic": { "type": "string", "description": "有效英文 BIP39 助记词" }, "passphrase": { "type": "string", "default": "" } } } } } },
-        "responses": { "200": { "$ref": "#/components/responses/Wallet" }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "钱包"
+        ],
+        "summary": "从旧版助记词恢复单地址钱包",
+        "operationId": "importMnemonicWallet",
+        "description": "兼容接口默认禁用（410）。仅 LEGACY_WALLET_API=true、本机直连且通过管理鉴权时启用；浏览器钱包已改为本地生成、派生和签名。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "mnemonic"
+                ],
+                "properties": {
+                  "mnemonic": {
+                    "type": "string",
+                    "description": "有效英文 BIP39 助记词"
+                  },
+                  "passphrase": {
+                    "type": "string",
+                    "default": ""
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Wallet"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "410": {
+            "description": "旧钱包接口已禁用"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/wallet/hd/new": {
       "post": {
-        "tags": ["HD 钱包"], "summary": "创建 HD 钱包及首个地址", "operationId": "createHdWallet",
-        "description": "使用 BIP39、BIP32 和 m/44'/1'/0'/0/i 派生路径，返回的地址使用 StarCoin 格式。响应 Cache-Control: no-store。",
-        "requestBody": { "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/HdOptions" }, { "type": "object", "properties": { "strength": { "type": "integer", "enum": [128, 256], "default": 128 } } }] } } } },
-        "responses": { "200": { "description": "根钱包信息、助记词和首个子地址", "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/HdResult" }, { "type": "object", "required": ["mnemonic"], "properties": { "mnemonic": { "type": "string" } } }] } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "HD 钱包"
+        ],
+        "summary": "创建 HD 钱包及首个地址",
+        "operationId": "createHdWallet",
+        "description": "兼容接口默认禁用（410）。仅 LEGACY_WALLET_API=true、本机直连且通过管理鉴权时启用；浏览器钱包已改为本地生成、派生和签名。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/HdOptions"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "strength": {
+                        "type": "integer",
+                        "enum": [
+                          128,
+                          256
+                        ],
+                        "default": 128
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "根钱包信息、助记词和首个子地址",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/HdResult"
+                    },
+                    {
+                      "type": "object",
+                      "required": [
+                        "mnemonic"
+                      ],
+                      "properties": {
+                        "mnemonic": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "410": {
+            "description": "旧钱包接口已禁用"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/wallet/hd/derive": {
       "post": {
-        "tags": ["HD 钱包"], "summary": "派生一批子地址", "operationId": "deriveHdAddresses",
-        "description": "indices 存在时按指定索引派生并去重；否则使用 startIndex 和 count。响应 Cache-Control: no-store。",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/HdCredentials" }, { "type": "object", "properties": { "startIndex": { "type": "integer", "minimum": 0, "maximum": 2147483647, "default": 0 }, "count": { "type": "integer", "minimum": 1, "maximum": 100, "default": 1 }, "indices": { "type": "array", "minItems": 1, "maxItems": 100, "items": { "$ref": "#/components/schemas/HdIndex" } } } }] } } } },
-        "responses": { "200": { "description": "子地址和下一索引", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HdResult" } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "HD 钱包"
+        ],
+        "summary": "派生一批子地址",
+        "operationId": "deriveHdAddresses",
+        "description": "兼容接口默认禁用（410）。仅 LEGACY_WALLET_API=true、本机直连且通过管理鉴权时启用；浏览器钱包已改为本地生成、派生和签名。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/HdCredentials"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "startIndex": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647,
+                        "default": 0
+                      },
+                      "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100,
+                        "default": 1
+                      },
+                      "indices": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 100,
+                        "items": {
+                          "$ref": "#/components/schemas/HdIndex"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "子地址和下一索引",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HdResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "410": {
+            "description": "旧钱包接口已禁用"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/wallet/hd/import": {
       "post": {
-        "tags": ["HD 钱包"], "summary": "扫描链上历史和交易池以恢复 HD 地址", "operationId": "importHdWallet",
-        "description": "连续 20 个地址未使用时停止。使用 scanNextIndex 作为下一次 startIndex 可继续扫描；nextIndex 仅表示本次发现地址的分配进度（续扫未发现地址时可为 0），应与已保存进度取最大值。首次扫描至少返回索引 0。响应 Cache-Control: no-store。",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/HdCredentials" }, { "type": "object", "properties": { "startIndex": { "type": "integer", "minimum": 0, "maximum": 2147483647, "default": 0 }, "scanCount": { "type": "integer", "minimum": 20, "maximum": 200, "default": 200 } } }] } } } },
-        "responses": { "200": { "description": "已发现地址及扫描进度", "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/HdResult" }, { "type": "object", "properties": { "scanNextIndex": { "type": "integer", "minimum": 0, "maximum": 2147483648 }, "gapLimit": { "type": "integer", "enum": [20] }, "stoppedAtGap": { "type": "boolean" }, "exhausted": { "type": "boolean" } } }] } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "HD 钱包"
+        ],
+        "summary": "扫描链上历史和交易池以恢复 HD 地址",
+        "operationId": "importHdWallet",
+        "description": "兼容接口默认禁用（410）。仅 LEGACY_WALLET_API=true、本机直连且通过管理鉴权时启用；浏览器钱包已改为本地生成、派生和签名。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/HdCredentials"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "startIndex": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 2147483647,
+                        "default": 0
+                      },
+                      "scanCount": {
+                        "type": "integer",
+                        "minimum": 20,
+                        "maximum": 200,
+                        "default": 200
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已发现地址及扫描进度",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/HdResult"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "scanNextIndex": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "maximum": 2147483648
+                        },
+                        "gapLimit": {
+                          "type": "integer",
+                          "enum": [
+                            20
+                          ]
+                        },
+                        "stoppedAtGap": {
+                          "type": "boolean"
+                        },
+                        "exhausted": {
+                          "type": "boolean"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "410": {
+            "description": "旧钱包接口已禁用"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/transaction": {
       "post": {
-        "tags": ["交易"], "summary": "签名并提交转账至交易池", "operationId": "submitTransaction",
-        "description": "当前节点使用提供的私钥签名；未提供 nonce 时依据链和交易池自动填充。成功表示进入交易池。",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TransactionInput" } } } },
-        "responses": { "200": { "description": "已签名交易", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "transaction": { "$ref": "#/components/schemas/Transaction" }, "poolCount": { "type": "integer" } } } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "交易"
+        ],
+        "summary": "签名并提交转账至交易池",
+        "operationId": "submitTransaction",
+        "description": "兼容接口默认禁用（410）。仅 LEGACY_WALLET_API=true、本机直连且通过管理鉴权时启用；浏览器钱包已改为本地生成、派生和签名。",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransactionInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已签名交易",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "transaction": {
+                      "$ref": "#/components/schemas/Transaction"
+                    },
+                    "poolCount": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "410": {
+            "description": "旧钱包接口已禁用"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/nonce/{address}": {
       "get": {
-        "tags": ["交易"], "summary": "查询地址的下一个 nonce", "operationId": "getNonce", "parameters": [{ "$ref": "#/components/parameters/Address" }],
-        "responses": { "200": { "description": "确认及交易池中的序号", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "address": { "$ref": "#/components/schemas/Address" }, "nextNonce": { "type": "integer" }, "confirmedNonce": { "type": "integer" }, "pendingInPool": { "type": "integer" } } } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "交易"
+        ],
+        "summary": "查询地址的下一个 nonce",
+        "operationId": "getNonce",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Address"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "确认及交易池中的序号",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "address": {
+                      "$ref": "#/components/schemas/Address"
+                    },
+                    "nextNonce": {
+                      "type": "integer"
+                    },
+                    "confirmedNonce": {
+                      "type": "integer"
+                    },
+                    "pendingInPool": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
       }
     },
     "/transaction/{id}/status": {
       "get": {
-        "tags": ["交易"], "summary": "查询交易确认或回滚状态", "operationId": "getTransactionStatus",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string", "pattern": "^[0-9a-f]{64}$" } }],
-        "responses": { "200": { "description": "未知交易也返回 200，status 为 unknown", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TransactionStatus" } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "交易"
+        ],
+        "summary": "查询交易确认或回滚状态",
+        "operationId": "getTransactionStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "未知交易也返回 200，status 为 unknown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
       }
     },
     "/balance/{address}": {
       "get": {
-        "tags": ["交易"], "summary": "查询多币种余额和锁定奖励", "operationId": "getBalance", "parameters": [{ "$ref": "#/components/parameters/Address" }],
-        "responses": { "200": { "description": "可用余额及含未成熟奖励的总余额", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "address": { "$ref": "#/components/schemas/Address" }, "balances": { "$ref": "#/components/schemas/Balances" }, "totalBalances": { "$ref": "#/components/schemas/Balances" }, "balance": { "type": "number", "description": "可用 STC" }, "totalBalance": { "type": "number" }, "lockedRewards": { "type": "number" }, "lockedRewardsByCurrency": { "$ref": "#/components/schemas/Balances" }, "coinbaseMaturity": { "type": "integer" }, "pendingTransactions": { "type": "integer" }, "historyCount": { "type": "integer" } } } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "交易"
+        ],
+        "summary": "查询多币种余额和锁定奖励",
+        "operationId": "getBalance",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Address"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "可用余额及含未成熟奖励的总余额",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "address": {
+                      "$ref": "#/components/schemas/Address"
+                    },
+                    "balances": {
+                      "$ref": "#/components/schemas/Balances"
+                    },
+                    "totalBalances": {
+                      "$ref": "#/components/schemas/Balances"
+                    },
+                    "balance": {
+                      "type": "number",
+                      "description": "可用 STC"
+                    },
+                    "totalBalance": {
+                      "type": "number"
+                    },
+                    "lockedRewards": {
+                      "type": "number"
+                    },
+                    "lockedRewardsByCurrency": {
+                      "$ref": "#/components/schemas/Balances"
+                    },
+                    "coinbaseMaturity": {
+                      "type": "integer"
+                    },
+                    "pendingTransactions": {
+                      "type": "integer"
+                    },
+                    "historyCount": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
       }
     },
     "/transactions/{address}": {
       "get": {
-        "tags": ["交易"], "summary": "查询地址的链上交易历史", "operationId": "getAddressTransactions", "parameters": [{ "$ref": "#/components/parameters/Address" }],
-        "responses": { "200": { "description": "交易历史，按时间倒序", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "address": { "$ref": "#/components/schemas/Address" }, "total": { "type": "integer" }, "transactions": { "type": "array", "items": { "$ref": "#/components/schemas/Transaction" } } } } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "交易"
+        ],
+        "summary": "查询地址的链上交易历史",
+        "operationId": "getAddressTransactions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Address"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "交易历史，按时间倒序",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "address": {
+                      "$ref": "#/components/schemas/Address"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "transactions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Transaction"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
       }
     },
     "/mempool": {
       "get": {
-        "tags": ["交易"], "summary": "查询待打包交易", "operationId": "getMempool",
-        "responses": { "200": { "description": "交易池", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "count": { "type": "integer" }, "transactions": { "type": "array", "items": { "$ref": "#/components/schemas/Transaction" } } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "交易"
+        ],
+        "summary": "查询待打包交易",
+        "operationId": "getMempool",
+        "responses": {
+          "200": {
+            "description": "交易池",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "transactions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Transaction"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
       },
       "delete": {
-        "tags": ["交易"], "summary": "清空当前节点的交易池", "operationId": "clearMempool",
-        "responses": { "200": { "description": "已清空的交易数量", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "cleared": { "type": "integer" } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "交易"
+        ],
+        "summary": "清空当前节点的交易池",
+        "operationId": "clearMempool",
+        "responses": {
+          "200": {
+            "description": "已清空的交易数量",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "cleared": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
       }
     },
     "/addresses": {
       "get": {
-        "tags": ["交易"], "summary": "按 STC 余额查询地址排行榜", "operationId": "getAddresses",
-        "responses": { "200": { "description": "链上地址列表", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "total": { "type": "integer" }, "addresses": { "type": "array", "items": { "type": "object", "properties": { "address": { "$ref": "#/components/schemas/Address" }, "balance": { "type": "number" }, "balances": { "$ref": "#/components/schemas/Balances" }, "lockedRewards": { "type": "number" }, "txCount": { "type": "integer" } } } } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "交易"
+        ],
+        "summary": "按 STC 余额查询地址排行榜",
+        "operationId": "getAddresses",
+        "responses": {
+          "200": {
+            "description": "链上地址列表",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "addresses": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "address": {
+                            "$ref": "#/components/schemas/Address"
+                          },
+                          "balance": {
+                            "type": "number"
+                          },
+                          "balances": {
+                            "$ref": "#/components/schemas/Balances"
+                          },
+                          "lockedRewards": {
+                            "type": "number"
+                          },
+                          "txCount": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
       }
     },
     "/blockchain": {
       "get": {
-        "tags": ["区块链"], "summary": "查询区块链及节点概览", "operationId": "getBlockchain",
-        "responses": { "200": { "description": "当前链和主要统计数据", "content": { "application/json": { "schema": { "type": "object", "properties": { "chain": { "type": "array", "items": { "$ref": "#/components/schemas/Block" } }, "isValid": { "type": "boolean" }, "stats": { "type": "object", "properties": { "totalBlocks": { "type": "integer" }, "chainWork": { "type": "string", "description": "累计工作量，十进制字符串" }, "chainId": { "type": "string" }, "protocolVersion": { "type": "integer" }, "difficulty": { "type": "number" }, "target": { "type": "string" }, "targetBlockTime": { "type": "integer", "description": "毫秒" }, "paymentConfirmations": { "type": "integer" }, "reorgEvents": { "type": "array", "items": { "type": "object" } } } }, "port": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }, "nodeInfo": { "$ref": "#/components/schemas/NodeInfo" } } } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "区块链"
+        ],
+        "summary": "查询区块链及节点概览",
+        "operationId": "getBlockchain",
+        "responses": {
+          "200": {
+            "description": "当前链和主要统计数据",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "chain": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Block"
+                      }
+                    },
+                    "isValid": {
+                      "type": "boolean"
+                    },
+                    "stats": {
+                      "type": "object",
+                      "properties": {
+                        "totalBlocks": {
+                          "type": "integer"
+                        },
+                        "chainWork": {
+                          "type": "string",
+                          "description": "累计工作量，十进制字符串"
+                        },
+                        "chainId": {
+                          "type": "string"
+                        },
+                        "protocolVersion": {
+                          "type": "integer"
+                        },
+                        "difficulty": {
+                          "type": "number"
+                        },
+                        "target": {
+                          "type": "string"
+                        },
+                        "targetBlockTime": {
+                          "type": "integer",
+                          "description": "毫秒"
+                        },
+                        "paymentConfirmations": {
+                          "type": "integer"
+                        },
+                        "reorgEvents": {
+                          "type": "array",
+                          "items": {
+                            "type": "object"
+                          }
+                        }
+                      }
+                    },
+                    "port": {
+                      "oneOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "nodeInfo": {
+                      "$ref": "#/components/schemas/NodeInfo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
       }
     },
     "/validate": {
       "get": {
-        "tags": ["区块链"], "summary": "验证当前区块链", "operationId": "validateChain",
-        "responses": { "200": { "description": "校验结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "isValid": { "type": "boolean" }, "totalBlocks": { "type": "integer" } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "区块链"
+        ],
+        "summary": "验证当前区块链",
+        "operationId": "validateChain",
+        "responses": {
+          "200": {
+            "description": "校验结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "isValid": {
+                      "type": "boolean"
+                    },
+                    "totalBlocks": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
       }
     },
     "/mine": {
       "post": {
-        "tags": ["挖矿"], "summary": "挖出一个区块并广播", "operationId": "mineBlock",
-        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "minerAddress": { "type": "string", "description": "省略时使用节点 miningAddress" }, "data": { "type": "string", "description": "区块备注" } } } } } },
-        "responses": { "200": { "description": "已生成区块", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "block": { "$ref": "#/components/schemas/Block" }, "transactionCount": { "type": "integer" }, "reward": { "type": "number" }, "miningTime": { "type": "string", "example": "123ms" } } } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "挖矿"
+        ],
+        "summary": "挖出一个区块并广播",
+        "operationId": "mineBlock",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "minerAddress": {
+                    "type": "string",
+                    "description": "省略时使用节点 miningAddress"
+                  },
+                  "data": {
+                    "type": "string",
+                    "description": "区块备注"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "已生成区块",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "block": {
+                      "$ref": "#/components/schemas/Block"
+                    },
+                    "transactionCount": {
+                      "type": "integer"
+                    },
+                    "reward": {
+                      "type": "number"
+                    },
+                    "miningTime": {
+                      "type": "string",
+                      "example": "123ms"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
-    "/mine/start": {"post":{"tags":["挖矿"],"summary":"启动单次挖矿任务（需要管理凭证）","operationId":"startMining","security":[{"adminBearer":[]}],"requestBody":{"content":{"application/json":{"schema":{"type":"object","properties":{"minerAddress":{"type":"string"},"data":{"type":"string"}}}}}},"responses":{"202":{"description":"任务已启动，返回 jobId"},"401":{"description":"管理凭证无效"},"409":{"description":"已有任务运行"},"503":{"description":"管理功能未启用"}}}},
-    "/mine/stop": {"post":{"tags":["挖矿"],"summary":"停止挖矿任务（需要管理凭证）","operationId":"stopMining","security":[{"adminBearer":[]}],"requestBody":{"required":true,"content":{"application/json":{"schema":{"type":"object","required":["jobId"],"properties":{"jobId":{"type":"string"}}}}}},"responses":{"200":{"description":"任务已停止"},"401":{"description":"管理凭证无效"},"404":{"description":"任务不存在"}}}},
+    "/mine/start": {
+      "post": {
+        "tags": [
+          "挖矿"
+        ],
+        "summary": "启动单次挖矿任务（需要管理凭证）",
+        "operationId": "startMining",
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "minerAddress": {
+                    "type": "string"
+                  },
+                  "data": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "任务已启动，返回 jobId"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "409": {
+            "description": "已有任务运行"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        }
+      }
+    },
+    "/mine/stop": {
+      "post": {
+        "tags": [
+          "挖矿"
+        ],
+        "summary": "停止挖矿任务（需要管理凭证）",
+        "operationId": "stopMining",
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "jobId"
+                ],
+                "properties": {
+                  "jobId": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "任务已停止"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "404": {
+            "description": "任务不存在"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        }
+      }
+    },
     "/mine/stream": {
       "get": {
-        "tags": ["挖矿"], "summary": "以 SSE 返回单次挖矿进度", "operationId": "streamMining",
-        "security": [{"adminBearer":[]}],
+        "tags": [
+          "挖矿"
+        ],
+        "summary": "以 SSE 返回单次挖矿进度",
+        "operationId": "streamMining",
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ],
         "description": "只订阅既有任务，不启动挖矿。使用 Authorization: Bearer 管理凭证，不能将凭证放在 URL 中。先 POST /mine/start 获取 jobId；停止任务调用 POST /mine/stop。每条事件格式为 data: <JSON> 后跟两个换行。",
-        "parameters": [{ "name": "jobId", "in": "query", "required": true, "schema": { "type": "string" }, "description": "POST /mine/start 返回的任务 ID" }],
-        "responses": { "200": { "description": "SSE 文本流，事件中包含 nonce、hash、difficulty、found、message，以及可选的 block、reward 或 error。流内错误不改变 HTTP 200。", "content": { "text/event-stream": { "schema": { "type": "string" }, "example": "data: {\"found\":false,\"started\":true,\"nonce\":0}\n\ndata: {\"found\":true,\"nonce\":123,\"message\":\"挖矿成功\"}\n\n" } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "POST /mine/start 返回的任务 ID"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "SSE 文本流，事件中包含 nonce、hash、difficulty、found、message，以及可选的 block、reward 或 error。流内错误不改变 HTTP 200。",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "data: {\"found\":false,\"started\":true,\"nonce\":0}\n\ndata: {\"found\":true,\"nonce\":123,\"message\":\"挖矿成功\"}\n\n"
+              }
+            }
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        }
       }
     },
     "/sync": {
       "post": {
-        "tags": ["节点"], "summary": "发起区块链同步", "operationId": "syncChain",
-        "responses": { "200": { "description": "同步发起结果（完成情况查询 /sync/status）", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "valid": { "type": "boolean" }, "syncState": { "type": "object" } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "节点"
+        ],
+        "summary": "发起区块链同步",
+        "operationId": "syncChain",
+        "responses": {
+          "200": {
+            "description": "同步发起结果（完成情况查询 /sync/status）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "valid": {
+                      "type": "boolean"
+                    },
+                    "syncState": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/sync/status": {
       "get": {
-        "tags": ["节点"], "summary": "查询当前同步状态", "operationId": "getSyncStatus",
-        "responses": { "200": { "description": "本节点与候选链状态", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "isSyncing": { "type": "boolean" }, "lastSyncAt": { "type": "string", "format": "date-time", "nullable": true }, "selfChain": { "type": "object", "properties": { "length": { "type": "integer" }, "chainWork": { "type": "string" }, "latestHash": { "type": "string" }, "valid": { "type": "boolean" } } }, "connectedNodes": { "type": "integer" }, "peerChains": { "type": "array", "items": { "type": "object" } }, "candidates": { "type": "integer" } } } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "节点"
+        ],
+        "summary": "查询当前同步状态",
+        "operationId": "getSyncStatus",
+        "responses": {
+          "200": {
+            "description": "本节点与候选链状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "isSyncing": {
+                      "type": "boolean"
+                    },
+                    "lastSyncAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "selfChain": {
+                      "type": "object",
+                      "properties": {
+                        "length": {
+                          "type": "integer"
+                        },
+                        "chainWork": {
+                          "type": "string"
+                        },
+                        "latestHash": {
+                          "type": "string"
+                        },
+                        "valid": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "connectedNodes": {
+                      "type": "integer"
+                    },
+                    "peerChains": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    },
+                    "candidates": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
       }
     },
     "/mempool/sync": {
       "post": {
-        "tags": ["节点"], "summary": "从对等节点同步交易池", "operationId": "syncMempool",
-        "responses": { "200": { "$ref": "#/components/responses/PoolOperation" }, "502": { "description": "SYNC_FAILED：对等节点同步失败", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "节点"
+        ],
+        "summary": "从对等节点同步交易池",
+        "operationId": "syncMempool",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/PoolOperation"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "502": {
+            "description": "SYNC_FAILED：对等节点同步失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/mempool/broadcast": {
       "post": {
-        "tags": ["节点"], "summary": "广播当前交易池", "operationId": "broadcastMempool",
-        "responses": { "200": { "$ref": "#/components/responses/PoolOperation" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "节点"
+        ],
+        "summary": "广播当前交易池",
+        "operationId": "broadcastMempool",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/PoolOperation"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/connect": {
       "post": {
-        "tags": ["节点"], "summary": "连接对等节点", "operationId": "connectPeer",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PeerInput" } } } },
-        "responses": { "200": { "$ref": "#/components/responses/Message" }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "节点"
+        ],
+        "summary": "连接对等节点",
+        "operationId": "connectPeer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeerInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Message"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/disconnect": {
       "post": {
-        "tags": ["节点"], "summary": "断开对等节点连接", "operationId": "disconnectPeer",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PeerInput" } } } },
-        "responses": { "200": { "$ref": "#/components/responses/Message" }, "400": { "$ref": "#/components/responses/BadRequest" }, "404": { "description": "PEER_NOT_FOUND：未找到节点连接", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "节点"
+        ],
+        "summary": "断开对等节点连接",
+        "operationId": "disconnectPeer",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PeerInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/Message"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "404": {
+            "description": "PEER_NOT_FOUND：未找到节点连接",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/nodes": {
       "get": {
-        "tags": ["节点"], "summary": "查询已连接节点 URL", "operationId": "getNodes",
-        "responses": { "200": { "description": "连接列表和当前节点信息", "content": { "application/json": { "schema": { "type": "object", "properties": { "nodes": { "type": "array", "items": { "type": "string" } }, "count": { "type": "integer" }, "currentNode": { "$ref": "#/components/schemas/NodeInfo" } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "节点"
+        ],
+        "summary": "查询已连接节点 URL",
+        "operationId": "getNodes",
+        "responses": {
+          "200": {
+            "description": "连接列表和当前节点信息",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "nodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "count": {
+                      "type": "integer"
+                    },
+                    "currentNode": {
+                      "$ref": "#/components/schemas/NodeInfo"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
       }
     },
     "/all-nodes": {
       "get": {
-        "tags": ["节点"], "summary": "查询所有节点的详细信息", "operationId": "getAllNodes",
-        "responses": { "200": { "description": "本节点与远端节点信息", "content": { "application/json": { "schema": { "type": "object", "properties": { "nodes": { "type": "array", "items": { "$ref": "#/components/schemas/NodeInfo" } }, "total": { "type": "integer" } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "节点"
+        ],
+        "summary": "查询所有节点的详细信息",
+        "operationId": "getAllNodes",
+        "responses": {
+          "200": {
+            "description": "本节点与远端节点信息",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "nodes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/NodeInfo"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
       }
     },
     "/discovery/status": {
       "get": {
-        "tags": ["节点"], "summary": "查询节点发现状态", "operationId": "getDiscoveryStatus",
-        "responses": { "200": { "description": "发现状态", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "discovery": { "$ref": "#/components/schemas/Discovery" } } } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "节点"
+        ],
+        "summary": "查询节点发现状态",
+        "operationId": "getDiscoveryStatus",
+        "responses": {
+          "200": {
+            "description": "发现状态",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "discovery": {
+                      "$ref": "#/components/schemas/Discovery"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          }
+        }
       }
     },
     "/discovery/start": {
       "post": {
-        "tags": ["节点"], "summary": "开启自动节点发现", "operationId": "startDiscovery",
-        "responses": { "200": { "$ref": "#/components/responses/DiscoveryOperation" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "节点"
+        ],
+        "summary": "开启自动节点发现",
+        "operationId": "startDiscovery",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DiscoveryOperation"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/discovery/stop": {
       "post": {
-        "tags": ["节点"], "summary": "停止自动节点发现", "operationId": "stopDiscovery",
-        "responses": { "200": { "$ref": "#/components/responses/DiscoveryOperation" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "节点"
+        ],
+        "summary": "停止自动节点发现",
+        "operationId": "stopDiscovery",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DiscoveryOperation"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/discovery/scan": {
       "post": {
-        "tags": ["节点"], "summary": "请求一轮节点发现扫描", "operationId": "scanDiscovery",
-        "responses": { "200": { "$ref": "#/components/responses/DiscoveryOperation" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "节点"
+        ],
+        "summary": "请求一轮节点发现扫描",
+        "operationId": "scanDiscovery",
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/DiscoveryOperation"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/storage/status": {
       "get": {
-        "tags": ["存储"], "summary": "查询链文件状态", "operationId": "getStorageStatus",
-        "responses": { "200": { "description": "本地文件信息", "content": { "application/json": { "schema": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "file": { "type": "string" }, "exists": { "type": "boolean" }, "size": { "type": "integer", "description": "字节" }, "sizeKB": { "type": "string" }, "lastModified": { "type": "string", "format": "date-time", "nullable": true }, "totalBlocks": { "type": "integer" } } } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "存储"
+        ],
+        "summary": "查询链文件状态",
+        "operationId": "getStorageStatus",
+        "responses": {
+          "200": {
+            "description": "本地文件信息",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "size": {
+                      "type": "integer",
+                      "description": "字节"
+                    },
+                    "sizeKB": {
+                      "type": "string"
+                    },
+                    "lastModified": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    },
+                    "totalBlocks": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/storage/save": {
       "post": {
-        "tags": ["存储"], "summary": "保存当前链到本地文件", "operationId": "saveChain",
-        "responses": { "200": { "description": "保存结果", "content": { "application/json": { "schema": { "allOf": [{ "$ref": "#/components/schemas/ChainOperation" }, { "type": "object", "properties": { "file": { "type": "string" } } }] } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "存储"
+        ],
+        "summary": "保存当前链到本地文件",
+        "operationId": "saveChain",
+        "responses": {
+          "200": {
+            "description": "保存结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ChainOperation"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "file": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/storage/reload": {
       "post": {
-        "tags": ["存储"], "summary": "从本地文件重新加载链", "operationId": "reloadChain",
+        "tags": [
+          "存储"
+        ],
+        "summary": "从本地文件重新加载链",
+        "operationId": "reloadChain",
         "description": "文件不存在时 HTTP 200 的 success=false，内存链保留；文件损坏或共识不匹配时返回 500，原文件保留。",
-        "responses": { "200": { "description": "加载结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChainOperation" } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "responses": {
+          "200": {
+            "description": "加载结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChainOperation"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/storage/reset": {
       "post": {
-        "tags": ["存储"], "summary": "重置为创世区块并保存", "operationId": "resetChain",
+        "tags": [
+          "存储"
+        ],
+        "summary": "重置为创世区块并保存",
+        "operationId": "resetChain",
         "description": "会清空当前节点链数据并广播重置后的链。",
-        "responses": { "200": { "description": "重置结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChainOperation" } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "responses": {
+          "200": {
+            "description": "重置结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChainOperation"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/storage/export": {
       "get": {
-        "tags": ["存储"], "summary": "下载当前链 JSON 备份", "operationId": "exportChain",
-        "responses": { "200": { "description": "JSON 附件", "headers": { "Content-Disposition": { "schema": { "type": "string" }, "description": "attachment; filename=starcoin_chain_<port>_<timestamp>.json" } }, "content": { "application/json": { "schema": { "type": "object", "properties": { "chain": { "type": "array", "items": { "$ref": "#/components/schemas/Block" } }, "exportedAt": { "type": "string", "format": "date-time" }, "port": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }, "version": { "type": "string", "example": "6.0" }, "consensusHash": { "type": "string" }, "consensus": { "type": "object" }, "evm": { "type": "object" }, "rpcProtocol": { "type": "object" }, "evmConsensusHash": { "type": "string" }, "rpcConsensusHash": { "type": "string" }, "evmStateRoot": { "type": "string" } } } } } }, "500": { "$ref": "#/components/responses/ServerError" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "存储"
+        ],
+        "summary": "下载当前链 JSON 备份",
+        "operationId": "exportChain",
+        "responses": {
+          "200": {
+            "description": "JSON 附件",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "attachment; filename=starcoin_chain_<port>_<timestamp>.json"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "chain": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Block"
+                      }
+                    },
+                    "exportedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "port": {
+                      "oneOf": [
+                        {
+                          "type": "integer"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ]
+                    },
+                    "version": {
+                      "type": "string",
+                      "example": "6.0"
+                    },
+                    "consensusHash": {
+                      "type": "string"
+                    },
+                    "consensus": {
+                      "type": "object"
+                    },
+                    "evm": {
+                      "type": "object"
+                    },
+                    "rpcProtocol": {
+                      "type": "object"
+                    },
+                    "evmConsensusHash": {
+                      "type": "string"
+                    },
+                    "rpcConsensusHash": {
+                      "type": "string"
+                    },
+                    "evmStateRoot": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/ServerError"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/storage/import": {
       "post": {
-        "tags": ["存储"], "summary": "验证并导入累计工作量更高的链", "operationId": "importChain",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["chain"], "properties": { "chain": { "type": "array", "minItems": 1, "items": { "$ref": "#/components/schemas/Block" } } } } } } },
-        "responses": { "200": { "description": "导入结果", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChainOperation" } } } }, "400": { "$ref": "#/components/responses/BadRequest" }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "存储"
+        ],
+        "summary": "验证并导入累计工作量更高的链",
+        "operationId": "importChain",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "chain"
+                ],
+                "properties": {
+                  "chain": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "$ref": "#/components/schemas/Block"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "导入结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChainOperation"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "description": "管理凭证缺失或无效"
+          },
+          "403": {
+            "description": "浏览器来源不受信任"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "503": {
+            "description": "管理操作未启用"
+          }
+        },
+        "security": [
+          {
+            "adminBearer": []
+          }
+        ]
       }
     },
     "/search": {
       "get": {
-        "tags": ["搜索"], "summary": "搜索区块、交易、地址或备注", "operationId": "searchChain",
-        "parameters": [{ "name": "q", "in": "query", "schema": { "type": "string" }, "description": "区块高度、交易 ID、区块哈希、地址或备注；省略或空白时 type=empty" }],
-        "responses": { "200": { "description": "result 随 type 变化；未找到时 type=not_found", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "type": { "type": "string", "enum": ["empty", "block", "transaction", "address", "address_list", "note", "mempool", "not_found"] }, "query": { "type": "string" }, "result": { "type": "object", "nullable": true } } } } } }, "500": { "description": "搜索错误（使用独立响应格式）", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean", "enum": [false] }, "type": { "type": "string", "enum": ["error"] }, "query": { "type": "string" }, "error": { "type": "string" } } } } } }, "429": { "$ref": "#/components/responses/RateLimited" } }
+        "tags": [
+          "搜索"
+        ],
+        "summary": "搜索区块、交易、地址或备注",
+        "operationId": "searchChain",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "区块高度、交易 ID、区块哈希、地址或备注；省略或空白时 type=empty"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "result 随 type 变化；未找到时 type=not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "empty",
+                        "block",
+                        "transaction",
+                        "address",
+                        "address_list",
+                        "note",
+                        "mempool",
+                        "not_found"
+                      ]
+                    },
+                    "query": {
+                      "type": "string"
+                    },
+                    "result": {
+                      "type": "object",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "description": "搜索错误（使用独立响应格式）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean",
+                      "enum": [
+                        false
+                      ]
+                    },
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "error"
+                      ]
+                    },
+                    "query": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/transaction/context/{address}": {
+      "get": {
+        "tags": [
+          "交易"
+        ],
+        "summary": "查询浏览器签名所需的链标识和待确认 nonce",
+        "operationId": "getSigningContext",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/transaction/signed": {
+      "post": {
+        "tags": [
+          "交易"
+        ],
+        "summary": "提交浏览器签署的原生 v2 交易，不接收私钥",
+        "operationId": "submitSignedTransaction",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "transaction"
+                ],
+                "properties": {
+                  "transaction": {
+                    "$ref": "#/components/schemas/SignedNativeTransaction"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/evm/signed": {
+      "post": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "提交浏览器签署的 v3 桥接或历史 EVM 封装",
+        "operationId": "submitSignedEvmEnvelope",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "transaction"
+                ],
+                "properties": {
+                  "transaction": {
+                    "$ref": "#/components/schemas/EvmEnvelope"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/evm/raw": {
+      "post": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "提交客户端签署的 Ethereum 原始交易，需已激活 RPC 协议",
+        "operationId": "submitRawEvmTransaction",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "rawTransaction"
+                ],
+                "properties": {
+                  "rawTransaction": {
+                    "type": "string",
+                    "pattern": "^0x[0-9a-fA-F]+$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
+      }
+    },
+    "/evm/signing-context/{address}": {
+      "get": {
+        "tags": [
+          "EVM"
+        ],
+        "summary": "查询 EVM 待确认 nonce、chainId 与 Gas 价格",
+        "operationId": "getEvmSigningContext",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功"
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          }
+        }
       }
     }
   },
   "components": {
-    "securitySchemes": {"adminBearer":{"type":"http","scheme":"bearer","description":"ADMIN_TOKEN；未配置时管理操作禁用。仅允许可信 Host 和同源浏览器请求。"}},
+    "securitySchemes": {
+      "adminBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "ADMIN_TOKEN；未配置时管理操作禁用。仅允许可信 Host 和同源浏览器请求。"
+      }
+    },
     "parameters": {
-      "Address": { "name": "address", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/Address" } }
+      "Address": {
+        "name": "address",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "$ref": "#/components/schemas/Address"
+        }
+      }
     },
     "responses": {
-      "Wallet": { "description": "钱包信息（含 PEM 私钥）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WalletResult" } } } },
-      "Message": { "description": "操作结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" } } } } } },
-      "PoolOperation": { "description": "交易池操作结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "poolCount": { "type": "integer" }, "connectedNodes": { "type": "integer" } } } } } },
-      "DiscoveryOperation": { "description": "操作结果和发现状态", "content": { "application/json": { "schema": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "status": { "$ref": "#/components/schemas/Discovery" } } } } } },
-      "BadRequest": { "description": "参数、密钥、交易或链校验失败；code 给出具体原因", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-      "ServerError": { "description": "节点内部错误；非生产环境可能附带 stack", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-      "RateLimited": { "description": "TOO_MANY_REQUESTS：全局、写操作或搜索限流", "headers": { "Retry-After": { "schema": { "type": "integer" }, "description": "重试前等待的秒数" }, "X-RateLimit-Limit": { "schema": { "type": "integer" } }, "X-RateLimit-Remaining": { "schema": { "type": "integer" } }, "X-RateLimit-Reset": { "schema": { "type": "integer" }, "description": "Unix 时间戳，秒" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+      "Wallet": {
+        "description": "钱包信息（含 PEM 私钥）",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/WalletResult"
+            }
+          }
+        }
+      },
+      "Message": {
+        "description": "操作结果",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "PoolOperation": {
+        "description": "交易池操作结果",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "poolCount": {
+                  "type": "integer"
+                },
+                "connectedNodes": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "DiscoveryOperation": {
+        "description": "操作结果和发现状态",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "success": {
+                  "type": "boolean"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "status": {
+                  "$ref": "#/components/schemas/Discovery"
+                }
+              }
+            }
+          }
+        }
+      },
+      "BadRequest": {
+        "description": "参数、密钥、交易或链校验失败；code 给出具体原因",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "ServerError": {
+        "description": "节点内部错误；非生产环境可能附带 stack",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "TOO_MANY_REQUESTS：全局、写操作或搜索限流",
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            },
+            "description": "重试前等待的秒数"
+          },
+          "X-RateLimit-Limit": {
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "X-RateLimit-Remaining": {
+            "schema": {
+              "type": "integer"
+            }
+          },
+          "X-RateLimit-Reset": {
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Unix 时间戳，秒"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
     },
     "schemas": {
-      "EvmAddress": {"type":"string","pattern":"^0x[0-9a-fA-F]{40}$","description":"标准 20 字节 EVM 地址，与原生 StarCoin 地址不同"},
-      "Wei": {"type":"string","pattern":"^(0|[1-9][0-9]*)$","description":"十进制整数字符串，单位 wei（1 STC = 10^18 wei），禁止 JSON number"},
-      "EvmRequest": {"type":"object","properties":{"privateKey":{"type":"string","description":"PEM secp256k1 私钥，仅提交或估算时必填"},"to":{"$ref":"#/components/schemas/EvmAddress"},"data":{"type":"string","pattern":"^0x([0-9a-fA-F]{2})*$","description":"ABI 编码 calldata；不传 to 表示创建合约"},"valueWei":{"$ref":"#/components/schemas/Wei"},"gasLimit":{"type":"string","description":"Gas 整数字符串，最大 5000000；默认使用上限"}}},
-      "EvmBridgeRequest": {"type":"object","required":["privateKey","amount"],"properties":{"privateKey":{"type":"string"},"amount":{"type":"string","description":"STC 十进制金额，必须大于 0，最多八位小数"},"evmAddress":{"$ref":"#/components/schemas/EvmAddress"},"nativeAddress":{"type":"string","description":"取回时的原生地址；默认本钱包原生地址"}}},
-      "EvmEnvelope": {"type":"object","properties":{"version":{"type":"integer","enum":[3,4]},"kind":{"type":"string","enum":["evm","deposit","withdraw","evmRaw","evmWithdraw"]},"evmAddress":{"$ref":"#/components/schemas/EvmAddress"},"rawTransaction":{"type":"string","description":"签名 Ethereum 原始交易（type 0/1/2）；bridge 为空"},"id":{"type":"string"},"from":{"type":"string"},"to":{"type":"string"},"amount":{"oneOf":[{"type":"string"},{"type":"number"}]},"fee":{"oneOf":[{"type":"string"},{"type":"number"}]},"nonce":{"oneOf":[{"type":"integer","minimum":0},{"type":"string","pattern":"^(0|[1-9][0-9]*)$"}],"description":"原生/v3 nonce 为整数；v4 EVM/授权 nonce 为十进制字符串"},"chainId":{"type":"string"},"signature":{"type":"string"},"publicKey":{"type":"string"},"amountUnits":{"type":"string","description":"签名取回的原生 STC 最小单位"},"deadline":{"type":"string","description":"签名取回授权截止 Unix 秒"}}},
-      "EvmLog": {"type":"object","properties":{"address":{"$ref":"#/components/schemas/EvmAddress"},"topics":{"type":"array","items":{"type":"string"}},"data":{"type":"string"},"logIndex":{"type":"integer"},"id":{"type":"string"},"transactionHash":{"type":"string"},"blockIndex":{"type":"integer"},"blockHash":{"type":"string"}}},
-      "EvmReceipt": {"type":"object","properties":{"id":{"type":"string"},"kind":{"type":"string","enum":["evm","deposit","withdraw"]},"status":{"oneOf":[{"type":"integer","enum":[0,1]},{"type":"string","enum":["pending","reverted","unknown"]}]},"confirmations":{"type":"integer"},"wasReverted":{"type":"boolean"},"transactionHash":{"type":"string"},"from":{"$ref":"#/components/schemas/EvmAddress"},"to":{"type":"string","nullable":true},"contractAddress":{"type":"string","nullable":true},"gasUsed":{"$ref":"#/components/schemas/Wei"},"gasPriceWei":{"$ref":"#/components/schemas/Wei"},"feeWei":{"$ref":"#/components/schemas/Wei"},"valueWei":{"$ref":"#/components/schemas/Wei"},"returnData":{"type":"string"},"error":{"type":"string","nullable":true},"blockIndex":{"type":"integer"},"blockHash":{"type":"string"},"logs":{"type":"array","items":{"$ref":"#/components/schemas/EvmLog"}}}},
-      "Address": { "type": "string", "minLength": 2, "description": "钱包地址为 32 位十六进制字符串；历史数据和矿工地址可能采用其他字符串。" },
-      "Amount": { "description": "非负金额，最多八位小数；支持 JSON 数字或十进制字符串。转账 amount 必须大于 0。", "oneOf": [{ "type": "number", "minimum": 0 }, { "type": "string", "pattern": "^[0-9]{1,20}(\\.[0-9]{1,8})?$" }] },
-      "Currency": { "type": "string", "enum": ["STC", "cBTC", "cETH"], "default": "STC" },
-      "Balances": { "type": "object", "properties": { "STC": { "type": "number" }, "cBTC": { "type": "number" }, "cETH": { "type": "number" } } },
-      "Wallet": { "type": "object", "required": ["privateKey", "publicKey", "address"], "properties": { "privateKey": { "type": "string", "description": "PKCS#8 PEM 私钥" }, "publicKey": { "type": "string", "description": "SPKI DER 的十六进制编码" }, "address": { "$ref": "#/components/schemas/Address" } } },
-      "WalletResult": { "type": "object", "required": ["success", "wallet"], "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "wallet": { "$ref": "#/components/schemas/Wallet" } } },
-      "PemImport": { "type": "object", "required": ["privateKeyPem"], "properties": { "privateKeyPem": { "type": "string", "writeOnly": true, "description": "完整 PEM 私钥文本" } } },
-      "PeerInput": { "type": "object", "required": ["peerUrl"], "properties": { "peerUrl": { "type": "string", "format": "uri", "description": "P2P WebSocket URL", "example": "ws://localhost:3001" } } },
-      "HdIndex": { "type": "integer", "minimum": 0, "maximum": 2147483647 },
-      "HdOptions": { "type": "object", "properties": { "passphrase": { "type": "string", "maxLength": 1024, "default": "", "writeOnly": true, "description": "BIP39 密码，恢复时必须一致" }, "scheme": { "type": "string", "enum": ["bip44-v1"], "default": "bip44-v1" }, "basePath": { "type": "string", "enum": ["m/44'/1'/0'/0"], "default": "m/44'/1'/0'/0" } } },
-      "HdCredentials": { "allOf": [{ "$ref": "#/components/schemas/HdOptions" }, { "type": "object", "required": ["mnemonic"], "properties": { "mnemonic": { "type": "string", "maxLength": 1024, "writeOnly": true, "description": "有效英文 BIP39 助记词，支持空格和大小写规范化" } } }] },
-      "HdRoot": { "type": "object", "properties": { "id": { "type": "string", "pattern": "^[0-9a-f]{64}$" }, "type": { "type": "string", "enum": ["hd"] }, "scheme": { "type": "string", "enum": ["bip44-v1"] }, "basePath": { "type": "string", "enum": ["m/44'/1'/0'/0"] } } },
-      "HdWallet": { "allOf": [{ "$ref": "#/components/schemas/Wallet" }, { "type": "object", "properties": { "type": { "type": "string", "enum": ["hd"] }, "rootId": { "type": "string" }, "index": { "$ref": "#/components/schemas/HdIndex" }, "path": { "type": "string", "example": "m/44'/1'/0'/0/0" } } }] },
-      "HdResult": { "type": "object", "required": ["success", "root", "wallets", "nextIndex"], "properties": { "success": { "type": "boolean" }, "root": { "$ref": "#/components/schemas/HdRoot" }, "wallets": { "type": "array", "items": { "$ref": "#/components/schemas/HdWallet" } }, "nextIndex": { "type": "integer", "minimum": 0, "maximum": 2147483648 } } },
-      "TransactionInput": { "type": "object", "required": ["from", "to", "amount", "privateKey", "publicKey"], "properties": { "from": { "$ref": "#/components/schemas/Address" }, "to": { "$ref": "#/components/schemas/Address" }, "amount": { "$ref": "#/components/schemas/Amount" }, "fee": { "allOf": [{ "$ref": "#/components/schemas/Amount" }], "default": 0 }, "note": { "type": "string", "default": "" }, "currency": { "$ref": "#/components/schemas/Currency" }, "nonce": { "type": "integer", "minimum": 0, "description": "省略时自动填充" }, "privateKey": { "type": "string", "writeOnly": true, "description": "发送方 PEM 私钥" }, "publicKey": { "type": "string", "description": "发送方 SPKI DER 十六进制公钥" } } },
-      "Transaction": {"type":"object","properties":{"kind":{"type":"string","enum":["evm","deposit","withdraw","evmRaw","evmWithdraw"]},"evmAddress":{"$ref":"#/components/schemas/EvmAddress"},"rawTransaction":{"type":"string","description":"签名 Ethereum 原始交易（type 0/1/2）；bridge 为空"},"id":{"type":"string"},"version":{"type":"integer","enum":[1,2,3,4]},"chainId":{"type":"string"},"from":{"type":"string"},"to":{"type":"string"},"amount":{"$ref":"#/components/schemas/Amount"},"fee":{"$ref":"#/components/schemas/Amount"},"currency":{"$ref":"#/components/schemas/Currency"},"nonce":{"oneOf":[{"type":"integer","minimum":0},{"type":"string","pattern":"^(0|[1-9][0-9]*)$"}],"description":"原生/v3 nonce 为整数；v4 EVM/授权 nonce 为十进制字符串"},"note":{"type":"string"},"timestamp":{"type":"string","format":"date-time"},"publicKey":{"type":"string"},"signature":{"type":"string"},"blockIndex":{"type":"integer"},"amountUnits":{"type":"string","description":"签名取回的原生 STC 最小单位"},"deadline":{"type":"string","description":"签名取回授权截止 Unix 秒"}}},
-      "TransactionStatus": { "type": "object", "properties": { "success": { "type": "boolean" }, "id": { "type": "string" }, "status": { "type": "string", "enum": ["pending", "included", "confirmed", "reverted", "unknown"] }, "confirmations": { "type": "integer" }, "requiredConfirmations": { "type": "integer" }, "blockIndex": { "type": "integer", "nullable": true }, "blockHash": { "type": "string", "nullable": true }, "wasReverted": { "type": "boolean" }, "transaction": { "anyOf": [{ "$ref": "#/components/schemas/Transaction" }, { "type": "object", "nullable": true, "enum": [null] }] }, "block": { "$ref": "#/components/schemas/Block" } } },
-      "Block": {"type":"object","properties":{"evmConsensusHash":{"type":"string"},"evmStateRoot":{"type":"string"},"receiptsRoot":{"type":"string"},"evmGasUsed":{"type":"string"},"evmGasLimit":{"type":"integer"},"version":{"type":"integer","enum":[1,2,3,4]},"chainId":{"type":"string"},"consensusHash":{"type":"string"},"index":{"type":"integer"},"timestamp":{"type":"string","format":"date-time"},"previousHash":{"type":"string"},"nonce":{"type":"integer"},"hash":{"type":"string"},"merkleRoot":{"type":"string","nullable":true},"target":{"type":"string"},"transactions":{"type":"array","items":{"$ref":"#/components/schemas/Transaction"}},"data":{},"rpcConsensusHash":{"type":"string","description":"v4 MetaMask 配置指纹"},"baseFeePerGas":{"$ref":"#/components/schemas/Wei"}}},
-      "NodeInfo": { "type": "object", "properties": { "id": { "type": "string" }, "url": { "type": "string" }, "port": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }, "chainLength": { "type": "integer" } } },
-      "Discovery": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "isDiscovering": { "type": "boolean" }, "interval": { "type": "integer", "description": "毫秒" }, "pendingNodes": { "type": "array", "items": { "type": "string" } } } },
-      "ChainOperation": { "type": "object", "properties": { "success": { "type": "boolean" }, "message": { "type": "string" }, "totalBlocks": { "type": "integer" } } },
-      "Error": { "type": "object", "required": ["success", "error", "code", "statusCode"], "properties": { "success": { "type": "boolean", "enum": [false] }, "error": { "type": "string" }, "code": { "type": "string", "description": "如 INVALID_HD_WALLET、TX_REJECTED、INVALID_ADDRESS、TOO_MANY_REQUESTS" }, "statusCode": { "type": "integer" }, "details": { "type": "object" }, "stack": { "type": "string" } } }
+      "EvmAddress": {
+        "type": "string",
+        "pattern": "^0x[0-9a-fA-F]{40}$",
+        "description": "标准 20 字节 EVM 地址，与原生 StarCoin 地址不同"
+      },
+      "Wei": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]*)$",
+        "description": "十进制整数字符串，单位 wei（1 STC = 10^18 wei），禁止 JSON number"
+      },
+      "EvmRequest": {
+        "type": "object",
+        "properties": {
+          "privateKey": {
+            "type": "string",
+            "description": "PEM secp256k1 私钥，仅提交或估算时必填"
+          },
+          "to": {
+            "$ref": "#/components/schemas/EvmAddress"
+          },
+          "data": {
+            "type": "string",
+            "pattern": "^0x([0-9a-fA-F]{2})*$",
+            "description": "ABI 编码 calldata；不传 to 表示创建合约"
+          },
+          "valueWei": {
+            "$ref": "#/components/schemas/Wei"
+          },
+          "gasLimit": {
+            "type": "string",
+            "description": "Gas 整数字符串，最大 5000000；默认使用上限"
+          }
+        }
+      },
+      "EvmBridgeRequest": {
+        "type": "object",
+        "required": [
+          "privateKey",
+          "amount"
+        ],
+        "properties": {
+          "privateKey": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string",
+            "description": "STC 十进制金额，必须大于 0，最多八位小数"
+          },
+          "evmAddress": {
+            "$ref": "#/components/schemas/EvmAddress"
+          },
+          "nativeAddress": {
+            "type": "string",
+            "description": "取回时的原生地址；默认本钱包原生地址"
+          }
+        }
+      },
+      "EvmEnvelope": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "integer",
+            "enum": [
+              3,
+              4
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "evm",
+              "deposit",
+              "withdraw",
+              "evmRaw",
+              "evmWithdraw"
+            ]
+          },
+          "evmAddress": {
+            "$ref": "#/components/schemas/EvmAddress"
+          },
+          "rawTransaction": {
+            "type": "string",
+            "description": "签名 Ethereum 原始交易（type 0/1/2）；bridge 为空"
+          },
+          "id": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "amount": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "fee": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              }
+            ]
+          },
+          "nonce": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              }
+            ],
+            "description": "原生/v3 nonce 为整数；v4 EVM/授权 nonce 为十进制字符串"
+          },
+          "chainId": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "publicKey": {
+            "type": "string"
+          },
+          "amountUnits": {
+            "type": "string",
+            "description": "签名取回的原生 STC 最小单位"
+          },
+          "deadline": {
+            "type": "string",
+            "description": "签名取回授权截止 Unix 秒"
+          }
+        }
+      },
+      "EvmLog": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "$ref": "#/components/schemas/EvmAddress"
+          },
+          "topics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "data": {
+            "type": "string"
+          },
+          "logIndex": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "transactionHash": {
+            "type": "string"
+          },
+          "blockIndex": {
+            "type": "integer"
+          },
+          "blockHash": {
+            "type": "string"
+          }
+        }
+      },
+      "EvmReceipt": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "evm",
+              "deposit",
+              "withdraw"
+            ]
+          },
+          "status": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "enum": [
+                  0,
+                  1
+                ]
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "reverted",
+                  "unknown"
+                ]
+              }
+            ]
+          },
+          "confirmations": {
+            "type": "integer"
+          },
+          "wasReverted": {
+            "type": "boolean"
+          },
+          "transactionHash": {
+            "type": "string"
+          },
+          "from": {
+            "$ref": "#/components/schemas/EvmAddress"
+          },
+          "to": {
+            "type": "string",
+            "nullable": true
+          },
+          "contractAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "gasUsed": {
+            "$ref": "#/components/schemas/Wei"
+          },
+          "gasPriceWei": {
+            "$ref": "#/components/schemas/Wei"
+          },
+          "feeWei": {
+            "$ref": "#/components/schemas/Wei"
+          },
+          "valueWei": {
+            "$ref": "#/components/schemas/Wei"
+          },
+          "returnData": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string",
+            "nullable": true
+          },
+          "blockIndex": {
+            "type": "integer"
+          },
+          "blockHash": {
+            "type": "string"
+          },
+          "logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EvmLog"
+            }
+          }
+        }
+      },
+      "Address": {
+        "type": "string",
+        "minLength": 2,
+        "description": "钱包地址为 32 位十六进制字符串；历史数据和矿工地址可能采用其他字符串。"
+      },
+      "Amount": {
+        "description": "非负金额，最多八位小数；支持 JSON 数字或十进制字符串。转账 amount 必须大于 0。",
+        "oneOf": [
+          {
+            "type": "number",
+            "minimum": 0
+          },
+          {
+            "type": "string",
+            "pattern": "^[0-9]{1,20}(\\.[0-9]{1,8})?$"
+          }
+        ]
+      },
+      "Currency": {
+        "type": "string",
+        "enum": [
+          "STC",
+          "cBTC",
+          "cETH"
+        ],
+        "default": "STC"
+      },
+      "Balances": {
+        "type": "object",
+        "properties": {
+          "STC": {
+            "type": "number"
+          },
+          "cBTC": {
+            "type": "number"
+          },
+          "cETH": {
+            "type": "number"
+          }
+        }
+      },
+      "Wallet": {
+        "type": "object",
+        "required": [
+          "privateKey",
+          "publicKey",
+          "address"
+        ],
+        "properties": {
+          "privateKey": {
+            "type": "string",
+            "description": "PKCS#8 PEM 私钥"
+          },
+          "publicKey": {
+            "type": "string",
+            "description": "SPKI DER 的十六进制编码"
+          },
+          "address": {
+            "$ref": "#/components/schemas/Address"
+          }
+        }
+      },
+      "WalletResult": {
+        "type": "object",
+        "required": [
+          "success",
+          "wallet"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "wallet": {
+            "$ref": "#/components/schemas/Wallet"
+          }
+        }
+      },
+      "PemImport": {
+        "type": "object",
+        "required": [
+          "privateKeyPem"
+        ],
+        "properties": {
+          "privateKeyPem": {
+            "type": "string",
+            "writeOnly": true,
+            "description": "完整 PEM 私钥文本"
+          }
+        }
+      },
+      "PeerInput": {
+        "type": "object",
+        "required": [
+          "peerUrl"
+        ],
+        "properties": {
+          "peerUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "P2P WebSocket URL",
+            "example": "ws://localhost:3001"
+          }
+        }
+      },
+      "HdIndex": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2147483647
+      },
+      "HdOptions": {
+        "type": "object",
+        "properties": {
+          "passphrase": {
+            "type": "string",
+            "maxLength": 1024,
+            "default": "",
+            "writeOnly": true,
+            "description": "BIP39 密码，恢复时必须一致"
+          },
+          "scheme": {
+            "type": "string",
+            "enum": [
+              "bip44-v1"
+            ],
+            "default": "bip44-v1"
+          },
+          "basePath": {
+            "type": "string",
+            "enum": [
+              "m/44'/1'/0'/0"
+            ],
+            "default": "m/44'/1'/0'/0"
+          }
+        }
+      },
+      "HdCredentials": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/HdOptions"
+          },
+          {
+            "type": "object",
+            "required": [
+              "mnemonic"
+            ],
+            "properties": {
+              "mnemonic": {
+                "type": "string",
+                "maxLength": 1024,
+                "writeOnly": true,
+                "description": "有效英文 BIP39 助记词，支持空格和大小写规范化"
+              }
+            }
+          }
+        ]
+      },
+      "HdRoot": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "hd"
+            ]
+          },
+          "scheme": {
+            "type": "string",
+            "enum": [
+              "bip44-v1"
+            ]
+          },
+          "basePath": {
+            "type": "string",
+            "enum": [
+              "m/44'/1'/0'/0"
+            ]
+          }
+        }
+      },
+      "HdWallet": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Wallet"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "hd"
+                ]
+              },
+              "rootId": {
+                "type": "string"
+              },
+              "index": {
+                "$ref": "#/components/schemas/HdIndex"
+              },
+              "path": {
+                "type": "string",
+                "example": "m/44'/1'/0'/0/0"
+              }
+            }
+          }
+        ]
+      },
+      "HdResult": {
+        "type": "object",
+        "required": [
+          "success",
+          "root",
+          "wallets",
+          "nextIndex"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "root": {
+            "$ref": "#/components/schemas/HdRoot"
+          },
+          "wallets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HdWallet"
+            }
+          },
+          "nextIndex": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 2147483648
+          }
+        }
+      },
+      "TransactionInput": {
+        "type": "object",
+        "required": [
+          "from",
+          "to",
+          "amount",
+          "privateKey",
+          "publicKey"
+        ],
+        "properties": {
+          "from": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "to": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Amount"
+          },
+          "fee": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Amount"
+              }
+            ],
+            "default": 0
+          },
+          "note": {
+            "type": "string",
+            "default": ""
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "nonce": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "省略时自动填充"
+          },
+          "privateKey": {
+            "type": "string",
+            "writeOnly": true,
+            "description": "发送方 PEM 私钥"
+          },
+          "publicKey": {
+            "type": "string",
+            "description": "发送方 SPKI DER 十六进制公钥"
+          }
+        }
+      },
+      "Transaction": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "evm",
+              "deposit",
+              "withdraw",
+              "evmRaw",
+              "evmWithdraw"
+            ]
+          },
+          "evmAddress": {
+            "$ref": "#/components/schemas/EvmAddress"
+          },
+          "rawTransaction": {
+            "type": "string",
+            "description": "签名 Ethereum 原始交易（type 0/1/2）；bridge 为空"
+          },
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "chainId": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Amount"
+          },
+          "fee": {
+            "$ref": "#/components/schemas/Amount"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "nonce": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              }
+            ],
+            "description": "原生/v3 nonce 为整数；v4 EVM/授权 nonce 为十进制字符串"
+          },
+          "note": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "publicKey": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "blockIndex": {
+            "type": "integer"
+          },
+          "amountUnits": {
+            "type": "string",
+            "description": "签名取回的原生 STC 最小单位"
+          },
+          "deadline": {
+            "type": "string",
+            "description": "签名取回授权截止 Unix 秒"
+          }
+        }
+      },
+      "TransactionStatus": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "included",
+              "confirmed",
+              "reverted",
+              "unknown"
+            ]
+          },
+          "confirmations": {
+            "type": "integer"
+          },
+          "requiredConfirmations": {
+            "type": "integer"
+          },
+          "blockIndex": {
+            "type": "integer",
+            "nullable": true
+          },
+          "blockHash": {
+            "type": "string",
+            "nullable": true
+          },
+          "wasReverted": {
+            "type": "boolean"
+          },
+          "transaction": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Transaction"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "block": {
+            "$ref": "#/components/schemas/Block"
+          }
+        }
+      },
+      "Block": {
+        "type": "object",
+        "properties": {
+          "evmConsensusHash": {
+            "type": "string"
+          },
+          "evmStateRoot": {
+            "type": "string"
+          },
+          "receiptsRoot": {
+            "type": "string"
+          },
+          "evmGasUsed": {
+            "type": "string"
+          },
+          "evmGasLimit": {
+            "type": "integer"
+          },
+          "version": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "chainId": {
+            "type": "string"
+          },
+          "consensusHash": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "previousHash": {
+            "type": "string"
+          },
+          "nonce": {
+            "type": "integer"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "merkleRoot": {
+            "type": "string",
+            "nullable": true
+          },
+          "target": {
+            "type": "string"
+          },
+          "transactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Transaction"
+            }
+          },
+          "data": {},
+          "rpcConsensusHash": {
+            "type": "string",
+            "description": "v4 MetaMask 配置指纹"
+          },
+          "baseFeePerGas": {
+            "$ref": "#/components/schemas/Wei"
+          }
+        }
+      },
+      "NodeInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "port": {
+            "oneOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "chainLength": {
+            "type": "integer"
+          }
+        }
+      },
+      "Discovery": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "isDiscovering": {
+            "type": "boolean"
+          },
+          "interval": {
+            "type": "integer",
+            "description": "毫秒"
+          },
+          "pendingNodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ChainOperation": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "totalBlocks": {
+            "type": "integer"
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "required": [
+          "success",
+          "error",
+          "code",
+          "statusCode"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "description": "如 INVALID_HD_WALLET、TX_REJECTED、INVALID_ADDRESS、TOO_MANY_REQUESTS"
+          },
+          "statusCode": {
+            "type": "integer"
+          },
+          "details": {
+            "type": "object"
+          },
+          "stack": {
+            "type": "string"
+          }
+        }
+      },
+      "SignedNativeTransaction": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "chainId",
+          "id",
+          "from",
+          "to",
+          "amount",
+          "fee",
+          "note",
+          "currency",
+          "nonce",
+          "timestamp",
+          "publicKey",
+          "signature"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "evm",
+              "deposit",
+              "withdraw",
+              "evmRaw",
+              "evmWithdraw"
+            ]
+          },
+          "evmAddress": {
+            "$ref": "#/components/schemas/EvmAddress"
+          },
+          "rawTransaction": {
+            "type": "string",
+            "description": "签名 Ethereum 原始交易（type 0/1/2）；bridge 为空"
+          },
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "enum": [
+              2
+            ]
+          },
+          "chainId": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "amount": {
+            "$ref": "#/components/schemas/Amount"
+          },
+          "fee": {
+            "$ref": "#/components/schemas/Amount"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "nonce": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 0
+              },
+              {
+                "type": "string",
+                "pattern": "^(0|[1-9][0-9]*)$"
+              }
+            ],
+            "description": "原生/v3 nonce 为整数；v4 EVM/授权 nonce 为十进制字符串"
+          },
+          "note": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "publicKey": {
+            "type": "string"
+          },
+          "signature": {
+            "type": "string"
+          },
+          "blockIndex": {
+            "type": "integer"
+          },
+          "amountUnits": {
+            "type": "string",
+            "description": "签名取回的原生 STC 最小单位"
+          },
+          "deadline": {
+            "type": "string",
+            "description": "签名取回授权截止 Unix 秒"
+          }
+        }
+      }
     }
   }
 }

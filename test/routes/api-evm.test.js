@@ -1,4 +1,9 @@
+const config = require('../../src/config');
 const express = require('express');
+const legacyConfig = { token: config.ADMIN_TOKEN, legacy: config.LEGACY_WALLET_API };
+beforeAll(() => { config.ADMIN_TOKEN = 'test-admin'; config.LEGACY_WALLET_API = true; });
+afterAll(() => { config.ADMIN_TOKEN = legacyConfig.token; config.LEGACY_WALLET_API = legacyConfig.legacy; });
+
 const request = require('supertest');
 const { Interface } = require('ethers');
 const createEvmRoutes = require('../../src/routes/api-evm');
@@ -13,7 +18,7 @@ async function setup() {
         coinbaseMaturity: 0, difficultyAdjustInterval: 1000000, activationHeight: 1 } });
     await chain.ready;
     const wallet = generateWallet(), p2p = { broadcastTransaction: vi.fn() }, push = vi.fn();
-    const app = express(); app.use(express.json()); app.use('/api', createEvmRoutes(chain, p2p, push));
+    const app = express(); app.use(express.json()); app.use((req, _res, next) => { req.headers.authorization = 'Bearer test-admin'; next(); }); app.use('/api', createEvmRoutes(chain, p2p, push));
     await chain.mineBlock(wallet.address);
     await request(app).post('/api/evm/deposit').send({ privateKey: wallet.privateKey, amount: '10' }).expect(200);
     await chain.mineBlock(wallet.address);

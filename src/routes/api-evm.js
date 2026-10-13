@@ -2,9 +2,18 @@ const express = require('express');
 const { formatEther } = require('ethers');
 const { address, hex, uint, evmAddressFromPublicKey, evmAddressFromPem } = require('../evm/engine');
 const { AppError, wrapAsync } = require('./error-handler');
+const { requireLegacyWallet } = require('../middleware/access-control');
+const { requireNativeAddress } = require('./input-policy');
+const signedTransaction = require('./signed-input');
 
 function createEvmRoutes(chain, p2p, broadcast) {
     const router = express.Router();
+    router.use((req, res, next) => {
+        const path = req.path.toLowerCase().replace(/\/+$/, '');
+        if (['/evm/deposit', '/evm/withdraw', '/evm/transaction'].includes(path)
+            || (path === '/evm/estimate' && Object.hasOwn(req.body || {}, 'privateKey'))) return requireLegacyWallet(req, res, next);
+        next();
+    });
     const route = handler => wrapAsync(async (req, res) => {
         if (!chain.evmEnabled) throw new AppError(503, '当前节点未启用 EVM', 'EVM_DISABLED');
         await chain.ready;
@@ -12,6 +21,32 @@ function createEvmRoutes(chain, p2p, broadcast) {
         catch (error) { if (error instanceof AppError) throw error; throw new AppError(400, error.message, 'EVM_REJECTED'); }
     });
     const context = () => chain.consensus.context(chain.chain);
+    const announce = tx => {
+        p2p.broadcastTransaction(tx); broadcast('newTransaction', { txId: tx.id, pendingCount: chain.pendingTransactions.length });
+    };
+    router.post('/evm/signed', route(async (req, res) => {
+        const tx = signedTransaction(req.body, 3); requireNativeAddress(tx.from);
+        if (!['deposit', 'withdraw', 'evm'].includes(tx.kind)) throw new Error('不支持的 EVM 封装');
+        if (tx.kind === 'withdraw') requireNativeAddress(tx.to);
+        const saved = await chain.addTransaction(tx); announce(saved);
+        res.json({ success: true, transaction: saved, receipt: chain.receipt(saved.id) });
+    }));
+    router.post('/evm/raw', route(async (req, res) => {
+        if (Object.keys(req.body).some(key => key !== 'rawTransaction')) throw new Error('仅接受已签名原始交易');
+        const tx = await chain.submitRaw(hex(req.body.rawTransaction)); announce(tx);
+        res.json({ success: true, transaction: tx, receipt: chain.receipt(tx.id) });
+    }));
+    router.get('/evm/signing-context/:address', route(async (req, res) => {
+        const target = address(req.params.address), block = context();
+        const pending = await chain.pendingEvaluation();
+        const modern = !!chain.consensus.rpc && block.index >= chain.consensus.rpc.activationHeight;
+        const suggested = BigInt(block.baseFeePerGas) + BigInt(chain.consensus.rpc?.priorityFeeWei || '0');
+        const floor = BigInt(chain.consensus.evm.gasPriceWei);
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({ success: true, chainId: chain.consensus.params.chainId, evmChainId: chain.consensus.evm.chainId,
+            nonce: (await pending.engine.nonce(target)).toString(), modern,
+            gasPriceWei: (modern && suggested > floor ? suggested : floor).toString() });
+    }));
     const credentials = body => {
         if (typeof body.privateKey !== 'string' || body.privateKey.length > 4096) throw new Error('必须提供 PEM privateKey');
         return body.privateKey;
@@ -58,7 +93,8 @@ function createEvmRoutes(chain, p2p, broadcast) {
         res.json({ success: true, ...result });
     }));
     router.post('/evm/estimate', route(async (req, res) => {
-        const pem = credentials(req.body), engine = chain._evaluation.engine, from = evmAddressFromPem(pem);
+        const engine = chain._evaluation.engine;
+        const from = Object.hasOwn(req.body, 'privateKey') ? evmAddressFromPem(credentials(req.body)) : address(req.body.from);
         const stateRoot = chain._evaluation.evmStateRoot;
         const options = { ...transactionOptions(req.body), nonce: await engine.nonce(from) }, block = context();
         const suggested = BigInt(block.baseFeePerGas) + BigInt(chain.consensus.rpc?.priorityFeeWei || '0');

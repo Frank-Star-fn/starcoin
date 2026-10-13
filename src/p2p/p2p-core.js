@@ -62,7 +62,7 @@ function createP2PCore(server, starCoin, PORT, options = {}) {
             if (attempts.size >= 1024 && !attempts.has(key)) return false;
             attempts.set(key, bucket);
             if (++bucket.count > 30) return false;
-            return req.url === '/ws' ? sameOrigin(req) : req.url === '/' && !req.headers.origin;
+            return req.url === '/ws' ? sameOrigin(req, options.isTrustedProxy) : req.url === '/' && !req.headers.origin;
         }
     });
     wss.on('error', error => log.error('WebSocket 服务错误', error));

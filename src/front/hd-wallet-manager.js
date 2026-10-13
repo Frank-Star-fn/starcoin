@@ -80,7 +80,7 @@ async function storeHdResult(result, credentials, backup = null) {
 
 async function generateHdWallet() {
     return runHdOperation('create', async () => {
-        const result = await api('/api/wallet/hd/new', 'POST', {});
+        const result = await localHdWallet('new', {});
         await storeHdResult(result, { mnemonic: result.mnemonic, passphrase: '' });
         showMnemonicDisplay(result.mnemonic);
         showForceBackupDialog(state.selectedWallet);
@@ -93,7 +93,7 @@ async function addHdAddress(rootId) {
         const root = findHdRoot(rootId);
         if (root.nextIndex > HD_INDEX_LIMIT) throw new Error('HD 地址索引已耗尽');
         const credentials = await hdCredentials(root);
-        const result = await api('/api/wallet/hd/derive', 'POST', { ...credentials, startIndex: root.nextIndex });
+        const result = await localHdWallet('derive', { ...credentials, startIndex: root.nextIndex });
         await storeHdResult(result);
         showMessage('txMessage', '✅ 已新增 HD 子地址：' + result.wallets[0].path, 'success', 4000);
     });
@@ -118,7 +118,7 @@ async function importHdMnemonic() {
         try {
             const credentials = { mnemonic: document.getElementById('importMnemonicInput').value,
                 passphrase: document.getElementById('importMnemonicPassphrase').value };
-            const result = await api('/api/wallet/hd/import', 'POST', credentials);
+            const result = await localHdWallet('import', credentials);
             await storeHdResult(result, credentials);
             hideImportMnemonicDialog();
             showMessage('txMessage', hdRecoveryMessage(result), 'success', 10000);
@@ -133,7 +133,7 @@ async function continueHdScan(rootId) {
     return runHdOperation(rootId, async () => {
         const root = findHdRoot(rootId);
         if (root.scanNextIndex > HD_INDEX_LIMIT) throw new Error('所有 HD 地址已扫描完毕');
-        const result = await api('/api/wallet/hd/import', 'POST', {
+        const result = await localHdWallet('import', {
             ...await hdCredentials(root), startIndex: root.scanNextIndex });
         await storeHdResult(result);
         showMessage('txMessage', hdRecoveryMessage(result), 'success', 10000);
@@ -177,13 +177,13 @@ async function importHdBackupFile(input) {
             const backup = parseHdBackup(await file.text());
             const credentials = { mnemonic: backup.mnemonic, passphrase: backup.passphrase,
                 scheme: backup.scheme, basePath: backup.basePath };
-            const discovery = await api('/api/wallet/hd/import', 'POST', credentials);
+            const discovery = await localHdWallet('import', credentials);
             if (discovery.root.id !== backup.rootId) throw new Error('备份密码或钱包标识不匹配');
             // Restore saved unused addresses too, including those beyond the discovery gap.
             const recovered = new Map(discovery.wallets.map(w => [w.index, w]));
             const indices = backup.addresses.map(a => a.index).filter(i => !recovered.has(i));
             for (let i = 0; i < indices.length; i += 100) {
-                const batch = await api('/api/wallet/hd/derive', 'POST', { ...credentials, indices: indices.slice(i, i + 100) });
+                const batch = await localHdWallet('derive', { ...credentials, indices: indices.slice(i, i + 100) });
                 for (const wallet of batch.wallets) recovered.set(wallet.index, wallet);
             }
             await storeHdResult({ ...discovery, wallets: [...recovered.values()].sort((a, b) => a.index - b.index) }, credentials, backup);

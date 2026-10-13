@@ -57,9 +57,11 @@ http://localhost:3000/
 
 旧版“生成新钱包”和旧助记词接口保留原算法。恢复旧助记词时选择“旧版单地址钱包”，恢复结果与升级前一致。BIP39 密码会影响钱包和地址，必须与原值一致。浏览器持久化格式升级为 version 3，可加载原来的 v1/v2 数据；助记词、密码和子地址私钥通过 AES-GCM 加密，浏览器加密密钥保存在 IndexedDB。解密失败时保留原始加密记录。
 
-HD 功能沿用此 demo 的后端生成、派生和交易签名方式：助记词在创建、导入、派生请求中经过后端，子地址私钥用于原有转账接口；后端不会持久化 HD 根密钥。浏览器本地加密不能代替对所连接节点的信任。
+钱包生成、PEM/助记词导入、HD 派生和原生/EVM 签名均在浏览器完成。助记词、BIP39 密码和 PEM 私钥不会发送到节点；节点接收已签名交易并校验。恢复扫描只查询公开地址历史和交易池，现有地址、HD 根标识和备份格式保持兼容。
 
 ### HD API
+
+以下接口仅保留为本机兼容模式，默认返回 410。启用需要 `LEGACY_WALLET_API=true`、本机直连及有效管理凭证；浏览器钱包不再调用这些接口。
 
 | 接口 | 请求 | 返回 |
 | --- | --- | --- |
@@ -67,7 +69,9 @@ HD 功能沿用此 demo 的后端生成、派生和交易签名方式：助记�
 | `POST /api/wallet/hd/derive` | `mnemonic`、可选 `passphrase`，以及 `startIndex`、`count`（1–100）；或 `indices`（1–100 个索引） | `root`、`wallets`、`nextIndex` |
 | `POST /api/wallet/hd/import` | `mnemonic`、可选 `passphrase`、`startIndex`、`scanCount`（20–200） | 已发现的 `wallets`、`nextIndex`、`scanNextIndex`、`stoppedAtGap`、`exhausted` |
 
-接口可传 `scheme: "bip44-v1"` 和 `basePath: "m/44'/1'/0'/0"`，其他派生方案拒绝导入。所有地址索引须是 0 到 2147483647 之间的整数。HD API 响应禁止缓存，后端仅在请求期间使用根密钥。
+接口可传 `scheme: "bip44-v1"` 和 `basePath: "m/44'/1'/0'/0"`，其他派生方案拒绝导入。所有地址索引须是 0 到 2147483647 之间的整数。HD API 响应禁止缓存。
+
+原生转账使用 `GET /api/transaction/context/:address` 查询 chainId 和待确认 nonce，在浏览器签名后通过 `POST /api/transaction/signed` 提交 `{ transaction }`。旧 `POST /api/transaction` 默认关闭。
 
 验证：`npm test`，编译：`npm run build`。HD 测试覆盖 [BIP32 官方测试向量](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)、旧助记词固定地址、子地址交易、恢复扫描、备份往返及存储迁移。
 
@@ -121,7 +125,7 @@ MetaMask 模式的私钥和助记词由扩展保管，页面和节点只接收�
 
 v3 区块哈希包含 EVM 状态根、回执承诺和 Gas；v4 再包含 MetaMask 配置指纹及 baseFee，接收节点重新执行交易验证。重启从区块重放代码、余额和存储；分叉切换恢复对应状态，回滚交易重新校验后回池，旧分支日志不再返回。只读调用及 Gas 估算使用状态副本；RPC Gas 估算默认使用 pending 状态，后续状态变化仍可能影响实际执行。
 
-本地加密钱包模式沿用后端签名方式，REST 合约写入和估算请求会把 PEM 私钥发送到所连接的节点；浏览器复用现有加密钱包存储，后端不持久化私钥。MetaMask 的 RPC 估算无需私钥。
+本地加密钱包模式在浏览器签名，合约交易只提交签名后的原始交易或历史协议封装。REST 和 MetaMask 的估算都只需要公开地址。默认关闭接收 PEM 私钥的旧接口。
 
 ### EVM API
 
@@ -133,10 +137,11 @@ v3 区块哈希包含 EVM 状态根、回执承诺和 Gas；v4 再包含 MetaMas
 | `POST /api/evm/address` | 用 SPKI `publicKey` 计算 EVM 地址 |
 | `GET /api/evm/account/:address` | 已确认余额、nonce、代码 |
 | `GET /api/evm/storage/:address/:slot` | 32 字节存储槽，slot 用十进制字符串 |
-| `POST /api/evm/deposit`、`POST /api/evm/withdraw` | `privateKey`、八位小数 `amount`，可指定接收地址 |
-| `POST /api/evm/transaction` | `privateKey`、`data`、可选 `to`、`valueWei`、`gasLimit`；不传 to 表示部署 |
+| `GET /api/evm/signing-context/:address` | 待确认 EVM nonce、chainId、Gas 价格及协议版本 |
+| `POST /api/evm/signed` | `{ transaction }`：客户端签署的 v3 存入、取回或历史 EVM 封装 |
+| `POST /api/evm/raw` | `{ rawTransaction }`：已签名 Ethereum 交易；需要已激活 RPC 协议 |
 | `POST /api/evm/call` | `to`、`data`、可选 `from`、`valueWei`、`gasLimit`，无需私钥 |
-| `POST /api/evm/estimate` | 用与 transaction 相同参数估算 Gas，需要已确认 EVM 余额 |
+| `POST /api/evm/estimate` | `from`、`to`、`data`、`valueWei`、`gasLimit`，需要已确认 EVM 余额，无需私钥 |
 | `GET /api/evm/receipt/:id` | 用 StarCoin 原生交易 ID 查询回执；包含对应 Ethereum transactionHash |
 | `GET /api/evm/logs` | 当前主链事件，支持 fromBlock/toBlock/address/topic 过滤 |
 

@@ -1,4 +1,4 @@
-/* EVM panel: reuse the selected wallet; secrets only live in request-local variables. */
+/* EVM panel: sign in the browser; only public simulation inputs and signed transactions leave it. */
 const evmUi = { address: null, busy: false, network: null, lastDeployment: null, artifactName: '自定义合约', parameterFields: {} };
 const evmEl = id => document.getElementById(id);
 function evmJson(value) { return JSON.stringify(value, (_key, item) => typeof item === 'bigint' ? item.toString() : item, 2); }
@@ -123,11 +123,18 @@ function evmSubmitted(result, kind = result.transaction.kind, artifact = null) {
 function evmBridge(kind) {
     return evmAction(async () => {
         if (kind === 'withdraw' && mmMode()) { await mmWithdraw(); return; }
-        const privateKey = await evmSecret();
+        const pem = await evmSecret(), wallet = walletCrypto.importPem(pem);
         const evmAddress = evmEl('evmDepositTarget').value.trim() || (mmMode() ? mmState.address : undefined);
         if (kind === 'deposit' && mmMode() && !evmAddress) throw new Error('请连接 MetaMask 或填写存入地址');
-        evmSubmitted(await evmApi(kind, { privateKey, amount: evmEl('evmBridgeAmount').value.trim(),
-            ...(kind === 'deposit' ? { evmAddress } : { nativeAddress: evmEl('evmNativeRecipient').value.trim() || undefined }) }));
+        const source = ethers.computeAddress(walletCrypto.rawFromPem(pem)).toLowerCase();
+        const target = kind === 'deposit' ? ethers.getAddress(evmAddress || source).toLowerCase()
+            : evmEl('evmNativeRecipient').value.trim() || wallet.address;
+        if (kind === 'withdraw' && !/^[0-9a-f]{32}$/.test(target)) throw new Error('请填写有效的原生收款地址');
+        const context = await api('/api/transaction/context/' + wallet.address);
+        const transaction = walletCrypto.signEnvelope(pem, { kind, chainId: context.chainId, nonce: context.nextNonce,
+            to: kind === 'deposit' ? 'EVM:' + target : target, evmAddress: kind === 'deposit' ? target : source,
+            amount: evmEl('evmBridgeAmount').value.trim() });
+        evmSubmitted(await evmApi('signed', { transaction }));
     });
 }
 function evmLoadMethods() {
@@ -186,7 +193,8 @@ function evmTxOptions(deploy) {
 function evmEstimate(deploy) {
     return evmAction(async () => {
         if (mmMode()) { await mmEstimate(deploy); return; }
-        const result = await evmApi('estimate', { ...evmTxOptions(deploy), gasLimit: String(evmUi.network?.transactionGasLimit || 5000000), privateKey: await evmSecret() });
+        if (!evmUi.address) throw new Error('请先选择钱包');
+        const result = await evmApi('estimate', { ...evmTxOptions(deploy), gasLimit: String(evmUi.network?.transactionGasLimit || 5000000), from: evmUi.address });
         // Keep a modest buffer for subsequent state changes; all values remain decimal strings.
         const gas = BigInt(result.gasLimit) * 120n / 100n;
         evmEl('evmGas').value = (gas > BigInt(evmUi.network?.transactionGasLimit || 5000000) ? BigInt(evmUi.network?.transactionGasLimit || 5000000) : gas).toString();
@@ -202,6 +210,21 @@ function evmExecute(deploy) {
             const result = await evmApi('call', { ...options, from: evmUi.address || undefined });
             if (!result.status) throw new Error(result.error || '调用失败');
             evmEl('evmResult').textContent = '查询结果：\n' + evmJson(Array.from(evmInterface().decodeFunctionResult(evmEl('evmMethod').value, result.returnData)));
-        } else { const artifact = deploy ? evmArtifactSnapshot() : null; evmSubmitted(await evmApi('transaction', { ...options, privateKey: await evmSecret() }), deploy ? 'deploy' : 'call', artifact); }
+        } else { const artifact = deploy ? evmArtifactSnapshot() : null; evmSubmitted(await evmSignAndSubmit(options), deploy ? 'deploy' : 'call', artifact); }
     });
+}
+
+async function evmSignAndSubmit(options) {
+    const pem = await evmSecret(), wallet = walletCrypto.importPem(pem);
+    const signer = new ethers.Wallet(walletCrypto.rawFromPem(pem));
+    const source = signer.address.toLowerCase();
+    const context = await evmApi('signing-context/' + source);
+    const rawTransaction = await signer.signTransaction({ type: 0, chainId: context.evmChainId, nonce: Number(context.nonce),
+        gasPrice: context.gasPriceWei, gasLimit: options.gasLimit, to: options.to || undefined,
+        data: options.data, value: options.valueWei });
+    if (context.modern) return evmApi('raw', { rawTransaction });
+    const native = await api('/api/transaction/context/' + wallet.address);
+    const transaction = walletCrypto.signEnvelope(pem, { kind: 'evm', chainId: native.chainId, nonce: native.nextNonce,
+        to: options.to?.toLowerCase() || 'EVM_CREATE', evmAddress: source, rawTransaction });
+    return evmApi('signed', { transaction });
 }

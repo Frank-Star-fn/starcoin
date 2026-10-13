@@ -1,7 +1,12 @@
+const config = require('../../src/config');
 // ============================================================
 // routes/api-tx.test.js — 钱包 + 交易 + 余额 + 交易池路由测试
 // ============================================================
 const express = require('express');
+const legacyConfig = { token: config.ADMIN_TOKEN, legacy: config.LEGACY_WALLET_API };
+beforeAll(() => { config.ADMIN_TOKEN = 'test-admin'; config.LEGACY_WALLET_API = true; });
+afterAll(() => { config.ADMIN_TOKEN = legacyConfig.token; config.LEGACY_WALLET_API = legacyConfig.legacy; });
+
 const request = require('supertest');
 const { generateWallet } = require('../../src/blockchain/blockchain');
 const createTxRoutes = require('../../src/routes/api-tx');
@@ -15,7 +20,7 @@ describe('api-tx 路由 — 钱包、交易、余额、交易池', () => {
     p2p = createMockP2P();
     broadcastSpy = createSpy();
     app = express();
-    app.use(express.json());
+    app.use(express.json()); app.use((req, _res, next) => { req.headers.authorization = 'Bearer test-admin'; next(); });
     app.use(createTxRoutes(starCoin, broadcastSpy, p2p));
   });
 

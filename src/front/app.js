@@ -185,7 +185,10 @@ function handleWsMessage(data) {
    ============================================================ */
 async function api(path, method = 'GET', body = null) {
     const opts = { method, headers: { 'Content-Type': 'application/json', ...adminHeaders() } };
-    if (body) opts.body = JSON.stringify(body);
+    if (body) {
+        opts.body = JSON.stringify(body);
+        if (/"(?:privateKey|privateKeyPem|mnemonic|passphrase|password)"\s*:/i.test(opts.body)) throw new Error('钱包秘密不能发送到节点');
+    }
     const res = await fetch(path, opts);
 
     // 限流（429）或其他非 2xx 状态 → 抛出带信息的错误

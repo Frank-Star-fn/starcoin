@@ -16,8 +16,9 @@ const { validPeerUrl } = require('../p2p/message-security');
 function createNetRoutes(starCoin, p2p, PORT) {
     const router = express.Router();
     router.use((req, res, next) => {
-        const managed = /^\/(?:sync|mempool\/(?:sync|broadcast)|storage|connect|disconnect|discovery)(?:\/|$)/.test(req.path);
-        if (managed && (req.method !== 'GET' || req.path.startsWith('/storage'))) return requireAdmin(req, res, next);
+        const path = req.path.toLowerCase();
+        const managed = /^\/(?:sync|mempool\/(?:sync|broadcast)|storage|connect|disconnect|discovery)(?:\/|$)/.test(path);
+        if (managed && (req.method !== 'GET' || path.startsWith('/storage'))) return requireAdmin(req, res, next);
         next();
     });
 

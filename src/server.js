@@ -76,6 +76,7 @@ function broadcastToFrontend(type, data = {}) {
 async function start() {
     await starCoin.ready;
     const p2p = createP2P(server, starCoin, PORT, {
+        isTrustedProxy: app.get('trust proxy fn'),
         onFrontendConnection: (ws) => {
             frontendClients.add(ws);
             log.info('前端客户端已连接', { count: frontendClients.size });
